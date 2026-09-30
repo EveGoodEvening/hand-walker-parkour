@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [viteSingleFile()],
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? '0.1.0'),
   },
   build: {
     target: 'es2022',

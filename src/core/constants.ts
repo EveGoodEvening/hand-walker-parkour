@@ -8,6 +8,11 @@ export const LANE_WIDTH = 1.1;
 /** 走廊的视觉宽度（§2.3）。 */
 export const CORRIDOR_WIDTH = 3.6;
 export const CHUNK_LEN = 12;
+/**
+ * 静场场景（StillSet）在世界里的原点（CORE 约定，§8.3「静场用 0.4 s 黑场切入切出，View 切换到对应的 StillSet」）。
+ * 放在跑段下方很远处，与 chunk 互不遮挡；StillSet.build 的几何体与 playerAnchor、镜头机位都相对这个原点。
+ */
+export const STILL_ORIGIN = { x: 0, y: -200, z: 0 } as const;
 /** 绘制顺序（§5.8 表）。 */
 export const RENDER_ORDER = { backdrop: -30, floor: -20, puddleMask: -19, puddleDouble: -18, puddleOverlay: -17,
   planarShadow: -16, floorDecal: -15, opaque: 0, glass: 10, rain: 11, fx: 12 } as const;

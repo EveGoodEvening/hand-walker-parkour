@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="color-scheme" content="dark">
+  <title>手行者 · 跑酷</title>
+  <link rel="icon" href="data:,">
+  <style>
+    html, body { margin: 0; height: 100%; background: #0d1216; overflow: hidden; overscroll-behavior: none; }
+    #app { position: fixed; inset: 0; overflow: hidden; touch-action: none; -webkit-tap-highlight-color: transparent; }
+    #game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #overlay { position: absolute; inset: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+    <div id="overlay"></div>
+    <div id="ui"></div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

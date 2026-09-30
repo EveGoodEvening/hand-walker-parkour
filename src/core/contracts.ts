@@ -2,7 +2,9 @@
 // 与 §8.4 原文的差异（均为向后兼容的可选项，已在注释里写明理由）：
 //   · Plan.steps 的元素多一个可选的 s（动作开始时的里程），自动驾驶按位置执行，比按时间执行更稳。
 //   · SolverAPI.solve 的 opts 多了 from / forbid / margin，供自动驾驶从检查点中途求解、供校验器检查 R3/R5/R6/R8/R10。
-//   · ViewAPI 由 registry.registerView() 注册（§8.4 的注册表里漏了这一项，Game 需要它）。
+//   · ViewAPI 由 registry.registerView() 注册（§8.4 的注册表里漏了这一项，Game 需要它），并可选暴露 context。
+//   · SimAPI 多了可选的 obstaclesAhead / skipStill（__game 需要）。
+//   · KitChunk 几何体使用局部坐标（见 KitChunk 注释），便于复用通用变体。
 import type * as THREE from 'three';
 import type { Bus, GameEvent } from './events';
 import type { Pose } from './rig';
@@ -38,6 +40,12 @@ export interface SimAPI {
   hash(): string;
   /** 前方 meters 米内的障碍（给 __game.obstaclesAhead 用）。 */
   obstaclesAhead?(meters: number): Array<{ id: number; kind: string; cls: string; lanes: Lane[]; ds: number; beat: number }>;
+  /** 跳过当前静场（重试或已看过时；测试钩子）。 */
+  skipStill?(): void;
+  /** 辅助模式（§7.3）。 */
+  setAssist?(on: boolean): void;
+  /** 当前自动驾驶的求解计划（__game.plan）。 */
+  currentPlan?(): Plan | null;
 }
 /** 求解结果（§2.8 R2）。s 为可选扩展：动作开始时玩家的里程（CORE 求解器总会填写）。 */
 export interface PlanStep { t: number; s?: number; action: 'left' | 'right' | 'jump' | 'duck' | 'duckRelease' | 'hold' | 'straighten' }
@@ -115,13 +123,19 @@ export interface ViewAPI {                                                  // C
   render(): void;
   setQuality(t: QualityTier): void;
   perf(): PerfStats;
+  /** 扩展（§8.4 未列出）：cue 处理器需要 ViewContext（CueContext.view），Game 从这里取。 */
+  readonly context?: ViewContext;
 }
 export interface KitChunkContext {
   seg: CompiledSegment; variant: string; s0: number; s1: number; stride: number;
   floorY(s: number): number; openings: readonly Opening[];   // 必须按 openings 在墙上留口
   quality: QualityProfile; rng: Rng; mat: MaterialsAPI; tex: TextureBank;
 }
-/** 一个 chunk 最多 3 个合并几何体 = ≤ 3 次 draw call（§5.9）。坐标：x 横向，y 向上，z = −s。 */
+/**
+ * 一个 chunk 最多 3 个合并几何体 = ≤ 3 次 draw call（§5.9）。
+ * 几何体用**局部坐标**：x 横向，y 相对 floorY(ctx.s0) 向上，z = −(s − ctx.s0)；ChunkStreamer 把 mesh 放在 (0, floorY(s0), −s0)。
+ * lamps 用世界里程 s。
+ */
 export interface KitChunk { floor: THREE.BufferGeometry; static: THREE.BufferGeometry; emissive?: THREE.BufferGeometry; lamps: LampSpec[] }
 export interface EnvKit { id: KitId; owner: WpId; variants: readonly string[]; build(ctx: KitChunkContext): KitChunk; ambience(variant: string): AmbienceId; reverb(variant: string): ReverbId }
 export interface StillSet {
