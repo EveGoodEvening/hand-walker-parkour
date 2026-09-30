@@ -306,7 +306,20 @@ export class LampField implements LampFieldAPI {
     return lv;
   }
   /** [s0, s1] 内的灯下标范围。 */
-  range(s0: number, s1: number): [number, number] { this.ensure(); return [this.t.lower(s0), this.t.lower(s1 + 1e-6)]; }
+  range(s0: number, s1: number, out: [number, number] = [0, 0]): [number, number] {
+    this.ensure(); out[0] = this.t.lower(s0); out[1] = this.t.lower(s1 + 1e-6); return out;
+  }
+  /** 第 i 个掌光环（没有返回 null）：给每帧的贴花用，不分配。 */
+  ringAt(i: number): { s: number; x: number; age: number; strength: number; radius: number } | null {
+    const r = this.rings[i];
+    if (!r) return null;
+    const age = (this.now - r.t0) / RING_LIFE;
+    if (age < 0 || age >= 1) return null;
+    const o = this.ringOut; o.s = r.s; o.x = r.x; o.age = age; o.strength = r.strength; o.radius = r.radius;
+    return o;
+  }
+  private readonly ringOut = { s: 0, x: 0, age: 0, strength: 0, radius: 1 };
+  get ringCapacity(): number { return RING_CAP; }
 
   private schedule(i: number, target: number, at: number): void {
     const T = this.t;

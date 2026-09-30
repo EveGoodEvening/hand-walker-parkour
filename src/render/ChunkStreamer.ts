@@ -118,6 +118,12 @@ export class World implements ViewSystem {
   private builtTier: string | null = null;
   private last: SimSnapshot | null = null;
   private preview: { s: number; x: number; seg: CompiledSegment; set: SetEntry | null; t: number | null } | null = null;
+  // 每帧用到的缓存（运行时不分配）
+  private standFlat: Slot[] = [];
+  private setList: SetEntry[] = [];
+  private readonly rangeTmp: [number, number] = [0, 0];
+  private boardNow = 0;
+  private readonly boardTick = (b: Board): void => { b.update(this.boardNow); };
   /** 统计（测试、调试用）。 */
   readonly stats = { slots: 0, generic: 0, special: 0, pools: 0, maxSlotTris: 0, maxSlotCalls: 0 };
 
@@ -201,6 +207,7 @@ export class World implements ViewSystem {
       }
     }
     this.slots.sort((a, b) => a.s0 - b.s0);
+    this.standFlat = Array.from(this.standSlots.values()).flat();
     this.stats.pools = pools.size;
     for (const l of this.slots) this.lamps.addLamps(`slot:${l.s0.toFixed(3)}`, l.lamps);
     // 跑段上的 board 表面
@@ -347,7 +354,7 @@ export class World implements ViewSystem {
     for (const sl of [...this.slots, ...this.previewSlots, ...Array.from(this.standSlots.values()).flat()]) this.root.remove(sl.group);
     for (const g of this.geoms) g.dispose();
     this.geoms.clear();
-    this.slots = []; this.previewSlots = []; this.standSlots.clear();
+    this.slots = []; this.previewSlots = []; this.standSlots.clear(); this.standFlat = [];
     for (const rb of this.runBoards) { this.root.remove(rb.board.mesh); rb.board.mesh.geometry.dispose(); BOARDS.forEach((b, k) => { if (b === rb.board) BOARDS.delete(k); }); }
     this.runBoards = [];
     Object.assign(this.stats, { slots: 0, generic: 0, special: 0, pools: 0, maxSlotTris: 0, maxSlotCalls: 0 });
@@ -375,6 +382,7 @@ export class World implements ViewSystem {
       e = { set: set.id, variant: v, obj };
       if (set.update) e.update = set.update.bind(set);
       this.sets.set(key, e);
+      this.setList = Array.from(this.sets.values());
     }
     return e;
   }
@@ -538,7 +546,7 @@ export class World implements ViewSystem {
     const list = pv && !pv.set ? this.previewSlots : standMode ? (this.standSlots.get(next.segIndex) ?? []) : this.slots;
     for (const sl of this.slots) sl.group.visible = false;
     for (const sl of this.previewSlots) sl.group.visible = false;
-    for (const l of this.standSlots.values()) for (const sl of l) sl.group.visible = false;
+    for (const sl of this.standFlat) sl.group.visible = false;
     let visibleFrom = 0, visibleTo = -1;
     if (!stillMode && list.length) {
       const c = this.slotAt(list, s);
@@ -549,9 +557,10 @@ export class World implements ViewSystem {
     for (const rb of this.runBoards) rb.board.mesh.visible = !stillMode && !pv && Math.abs(rb.seg - next.segIndex) <= 1;
     // set
     const setE = pv ? pv.set : stillMode ? this.setBySeg.get(next.segIndex) ?? null : null;
-    for (const e of this.sets.values()) e.obj.visible = e === setE;
+    for (const e of this.setList) e.obj.visible = e === setE;
     if (setE?.update) setE.update(pv?.t ?? next.still?.t ?? t, next);
-    for (const b of BOARDS.values()) b.update(t);
+    this.boardNow = t;
+    BOARDS.forEach(this.boardTick);
     // 地面贴花
     this.decals.begin();
     if (!stillMode) this.fillDecals(list, visibleFrom, visibleTo, s);
@@ -568,7 +577,7 @@ export class World implements ViewSystem {
     const cam = this.ctx.camera.position;
     for (let i = from; i <= to; i++) {
       const sl = list[i] as Slot;
-      const [la, lb] = this.lamps.range(sl.s0, sl.s1);
+      const [la, lb] = this.lamps.range(sl.s0, sl.s1, this.rangeTmp);
       for (let k = la; k < lb; k++) {
         const ls = this.lamps.lampS(k);
         if (ls < s - 3) continue;
@@ -595,12 +604,14 @@ export class World implements ViewSystem {
         }
       }
     }
-    this.lamps.forEachRing((rs, rx, age, strength, radius) => {
-      const r = radius * 2 * (0.3 + 0.7 * age);
-      const y = this.floorAt(rs) + 0.012;
-      this.decals.add('ring', rx, y, rs, r, r, 0xdfe6ea, strength * (1 - age) * 0.85);
-      this.decals.add('pool', rx, y, rs, radius * 1.4, radius * 1.4, 0x9fc3d6, strength * (1 - age) * 0.3);
-    });
+    for (let i = 0; i < this.lamps.ringCapacity; i++) {
+      const rg = this.lamps.ringAt(i);
+      if (!rg) continue;
+      const r = rg.radius * 2 * (0.3 + 0.7 * rg.age);
+      const y = this.floorAt(rg.s) + 0.012;
+      this.decals.add('ring', rg.x, y, rg.s, r, r, 0xdfe6ea, rg.strength * (1 - rg.age) * 0.85);
+      this.decals.add('pool', rg.x, y, rg.s, rg.radius * 1.4, rg.radius * 1.4, 0x9fc3d6, rg.strength * (1 - rg.age) * 0.3);
+    }
   }
 
   private floorAt(s: number): number {
