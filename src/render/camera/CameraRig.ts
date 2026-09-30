@@ -225,8 +225,10 @@ export class CameraRig implements ViewSystem {
     this.fallBlend = rm ? (falling ? 1 : 0) : clamp(this.fallBlend + (falling ? bdt / 0.35 : -bdt / 0.35), 0, 1);
     if (this.fallBlend > 0) {
       const k = this.fallBlend;
-      o.pos.lerp(_off.set(x + 0.2, fy + 0.18, -s + 1.0), k);
-      o.look.lerp(_off.set(x, fy, -s - 1.2), k);
+      // §5.4 是 (0.2, 0.18, +1.0)；爬姿的腿拖在身后约 1.1 m，那个位置正好在右脚旁边、镜头会插进腿里，
+      // 所以横向让到腿的外侧（x + 0.6），高度、距离不变
+      o.pos.lerp(_off.set(x + 0.6, fy + 0.2, -s + 1.0), k);
+      o.look.lerp(_off.set(x, fy + 0.08, -s - 1.2), k);
     }
     // —— 震动 ——
     if (this.shake > 0 && !rm) {

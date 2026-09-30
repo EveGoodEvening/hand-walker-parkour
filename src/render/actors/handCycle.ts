@@ -453,8 +453,10 @@ export function crawlPose(i: CrawlInput, b: PoseBuilder): Pose {
   }
   // —— 腿 ——
   const flat = Math.max(duck, fall);
+  // 梦里（> 7 m/s）：髋部伸展，腿「从身体下面解放出来，拖在后面」
+  const free = dream ? smoothstep(6.5, 8.5, i.speed) : 0;
   luggageLegs(b, {
-    thighDown: air ? 14 * DEG : lerp(CRAWL.thighDown, 30 * DEG, duck), shinUp: air ? 10 * DEG : CRAWL.shinUp,
+    thighDown: air ? 14 * DEG : lerp(lerp(CRAWL.thighDown, 30 * DEG, duck), 20 * DEG, free), shinUp: air ? 10 * DEG : lerp(CRAWL.shinUp, 8 * DEG, free),
     spread: air ? 0.02 : lerp(0.05, 0.32, duck), twitch: tw, drift: clamp(i.drift, -1, 1),
     hip: i.legHip ?? 0, knee: i.legKnee ?? 0, flat: air ? 0 : flat * 0.8, ground: i.floorY - rootY,
   });
