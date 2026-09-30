@@ -611,7 +611,7 @@
   "query": "ch=test&nocards=1",
   "ops": [
    {
-    "eval": "__game.ext.wp4('scene','ch3','3-3',50,720,{\"kit\": [\"street\", \"schoolGate\", {\"beat\": 20, \"rain\": 0.4}]})"
+    "eval": "__game.ext.wp4('scene','ch3','3-3',40,600,{\"kit\": [\"street\", \"schoolGate\", {\"beat\": 20, \"rain\": 0.4}]})"
    }
   ]
  },

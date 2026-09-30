@@ -13,3 +13,4 @@
 - 2026-09-30 | 说明给 WP3 / WP5（不改冻结文件） | 站立段（4-3 plaza、5-8 track）在 compile 里 s0 = s1，CORE 的 World 在非跑段隐藏全部 chunk，CameraRig 在非跑段用 STILL_ORIGIN 的静场机位：站立段会看到一片空。需要 World 在站立段显示上一跑段在玩家附近的 chunk、镜头用站立机位。WP4 的天与雨已经把站立段当户外处理 | 否则 4-3 / 5-8 没有场景 | 兼容
 - 2026-09-30 | 建议（lead 决定） | `rainAt(chapter, segIndex, segBeat)`（重来 / goto 时按关卡数据复原雨强）目前在 WP4 的 render/weather/rain.ts；WP7 的雨声重来时也需要同样的逻辑，但不能 import 别的包。可以挪到 core（例如 core/weather.ts）作为共享纯函数 | 单一来源 | 兼容
 - 2026-09-30 | 说明给 WP3（不改冻结文件） | 雨夜的水洼涟漪按 §5.9 走地面贴花，但契约里没有给别的包放贴花的接口（LampFieldAPI.ring 是掌光环，会加光）。若要涟漪，建议 WP3 的 decals 在 rain cue 强度 > 0 时给 puddle 障碍自己挂涟漪环（强度可按 `rain` cue 读） | 目前 WP4 没有画水洼涟漪 | 兼容
+- 2026-09-30 | 说明给 WP2（不改冻结文件） | 4-3 站立段「广场边上有一面大镜子」：站立段没有 surfaces（compile 只给跑段编译 surfaces），kit 也不给站立段建 chunk。建议在 4-2 段尾（玩家停下来站起的位置）加一个 `mirror` 开口（side 'R'，y [0.1, 2.6]），WP4 的 plaza kit 会在那里建镜碑，4-3 的替身（WP5）站在碑里或用世界替身 | 否则 4-3 看不到镜子 | 兼容

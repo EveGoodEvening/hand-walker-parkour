@@ -221,9 +221,10 @@ export class Outdoor implements ViewSystem {
       this.sweep.position.set(pv ? pv.offsetX : 0, (this.chapter?.segments[next.segIndex]?.floorY(sweepS) ?? 0), -(sweepS + 1.1 * ph));
       this.sweepMat.opacity = 0.55 + 0.25 * Math.abs(ph);
     }
-    // WP4 的 set：动画（t 与快照的纯函数）
+    // WP4 的 set：动画（t 与快照的纯函数）。不按变体过滤：数据里省略 variant 时快照写 'default'，
+    // 而 World 按 set.variants[0] 建（例如 bedroom 的 feet）；同一时刻只有一个静场可见，全部更新也没关系。
     const st = next.still;
-    if (!pv && st && next.segKind === 'still') LIVE_SETS.get(st.set)?.update(st.t, next, st.variant);
+    if (!pv && st && next.segKind === 'still') LIVE_SETS.get(st.set)?.update(st.t, next);
   }
 
   setQuality(q: QualityProfile): void { this.rain.setLines(q.rainLines); }
