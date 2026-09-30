@@ -79,6 +79,51 @@ export class PlayerState {
   drT = 0;
   drDir: -1 | 1 = 1;
 
+  /** 复制全部字段（求解器每个节点都要复制一份；比 Object.assign 快得多）。新增字段时这里也要加，单元测试会核对。 */
+  copyFrom(o: PlayerState): this {
+    this.x = o.x;
+    this.y = o.y;
+    this.lane = o.lane;
+    this.laneTarget = o.laneTarget;
+    this.laneFromX = o.laneFromX;
+    this.laneT = o.laneT;
+    this.laneDur = o.laneDur;
+    this.laneQueue = o.laneQueue;
+    this.laneSettled = o.laneSettled;
+    this.air = o.air;
+    this.airT = o.airT;
+    this.airDur = o.airDur;
+    this.fastFall = o.fastFall;
+    this.fastFallT = o.fastFallT;
+    this.fastFallY = o.fastFallY;
+    this.duckAfterLandBeats = o.duckAfterLandBeats;
+    this.ducking = o.ducking;
+    this.duck = o.duck;
+    this.duckStartBeat = o.duckStartBeat;
+    this.duckHeld = o.duckHeld;
+    this.duckMinBeats = o.duckMinBeats;
+    this.jumpBuffer = o.jumpBuffer;
+    this.duckBuffer = o.duckBuffer;
+    this.hitMul = o.hitMul;
+    this.stumbleT = o.stumbleT;
+    this.crashT = o.crashT;
+    this.graceT = o.graceT;
+    this.mode = o.mode;
+    this.modeT = o.modeT;
+    this.onSoft = o.onSoft;
+    this.surfaceSoftKind = o.surfaceSoftKind;
+    this.twitch = o.twitch;
+    this.drift = o.drift;
+    this.twPhase = o.twPhase;
+    this.twT = o.twT;
+    this.twNeed = o.twNeed;
+    this.twHeld = o.twHeld;
+    this.drPhase = o.drPhase;
+    this.drT = o.drT;
+    this.drDir = o.drDir;
+    return this;
+  }
+
   reset(lane: Lane = 0): void {
     this.x = laneX(lane); this.y = 0; this.lane = lane; this.laneTarget = lane; this.laneFromX = this.x; this.laneT = 0; this.laneDur = 0;
     this.laneQueue = null; this.laneSettled = lane;

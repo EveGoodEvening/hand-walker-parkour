@@ -138,6 +138,23 @@ export const MECH_STILL: ChapterDef = chapter([
   runSeg({ id: 'q-end', beats: 30 }),
 ], { seed: 5 });
 
+/** 结尾卡输入上的节拍 id（在界面里触发，模拟里没有）。 */
+export function outroIds(def: ChapterDef): string[] {
+  return def.outro.lines.flatMap((l) => ('input' in l && l.id ? [l.id] : []));
+}
+
+/** perfect 自动驾驶跑完一章：返回摔倒数、受击、缺失的必备节拍（结尾卡输入除外）。 */
+export function perfectRun(def: ChapterDef, seed: number): { ended: boolean; falls: number; hits: string[]; missing: string[] } {
+  const d = new Driver(def, undefined, seed);
+  d.sim.setAutopilot('perfect');
+  d.until(() => d.sim.isEnded, 120 * 900);
+  const need = def.requiredBeats.filter((b) => !outroIds(def).includes(b));
+  return {
+    ended: d.of('chapter:end').length === 1, falls: d.snap.stats.falls,
+    hits: d.of('hit').map((h) => `${h.data.kind}#${h.data.obstacleId}`), missing: need.filter((b) => !d.snap.beatsFired.includes(b)),
+  };
+}
+
 /** 驱动一个 Sim：按 tick 注入动作，记录全部事件。 */
 export class Driver {
   readonly sim = new Sim(solver);

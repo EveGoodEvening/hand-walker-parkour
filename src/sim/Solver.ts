@@ -70,9 +70,7 @@ export interface SolveOptions {
 export interface SolverPlan extends Plan { readonly asks: readonly number[] }
 
 function clonePlayer(p: PlayerState): PlayerState {
-  const q = new PlayerState();
-  Object.assign(q, p);
-  return q;
+  return new PlayerState().copyFrom(p);
 }
 
 /** 段内的腿部事件（twitch / drift），按拍排序。Sim 在同一位置触发它们。 */
