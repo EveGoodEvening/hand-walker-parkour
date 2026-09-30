@@ -8,12 +8,15 @@ import * as THREE from 'three';
 import { defineArchetype, knockProgress, type PlaceCtx } from '../archetype';
 import { stretchVisual } from '../behaviors';
 import { C } from '../colors';
+import type { PartBuilder } from '../material';
 
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1), _e = new THREE.Euler();
 const _t = new THREE.Matrix4(), _r = new THREE.Matrix4();
 
-/** 髋部（椅面）位置：相对碰撞盒中心，x 朝坐着的人那一侧。 */
-export const FOOT_HIP = { x: 0.8, y: 0.44 } as const;
+/** 腿斜着伸进车道（绕竖轴 −22°）：脚尖朝 −x、略朝前，碰撞盒沿 s 的 0.3 m 正好被腿覆盖。 */
+export const FOOT_YAW = -0.38;
+/** 髋部（椅面）位置：相对碰撞盒中心，x 朝坐着的人那一侧（已按 FOOT_YAW 转过）。 */
+export const FOOT_HIP = { x: 0.8 * Math.cos(FOOT_YAW), y: 0.44, z: -0.8 * Math.sin(FOOT_YAW) } as const;
 
 /** footOut 伸出的程度（0 = 收回，1 = 伸在车道里）：stretch 行为按自己的节律；被碰倒后 0.3 s 内缩回。 */
 export function footExtension(c: Pick<PlaceCtx, 'o' | 'tSeg' | 'knockedAt' | 't'>): number {
@@ -32,6 +35,21 @@ export function footSide(o: PlaceCtx['o']): 1 | -1 {
   return o.id % 2 === 0 ? 1 : -1;
 }
 
+function leg(b: PartBuilder): void {
+  const pants = C.trousers;
+  // 鞋：鞋跟着地，鞋尖翘起朝 −x；鞋底浅色
+  b.segment([-0.06, 0.035, 0], [-0.28, 0.13, 0], 0.1, 0.075, C.shoe, { colors: { '-y': C.sole, '-z': 0x3a3f43 } });
+  b.box([-0.05, 0.075, 0], [0.07, 0.06, 0.085], 0xd9dee3);
+  // 小腿（校服裤）低低地横过车道，裤侧白条就是「顶边一道粉笔白」
+  b.segment([-0.04, 0.085, 0], [0.6, 0.18, 0], 0.11, 0.09, pants, { colors: { '+y': 0x33466a } });
+  b.with({ chalk: 1 }, () => b.segment([-0.02, 0.132, 0.0], [0.33, 0.185, 0.0], 0.018, 0.008, C.uniformStripe));
+  // 膝盖 → 大腿，抬到椅面
+  b.segment([0.6, 0.18, 0], [0.8, 0.44, 0], 0.13, 0.12, pants);
+  // 椅面边缘与一条椅腿（坐着的人在车道外）
+  b.box([0.86, 0.42, 0], [0.16, 0.04, 0.36], C.deskTop, { colors: { '+y': 0xb9b4a8 } });
+  for (const z of [-0.15, 0.15]) b.box([0.92, 0.2, z], [0.03, 0.4, 0.03], C.deskLeg);
+}
+
 export default defineArchetype({
   id: 'footOut', material: 'lambert', cap: 24, tileS: false, tileX: false,
   variants: [
@@ -39,18 +57,7 @@ export default defineArchetype({
       name: 'seated', kind: 'footOut',
       build(b, d) {
         void d;
-        const pants = C.trousers;
-        // 鞋：鞋跟着地，鞋尖翘起朝 −x；鞋底浅色
-        b.segment([-0.06, 0.035, 0], [-0.28, 0.13, 0], 0.1, 0.075, C.shoe, { colors: { '-y': C.sole, '-z': 0x3a3f43 } });
-        b.box([-0.05, 0.075, 0], [0.07, 0.06, 0.085], 0xd9dee3);
-        // 小腿（校服裤）低低地横过车道，裤侧白条就是「顶边一道粉笔白」
-        b.segment([-0.04, 0.085, 0], [0.6, 0.18, 0], 0.11, 0.09, pants, { colors: { '+y': 0x33466a } });
-        b.with({ chalk: 1 }, () => b.segment([-0.02, 0.132, 0.0], [0.33, 0.185, 0.0], 0.018, 0.008, C.uniformStripe));
-        // 膝盖 → 大腿，抬到椅面
-        b.segment([0.6, 0.18, 0], [FOOT_HIP.x, FOOT_HIP.y, 0], 0.13, 0.12, pants);
-        // 椅面边缘与一条椅腿（坐着的人在车道外）
-        b.box([FOOT_HIP.x + 0.06, FOOT_HIP.y - 0.02, 0], [0.16, 0.04, 0.36], C.deskTop, { colors: { '+y': 0xb9b4a8 } });
-        for (const z of [-0.15, 0.15]) b.box([FOOT_HIP.x + 0.12, (FOOT_HIP.y - 0.04) / 2, z], [0.03, FOOT_HIP.y - 0.04, 0.03], C.deskLeg);
+        b.withMatrix(new THREE.Matrix4().makeRotationY(FOOT_YAW), () => leg(b));
       },
     },
   ],
@@ -67,9 +74,9 @@ export default defineArchetype({
     if (e < 1) {
       // 绕髋部转：脚收到座位前面（世界 −z 方向，即 +s）
       const yaw = (side > 0 ? -1 : 1) * (1 - e) * 1.4;
-      _t.makeTranslation(FOOT_HIP.x, 0, 0);
+      _t.makeTranslation(FOOT_HIP.x, 0, FOOT_HIP.z);
       _r.makeRotationY(yaw);
-      _m.multiply(_t).multiply(_r).multiply(_t.makeTranslation(-FOOT_HIP.x, 0, 0));
+      _m.multiply(_t).multiply(_r).multiply(_t.makeTranslation(-FOOT_HIP.x, 0, -FOOT_HIP.z));
       // 收回时膝盖略抬
       _m.multiply(_r.makeTranslation(0, 0.03 * (1 - e), 0));
     }

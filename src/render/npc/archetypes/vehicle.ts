@@ -33,7 +33,7 @@ export default defineArchetype({
         b.box([0, 1.05, -0.15], [2 * hx - 0.08, 0.6, 2.1], C.line, { colors: { '+x': C.puddle, '-x': C.puddle, '+z': C.puddle, '-z': C.puddle, '+y': 0x46515c } });
         b.segment([0, 0.75, 0.9], [0, 1.2, 0.72], 2 * hx - 0.1, 0.06, C.puddle);
         b.segment([0, 0.75, -1.3], [0, 1.2, -1.08], 2 * hx - 0.1, 0.06, C.puddle);
-        for (const s of [-1, 1]) for (const z of [-1.3, 1.3]) b.box([s * (hx - 0.03), 0.31, z], [0.1, 0.62, 0.62], C.hair);
+        for (const s of [-1, 1]) for (const z of [-1.3, 1.3]) b.box([s * (hx - 0.05), 0.31, z], [0.1, 0.62, 0.62], C.hair);
         b.box([0, 0.3, hz + 0.01], [2 * hx, 0.14, 0.04], C.dark);
         for (const s of [-1, 1]) b.box([s * (hx - 0.14), 0.62, hz + 0.012], [0.2, 0.07, 0.02], C.lowSteady);
         // 描边沿着真实轮廓：车尾（0.2–0.75）+ 车厢近端（0.75–1.35）

@@ -17,7 +17,7 @@ export default defineArchetype({
         b.box([0.16, 0.25, -0.1], [0.24, 0.24, 0.4], 0x9aa3a4, { colors: { '+y': 0xb7bdbb } });
         b.box([0.12, 0.68, 0.05], [0.3, 0.3, 0.3], C.grout, { colors: { '+y': 0xb7bdbb } });
         b.box([-0.15, 0.62, -0.15], [0.2, 0.18, 0.3], 0x5b6468);
-        b.box([hx + 0.03, 0.62, -0.05], [0.05, 0.5, 0.36], C.darker);
+        b.box([hx - 0.05, 0.62, -0.05], [0.05, 0.5, 0.36], C.darker);
         b.box([0, 0.99, -hz], [2 * hx, 0.03, 0.03], C.steel);
         for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box([sx * (hx - 0.03), 0.04, sz * (hz - 0.04)], [0.04, 0.08, 0.08], C.hair);
         blockEdges(b, d.vw - 0.01, d.vd - 0.01, 1.0);

@@ -28,13 +28,15 @@ export function slitShadow(b: PartBuilder, w: number, depth: number, z = 0): voi
 /** block：近端两条竖棱 + 近端顶棱（竖棱 aChalk = 1，顶棱 0.6）。 */
 export function blockEdges(b: PartBuilder, halfX: number, halfZ: number, h: number, o: { y0?: number; far?: boolean } = {}): void {
   const y0 = o.y0 ?? 0;
+  // 描边向内缩 1 cm，不让模型比碰撞盒外扩超过 5 cm
+  const ex = halfX - 0.009, ez = halfZ - 0.009;
   b.with({ chalk: 1 }, () => {
-    for (const x of [-halfX, halfX]) {
-      b.box([x, (y0 + h) / 2, halfZ], [0.02, h - y0, 0.02], C.secondary);
-      if (o.far) b.box([x, (y0 + h) / 2, -halfZ], [0.02, h - y0, 0.02], C.secondary);
+    for (const x of [-ex, ex]) {
+      b.box([x, (y0 + h) / 2, ez], [0.02, h - y0, 0.02], C.secondary);
+      if (o.far) b.box([x, (y0 + h) / 2, -ez], [0.02, h - y0, 0.02], C.secondary);
     }
   });
-  b.with({ chalk: 0.6 }, () => b.box([0, h - 0.01, halfZ], [2 * halfX, 0.02, 0.02], C.chalkLine));
+  b.with({ chalk: 0.6 }, () => b.box([0, h - 0.01, ez], [2 * ex, 0.02, 0.02], C.chalkLine));
 }
 
 /** 竖直圆柱体上的两条近端竖向描边（圆桶、路桩用）。 */

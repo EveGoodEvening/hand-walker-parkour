@@ -27,6 +27,7 @@ import { CRAWL, Crawlers, type Crawler } from './Crawlers';
 import { expandChapter, lowerBound, type Decor, type GroupInfo } from './crowds';
 import { HitboxDebug } from './hitboxDebug';
 import { BODY, LegForest, STAND_HIP, newPerson, type Person } from './LegForest';
+import { KNEELER_BOY, KNEELER_CROWD } from './archetypes/kneeler';
 import { obstacleState, type ObstacleState } from './simBridge';
 import { crowdOfKit, emberGlow, itemIdOf, lookFor, specialLook, specialOfObstacle, type Look, type SpecialId } from './specials';
 
@@ -102,7 +103,7 @@ export class ObstacleView implements ViewSystem {
     this.pc = {
       o: null as unknown as CompiledObstacle, st: this.st, floorY: 0, tSeg: 0, beat: -1, t: 0, knockedAt: null,
       chapter: 'ch1', kit: 'placeholder', playerX: 0, playerS: 0, partX: 0, bps: 5,
-      side: (id, m, variant, glow) => { const p = this.pools.get(id); if (p) p.push(m, p.variantIndex(variant), glow ?? 0); },
+      side: (id, m, variant, glow, color) => { const p = this.pools.get(id); if (p) p.push(m, p.variantIndex(variant), glow ?? 0, color); },
     };
   }
 
@@ -198,7 +199,9 @@ export class ObstacleView implements ViewSystem {
       case 'ask': {
         this.asks.set(e.data.targetId, { t, part: e.data.result === 'part' });
         const p = snap.player;
+        // 「附近的鞋尖全转过来」
         this.gazeEvents.push({ t: t + 0.3, s: p.s, x: p.x, r: 6, group: -1 });
+        this.trimEvents(t);
         break;
       }
       case 'note': this.taken.add(e.data.id); break;
@@ -218,6 +221,7 @@ export class ObstacleView implements ViewSystem {
   private trimEvents(t: number): void {
     this.gazeEvents = this.gazeEvents.filter((g) => t - g.t < GAZE_TOTAL + 1);
     if (this.silences.length > 8) this.silences.splice(0, this.silences.length - 8);
+    if (this.knocked.size > 64) for (const [id, tk] of this.knocked) if (t - tk > 30) this.knocked.delete(id);
   }
 
   findObstacle(id: number): CompiledObstacle | undefined {
@@ -255,7 +259,7 @@ export class ObstacleView implements ViewSystem {
   }
 
   // ——————————————————— 每帧 ———————————————————
-  frame(prev: SimSnapshot, next: SimSnapshot, alpha: number): void {
+  frame(prev: SimSnapshot, next: SimSnapshot, alpha: number, _dt = 0): void {
     const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
     this.lastSnap = next;
     for (const p of this.pools.values()) p.begin();
@@ -325,7 +329,7 @@ export class ObstacleView implements ViewSystem {
       pc.o = o; pc.floorY = floorY; pc.knockedAt = this.knocked.get(o.id) ?? null;
       const ask = this.asks.get(o.id);
       pc.partX = ask && ask.part ? this.partDir(o, st) * partOffset(f.t - ask.t) : 0;
-      if (this.hitbox) this.hitbox.obstacle(o, st, floorY, this.box);
+      if (this.hitbox) this.hitbox.obstacle(o, st, floorY, this.box, pc.knockedAt !== null);
       if (this.chenFootIds.has(o.id)) continue;               // 陈默的脚由陈默自己画
       if (o.archetype === 'legs') { this.legsObstacle(o, st, seg, f, cur, kit, variant, floorY); continue; }
       if (o.archetype === 'crawler') { this.crawlerObstacle(o, st, f, tSeg, floorY); continue; }
@@ -349,24 +353,24 @@ export class ObstacleView implements ViewSystem {
     const cx = (pc.st.x0 + pc.st.x1) / 2, zc = -((o.s0 + o.s1) / 2 + pc.st.ds);
     const boy = this.specials.get(o.id) === 'dreamBoy';
     const b = o.behavior;
-    let x = cx, variant = boy ? 'boyKneel' : 'kneel', roll = 0, pitch = 0;
+    let x = cx, variant = 'kneel', roll = 0, pitch = 0;
     if (b.type === 'fallInto') {
       // 摔进车道：画面在碰撞生效前 0.45 s 开始倒（先看见、后碰到）；之前跪在车道旁边（≥ 1.2 s 可见）
       const lead = 0.45 * f.bps;
       const u = pc.beat < 0 ? 0 : clamp01((pc.beat - (b.atBeat - lead)) / lead);
       const side = cx >= 0 ? 1 : -1;
       x = lerp(cx + side * 0.78, cx, easeInOutSine(u));
-      if (u >= 0.6) variant = boy ? 'boyFallen' : 'fallen';
+      if (u >= 0.6) variant = 'fallen';
       else roll = -side * u * 0.9;
     } else if (pc.knockedAt !== null && f.t - pc.knockedAt > 0.15) {
-      variant = boy ? 'boyFallen' : 'fallen';
+      variant = 'fallen';
     } else {
       const tr = tremble(f.tAnim, o.id);
       roll = tr.roll; pitch = tr.pitch;
     }
     this.m.makeRotationFromEuler(_e.set(pitch, 0, roll));
     this.m.setPosition(x, pc.floorY, zc);
-    pool.push(this.m, pool.variantIndex(variant), 0);
+    pool.push(this.m, pool.variantIndex(variant), 0, boy ? KNEELER_BOY : KNEELER_CROWD);
     return true;
   }
 
@@ -561,7 +565,7 @@ export class ObstacleView implements ViewSystem {
         const tr = tremble(f.tAnim, i);
         this.m.makeRotationFromEuler(_e.set(tr.pitch, d.yaw, tr.roll));
         this.m.setPosition(d.x, floorY, -sN);
-        pool.push(this.m, pool.variantIndex('kneel'), 0);
+        pool.push(this.m, pool.variantIndex('kneel'), 0, KNEELER_CROWD);
         continue;
       }
       if (this.forest.people >= npcMax) continue;
@@ -625,6 +629,14 @@ export class ObstacleView implements ViewSystem {
   }
 
   get time(): number { return this.lastT; }
+  /** 人的动画时钟（「安静的一秒」里不走）。 */
+  animClock(t: number): number { return silenceClock(t, this.silences); }
+  /** 当前帧线框的全部顶点（测试用）。 */
+  hitboxLines(): number[] { return this.hitbox ? this.hitbox.allPositions() : []; }
+  /** 内部表的大小（测试用：长时间运行不增长）。 */
+  internalSizes(): { gazeMemo: number; gazeEvents: number; knocked: number; asks: number; silences: number } {
+    return { gazeMemo: this.gazeMemo.size, gazeEvents: this.gazeEvents.length, knocked: this.knocked.size, asks: this.asks.size, silences: this.silences.length };
+  }
   get currentSegment(): number { return this.segIndex; }
   get obstacleSpec(): typeof OBSTACLES { return OBSTACLES; }
 }

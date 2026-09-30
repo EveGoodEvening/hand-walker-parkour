@@ -66,7 +66,7 @@ export interface PlaceCtx {
   /** 当前步频（拍 / 秒），把「秒」换成「拍」用。 */
   bps: number;
   /** 往另一个原型池里放一个附属实例（例如 reach 两侧跪着的人）。 */
-  side(id: ArchetypeId, m: THREE.Matrix4, variant: string, glow?: number): void;
+  side(id: ArchetypeId, m: THREE.Matrix4, variant: string, glow?: number, color?: THREE.Color): void;
 }
 
 export interface VariantDef {
@@ -83,6 +83,8 @@ export interface ArchetypeDef {
   variants: VariantDef[];
   /** 超长 / 多车道时是否拆成多个实例平铺（缺省 true）。 */
   tileS?: boolean; tileX?: boolean;
+  /** 实例是否带颜色（instanceColor；顶点 aHw.z = 1 的部分被着色）。 */
+  color?: boolean;
   /** 由其他系统负责（legs → LegForest，crawler → Crawlers）：不建自己的 InstancedMesh。 */
   delegate?: 'forest' | 'crawlers';
   /** 自定义放置（开门、伸脚、红灯……）；返回 false 表示走通用放置。 */
@@ -112,7 +114,8 @@ export class ArchetypePoolImpl implements ArchetypePool {
   private readonly byKind = new Map<string, number>();
   private readonly byName = new Map<string, number>();
   /** 本帧第 slot 个 place() 对应的障碍（hit(slot) 用）。 */
-  private readonly slots: CompiledObstacle[] = [];
+  private readonly slots: Array<CompiledObstacle | undefined> = [];
+  private readonly slotT: number[] = [];
   /** hit(slot) 记录的碰倒（契约接口；ObstacleView 用自己的碰倒表）。 */
   readonly knocks = new Map<number, number>();
   private readonly pc: PlaceCtx;
@@ -128,7 +131,7 @@ export class ArchetypePoolImpl implements ArchetypePool {
       this.byName.set(v.name, i);
     });
     this.geo = b.build();
-    this.pool = new InstPool(`archetype:${def.id}`, this.geo, mat, cap, def.material === 'decal' ? { renderOrder: -15 } : {});
+    this.pool = new InstPool(`archetype:${def.id}`, this.geo, mat, cap, { ...(def.material === 'decal' ? { renderOrder: -15 } : {}), color: def.color === true });
     this.pc = {
       o: null as unknown as CompiledObstacle, st: { active: true, ds: 0, x0: 0, x1: 0, amount: 1 }, floorY: 0, tSeg: 0, beat: -1, t: 0,
       knockedAt: null, chapter: 'ch1', kit: 'placeholder', playerX: 0, playerS: 0, partX: 0, bps: 5, side: () => { /* 独立使用时没有附属实例 */ },
@@ -141,19 +144,36 @@ export class ArchetypePoolImpl implements ArchetypePool {
   variantOf(kind: ObstacleKind): number { return this.byKind.get(kind) ?? 0; }
   get variantNames(): string[] { return this.def.variants.map((v) => v.name); }
 
-  begin(): void { this.pool.begin(); this.slots.length = 0; }
+  begin(): void { this.pool.begin(); }
   end(): void { this.pool.end(); }
 
-  /** 契约接口：按段内时间 t 放置（非 ObstacleView 的独立用法；测试也用它）。 */
+  /**
+   * 契约接口（§8.4 ArchetypePool）：按槽位持久放置，每次 place / hide 都按全部槽位重画。
+   * ObstacleView 不走这里（它每帧 begin → placeEx… → end，按帧紧凑排列）。
+   */
   place(slot: number, o: CompiledObstacle, t: number): void {
-    const c = this.pc;
-    c.o = o; obstacleState(o, t, Number.POSITIVE_INFINITY, c.st); c.floorY = 0; c.tSeg = t; c.beat = -1; c.t = t;
-    c.knockedAt = this.knocks.get(o.id) ?? null; c.partX = 0;
     this.slots[slot] = o;
-    this.placeEx(c);
+    this.slotT[slot] = t;
+    this.redrawSlots();
   }
-  hit(slot: number, _sev: HitSeverity): void { const o = this.slots[slot]; if (o && o.cls === 'low') this.knocks.set(o.id, this.pc.t); }
-  hide(slot: number): void { if (slot < this.slots.length) this.slots.length = slot; }
+  hit(slot: number, _sev: HitSeverity): void {
+    const o = this.slots[slot];
+    if (o && o.cls === 'low') { this.knocks.set(o.id, this.slotT[slot] ?? 0); this.redrawSlots(); }
+  }
+  hide(slot: number): void { delete this.slots[slot]; this.redrawSlots(); }
+
+  private redrawSlots(): void {
+    const c = this.pc;
+    this.pool.begin();
+    this.slots.forEach((o, slot) => {
+      if (!o) return;
+      const t = this.slotT[slot] ?? 0;
+      c.o = o; obstacleState(o, t, Number.POSITIVE_INFINITY, c.st); c.floorY = 0; c.tSeg = t; c.beat = -1; c.t = t;
+      c.knockedAt = this.knocks.get(o.id) ?? null; c.partX = 0;
+      this.placeEx(c);
+    });
+    this.pool.end();
+  }
 
   /** 扩展放置：ObstacleView 用。 */
   placeEx(c: PlaceCtx): void {
@@ -198,7 +218,7 @@ export class ArchetypePoolImpl implements ArchetypePool {
   }
 
   /** 直接压入一个矩阵（自定义放置用）。 */
-  push(m: THREE.Matrix4, variant: number, glow = 0): void { this.pool.push(m, variant, glow); }
+  push(m: THREE.Matrix4, variant: number, glow = 0, color?: THREE.Color): void { this.pool.push(m, variant, glow, color); }
 }
 
 /** 原型池的材质：Lambert（顶点色 + WP3 的 LampField + 本包补丁）；soft 用反光贴花（Basic、透明、随 LampField 明暗）。 */

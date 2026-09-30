@@ -11,15 +11,13 @@ import type { CrowdOp, HitSeverity } from '../../core/types';
 import { urlParams } from '../../core/urlParams';
 import type { CompiledObstacle } from '../../levels/schema';
 import { factoryOf, type ArchetypeDef } from './archetype';
+import { ARCHETYPE_DEFS } from './defs';
 import { Crawlers } from './Crawlers';
 import { LegForest, newPerson } from './LegForest';
 import { ObstacleView } from './ObstacleView';
 import { obstacleState } from './simBridge';
 import { lookFor } from './specials';
 import { STAGE_NAMES, makeStage, toStage, type StageName } from './stage';
-
-const modules = import.meta.glob<{ default: ArchetypeDef }>('./archetypes/*.ts', { eager: true });
-export const ARCHETYPE_DEFS: ArchetypeDef[] = Object.values(modules).map((m) => m.default).sort((a, b) => a.id.localeCompare(b.id));
 
 export const npcView = new ObstacleView(ARCHETYPE_DEFS);
 registerViewSystem(npcView);

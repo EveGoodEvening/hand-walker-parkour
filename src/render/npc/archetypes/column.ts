@@ -21,7 +21,7 @@ export default defineArchetype({
     {
       name: 'pillar', kind: 'pillar',
       build(b, d) {
-        const hx = d.vw, hz = d.vd;
+        const hx = d.vw - 0.012, hz = d.vd - 0.012;
         b.box([0, 1.5, 0], [2 * hx, 3.0, 2 * hz], C.wall, { colors: { '+z': 0xbfc5c5 } });
         b.box([0, 0.5, 0], [2 * hx + 0.01, 1.0, 2 * hz + 0.01], C.wainscot, { faces: '+x-x+z-z' });
         b.box([0, 1.01, 0], [2 * hx + 0.02, 0.03, 2 * hz + 0.02], C.wainscotTop, { faces: '+x-x+z-z+y' });
@@ -32,7 +32,7 @@ export default defineArchetype({
       name: 'locker', kind: 'locker',
       build(b, d) {
         // 一格储物柜（沿 s 两扇门）；门面在 ±x 两侧都画（放在哪一侧都朝向车道）
-        const hx = d.vw - 0.01, hz = d.vd;
+        const hx = d.vw - 0.015, hz = d.vd - 0.005;
         b.box([0, 0.9, 0], [2 * hx, 1.8, 2 * hz], 0x7e8f99, { colors: { '+y': 0x8d9ca5, '+z': 0x72838c } });
         for (const s of [-1, 1]) {
           b.box([s * (hx + 0.002), 0.95, 0], [0.004, 1.6, 0.012], C.line);

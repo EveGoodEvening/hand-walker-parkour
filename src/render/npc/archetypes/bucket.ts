@@ -29,7 +29,7 @@ export default defineArchetype({
         b.prism([0, 0.024, 0], 0.125, 0.09, 0.12, 8, C.trackLine, { top: C.trackLine });
         b.prism([0, 0.144, 0], 0.09, 0.062, 0.08, 8, C.dark, { top: C.dark });
         b.prism([0, 0.224, 0], 0.062, 0.03, 0.12, 8, C.trackLine, { top: C.trackLine });
-        b.with({ chalk: 1 }, () => b.prism([0, 0.344, 0], 0.03, 0.012, 0.05, 8, C.chalkWhite, { top: C.chalkWhite }));
+        b.with({ chalk: 1 }, () => b.prism([0, 0.344, 0], 0.03, 0.012, 0.044, 8, C.chalkWhite, { top: C.chalkWhite }));
       },
     },
   ],

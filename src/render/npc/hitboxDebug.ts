@@ -65,12 +65,12 @@ export class HitboxDebug {
   }
 
   /** 画一个障碍：外层盒 + （bar / block）内层盒。 */
-  obstacle(o: CompiledObstacle, st: ObstacleState, floorY: number, tmp: AABB): void {
+  obstacle(o: CompiledObstacle, st: ObstacleState, floorY: number, tmp: AABB, knocked = false): void {
     obstacleAABB(o, st, tmp);
     const hex = CLASS_COLOR[o.cls];
-    const k = st.active ? 1 : 0.35;
-    this.box(tmp, floorY, hex, k);
-    if (st.active && (o.cls === 'bar' || o.cls === 'block')) {
+    const live = st.active && !knocked;                 // 被碰倒的 low 不再参与碰撞（sim 的 knocked 表）
+    this.box(tmp, floorY, hex, live ? 1 : 0.35);
+    if (live && (o.cls === 'bar' || o.cls === 'block')) {
       const c = (tmp.x0 + tmp.x1) / 2, h = ((tmp.x1 - tmp.x0) / 2) * LETHAL_SHRINK;
       tmp.x0 = c - h; tmp.x1 = c + h;
       this.box(tmp, floorY, hex, 0.55);
@@ -87,6 +87,8 @@ export class HitboxDebug {
   }
 
   get count(): number { return this.n; }
+  /** 本帧全部线段端点（测试用）。 */
+  allPositions(): number[] { return Array.from(this.pos.subarray(0, this.n * 72)); }
   /** 第 i 个盒子的 8 个角（测试用）。 */
   corners(i: number): number[] { return Array.from(this.pos.subarray(i * 72, i * 72 + 72)); }
 }

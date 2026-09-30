@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { defineArchetype, type PlaceCtx } from '../archetype';
 import { C } from '../colors';
 import { barLine, slitShadow, stripedBar } from '../shapes';
+import { KNEELER_CROWD } from './kneeler';
 
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1);
 
@@ -85,7 +86,7 @@ export default defineArchetype({
         for (const s of [-1, 1]) {
           b.segment([s * (d.vw - 0.02), 0.49, 0], [s * 0.3, 0.46, 0], 0.08, 0.075, 0x9aa3a6);
           b.segment([s * 0.3, 0.46, 0], [s * 0.07, 0.44, 0], 0.07, 0.065, 0x9aa3a6);
-          b.box([s * 0.04, 0.435, 0], [0.07, 0.03, 0.08], C.skin);
+          b.box([s * 0.03, 0.435, 0], [0.07, 0.03, 0.08], C.skin);
           b.with({ chalk: 1 }, () => b.segment([s * (d.vw - 0.02), 0.455, 0.03], [s * 0.08, 0.41, 0.03], 0.015, 0.01, C.chalkWhite));
         }
         slitShadow(b, 2 * d.vw - 0.2, 0.5);
@@ -109,7 +110,7 @@ export default defineArchetype({
         _p.set(cx + s * 0.74, c.floorY, zc - 0.02);
         _q.identity();
         _m.compose(_p, _q, _s);
-        c.side('kneeler', _m, s < 0 ? 'reachL' : 'reachR');
+        c.side('kneeler', _m, s < 0 ? 'reachL' : 'reachR', 0, KNEELER_CROWD);
       }
       return true;
     }

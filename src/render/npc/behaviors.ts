@@ -13,7 +13,7 @@ export const GAZE_MAX = 100 * DEG;
 /** 凝视程度 0..1：dt 为触发后经过的秒数。 */
 export function gazeAmount(dt: number): number {
   if (dt < 0) return 0;
-  if (dt < GAZE.turn) return easeInOutSine(dt / GAZE.turn);
+  if (dt < GAZE.turn) return easeInOutSine(dt / GAZE.turn) + 0;
   if (dt < GAZE.turn + GAZE.hold) return 1;
   const u = (dt - GAZE.turn - GAZE.hold) / GAZE.back;
   return u >= 1 ? 0 : 1 - easeInOutSine(u);
@@ -86,15 +86,22 @@ export function idleSway(t: number, phase: number): { dx: number; knee: number; 
 export const SILENCE = { hold: 1.0, recover: 0.6 } as const;
 export function silenceClock(t: number, starts: readonly number[]): number {
   let lost = 0;
-  for (const t0 of starts) {
-    if (t <= t0) break;
-    const a = Math.min(t, t0 + SILENCE.hold) - t0;
-    lost += a;
-    if (t > t0 + SILENCE.hold) {
-      // 恢复段：速度从 0 线性升到 1，损失 = ∫(1 − v) = recover / 2（完整时）
-      const u = Math.min(t - t0 - SILENCE.hold, SILENCE.recover) / SILENCE.recover;
-      lost += SILENCE.recover * (u - u * u / 2);
+  const n = starts.length;
+  let i = 0;
+  while (i < n) {
+    const a = starts[i] as number;
+    if (t <= a) break;
+    // 重叠的静止合并成一段
+    let end = a + SILENCE.hold, j = i + 1;
+    while (j < n && (starts[j] as number) < end) { end = Math.max(end, (starts[j] as number) + SILENCE.hold); j++; }
+    lost += Math.min(t, end) - a;
+    if (t > end) {
+      // 恢复段：速度从 0 线性升到 1；下一次静止开始时截断
+      const next = j < n ? (starts[j] as number) : Number.POSITIVE_INFINITY;
+      const u = (Math.min(t, end + SILENCE.recover, next) - end) / SILENCE.recover;
+      lost += SILENCE.recover * (u - (u * u) / 2);
     }
+    i = j;
   }
   return t - lost;
 }
@@ -127,7 +134,7 @@ export function shiftBlend(t: number, tAt: number): { turn: number; move: number
   if (dt >= -SHIFT.warn) turn = easeInOutSine(clamp01((dt + SHIFT.warn) / SHIFT.turnIn));
   if (dt > SHIFT.moveAfter) turn *= 1 - clamp01((dt - SHIFT.moveAfter) / SHIFT.settle);
   const move = easeInOutSine(clamp01((dt + SHIFT.moveBefore) / (SHIFT.moveBefore + SHIFT.moveAfter)));
-  return { turn, move };
+  return { turn: turn + 0, move: move + 0 };
 }
 
 /** 梦中鼓掌（applaud）：两臂在胸前开合，每秒约 3 下；返回此刻手是否合在一起。 */
