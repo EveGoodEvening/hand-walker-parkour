@@ -23,3 +23,5 @@
 - SwiftShader 预算：角色（主角/倒影/影子）一律用"刚性蒙皮"合并成 1 个 SkinnedMesh（每顶点 skinIndex=部位骨骼、weight=1），不要用每部位一个 Mesh 的层级（约 18 draw call × 替身数会直接超出低档 50–60 的总预算）。平面影子可用 `DetachedBindMode` + bindMatrix=I，把投影矩阵设为影子 mesh 的 matrixWorld（`matrixAutoUpdate=false`，`frustumCulled=false`，MeshBasic）。
 - 设计定稿见 `docs/DESIGN.md`（v1.0，唯一权威）。易错点：1 拍 = 1 掌（单手落地），清醒时步幅 1.0–1.1 m、梦里 1.3–1.5 m，支撑期身体只前移 0.6 m；倒影的「慢半拍」在画面上按秒算（0.35 s，头部 0.6 s），不按拍换算，因为 5 掌/s 时半拍只有 0.1 s，肉眼看不出来。
 - 引用原文前先用脚本对五章原文做子串检查。常见陷阱：「疼。每天都疼。」原文中间隔着「我说」，要拆成两句；「它在所有能反光的地方，」原文后面是逗号；第二章的 "让一下。" "别。" 原文用的是 ASCII 双引号；跨段落的句子（如「我猛地回头。」「走廊空了。」）要拆开引用。
+- git 提交信息里**不要**写 AI 署名尾注（Co-Authored-By 之类），本机 PreToolUse hook 会直接拦截整条 Bash 命令（它扫描整条命令文本，包括同一命令里的 heredoc 内容，所以写文件和 git commit 要分成两条命令）。
+- 开发在 `feat/parkour-game` 分支（`main` 保持空）；并行工作包在各自 worktree 的 `wp/<WP>` 分支上提交，由 lead 按顺序合并。各工作包把 lessons 写到 `docs/lessons/<WP>.md`（避免 AGENTS.md 合并冲突），lead 集成时汇总到这里。
