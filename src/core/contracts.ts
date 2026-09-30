@@ -44,7 +44,7 @@ export interface SimAPI {
   skipStill?(): void;
   /** 辅助模式（§7.3）。 */
   setAssist?(on: boolean): void;
-  /** 当前自动驾驶的求解计划（__game.plan）。 */
+  /** 当前求解计划（__game.plan）：自动驾驶在执行的计划；自动驾驶关闭时从当前状态现解一次。 */
   currentPlan?(): Plan | null;
 }
 /** 求解结果（§2.8 R2）。s 为可选扩展：动作开始时玩家的里程（CORE 求解器总会填写）。 */

@@ -1,0 +1,39 @@
+{
+  "$comment": "文件所有权（DESIGN.md §8.2、§8.11）。CORE 冻结，只有 lead 能改。键 = 所有者，值 = glob 列表（** 跨目录，* 不跨目录，{a,b} 任选）。每个文件恰好一个所有者；APPEND 里的文件只能追加（不得删改已有行）。npm run check:owners 检查覆盖率，并在 wp/<ID> 分支上检查越界。",
+  "lead": ["AGENTS.md", "docs/DESIGN.md", ".gitignore"],
+  "CORE": [
+    "package.json", "package-lock.json", "index.html", "tsconfig.json", "vitest.config.ts", "OWNERS.json",
+    "src/main.ts", "src/core/**", "src/levels/schema.ts", "src/levels/obstacles.ts", "src/levels/chapters/index.ts",
+    "src/levels/chapters/test.ts", "src/render/kits/placeholder.ts", "src/render/sets/placeholder.ts",
+    "scripts/check-single.mjs", "scripts/check-owners.mjs", "scripts/browser-lock.mjs", "scripts/e2e-lib.mjs",
+    "scripts/e2e-smoke.mjs", "scripts/shot.mjs", "tests/unit/core/**"
+  ],
+  "WP1": [
+    "src/sim/**", "src/levels/compile.ts", "src/levels/shorthand.ts", "src/levels/patterns.ts", "src/levels/validate.ts",
+    "vite.config.ts", "README.md", "scripts/validate-levels.ts", "scripts/verify.mjs", "scripts/e2e-chapters.mjs",
+    "scripts/e2e-perf.mjs", "scripts/e2e-visual.mjs", "scripts/bot-difficulty.mjs", "scripts/chapters-list.mjs", "tests/unit/sim/**", "tests/unit/levels/**"
+  ],
+  "WP2": [
+    "src/levels/chapters/ch{1,2,3,4,5}.ts", "src/levels/lines.ts", "src/levels/kitSymbols.ts", "src/levels/sourceQuotes.ts",
+    "src/levels/lint.ts", "tests/unit/content/**"
+  ],
+  "WP3": [
+    "src/render/*.ts", "src/render/textures/common.ts", "src/render/textures/school.ts",
+    "src/render/kits/school/**", "src/render/sets/school/**", "tests/unit/render/**", "tests/visual/WP3.json"
+  ],
+  "WP4": [
+    "src/render/kits/outside/**", "src/render/sets/outside/**", "src/render/weather/**", "src/render/textures/outdoor.ts",
+    "tests/unit/outside/**", "tests/visual/WP4.json"
+  ],
+  "WP5": ["src/render/actors/**", "src/render/camera/**", "tests/unit/actors/**", "tests/visual/WP5.json"],
+  "WP6": ["src/render/npc/**", "tests/unit/npc/**", "tests/visual/WP6.json"],
+  "WP7": ["src/audio/**", "tests/unit/audio/**"],
+  "WP8": ["src/ui/**", "src/input/**", "tests/unit/ui/**", "tests/e2e-touch.mjs", "tests/visual/WP8.json"],
+  "APPEND": {
+    "docs/lessons/WP1.md": "WP1", "docs/lessons/WP2.md": "WP2", "docs/lessons/WP3.md": "WP3", "docs/lessons/WP4.md": "WP4",
+    "docs/lessons/WP5.md": "WP5", "docs/lessons/WP6.md": "WP6", "docs/lessons/WP7.md": "WP7", "docs/lessons/WP8.md": "WP8",
+    "docs/contract-requests/WP1.md": "WP1", "docs/contract-requests/WP2.md": "WP2", "docs/contract-requests/WP3.md": "WP3",
+    "docs/contract-requests/WP4.md": "WP4", "docs/contract-requests/WP5.md": "WP5", "docs/contract-requests/WP6.md": "WP6",
+    "docs/contract-requests/WP7.md": "WP7", "docs/contract-requests/WP8.md": "WP8"
+  }
+}

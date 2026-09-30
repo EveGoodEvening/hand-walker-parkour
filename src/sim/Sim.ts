@@ -81,7 +81,7 @@ export class Sim implements SimAPI {
   private modeT = 0;
   private assist = false;
 
-  constructor(solver: SolverAPI) {
+  constructor(private readonly solver: SolverAPI) {
     this.autopilot = new Autopilot(solver);
   }
 
@@ -203,8 +203,13 @@ export class Sim implements SimAPI {
     this.nextSegment();
   }
 
-  /** 当前求解计划（__game.plan）。 */
-  currentPlan() { return this.autopilot.currentPlan(); }
+  /** 当前求解计划（__game.plan）：自动驾驶开着时是它正在执行的计划，否则从当前状态现解一次。 */
+  currentPlan() {
+    const ap = this.autopilot.active ? this.autopilot.currentPlan() : null;
+    if (ap) return ap;
+    if (!this.seg || this.seg.kind !== 'run') return null;
+    return this.solver.solve(this.seg, { from: { s: this.pace.s, lane: this.P.laneTarget, tSeg: this.pace.tSeg }, cadenceMul: this.globalMul() });
+  }
   get compiled(): CompiledChapter | null { return this.ch; }
   get isEnded(): boolean { return this.ended; }
   get fallTime(): number { return this.fallT; }
@@ -277,6 +282,8 @@ export class Sim implements SimAPI {
     const s = seg.kind === 'run' ? seg.s0 + b * seg.stride : seg.s0;
     const tSeg = seg.kind === 'run' ? seg.timeAt(b) : 0;
     this.enterSegment(i, s, tSeg, b);
+    this.modePrev = seg.kind === 'run' ? 'crawl' : 'still';
+    this.modeT = 0;
     this.steady.setMax(Steady.maxFor(this.follower.mode, this.follower.steadyMaxOverride, this.assist));
     if (isRetry || isLoad) this.steady.fill();
     const segDefSteady = seg.def.follower.steady;

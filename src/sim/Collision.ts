@@ -1,5 +1,6 @@
 // src/sim/Collision.ts —— 双层碰撞盒与受击结算（DESIGN.md §2.4、§2.5）。CORE 编写，归 WP1。
-// 外层 = 障碍表里的碰撞盒；内层 = 横向和 s 向各缩到 85%（lethalShrink）。竖直穿透 = 两盒 y 区间的重叠长度。
+// 外层 = 障碍表里的碰撞盒；内层 = 横向缩到 85%（lethalShrink；s 向不缩，见 classify 注释）。
+// 横档的竖直穿透 = 玩家盒顶 − 横档下沿（爬行 0.55 m 撞任何横档都 > 0.12 m，一定是撞；§2.4「爬行时……一定会撞上」）。
 //   low   ：外层相交 → 绊（−1），障碍被碰倒。
 //   bar   ：内层相交且竖直穿透 > 0.12（grazeY）→ 撞（−2），否则绊；伏低过渡中被擦到只算绊。
 //   block ：正面（上一 tick 横向已对齐）内层相交 → 撞，推到最近的空车道；外层擦边或侧面 → 绊，弹回原车道。
@@ -59,12 +60,14 @@ export function classify(p: AABB, prev: AABB, o: CompiledObstacle, ob: AABB, duc
     return { type: 'none' };
   }
   if (o.cls === 'low') return { type: 'hit', severity: 'stumble', mode: 'low' };
+  // 内层只在横向缩小：玩家沿 s 前进，第一次接触时一定先碰到外层的前沿，所以「是否会撞进内层」只取决于横向是否对准
+  //（§2.5 的「内层盒缩小 15%」对 s 方向不适用，否则正面冲撞永远先被判成擦边。这是 CORE 的解释，见 lead 汇报）。
   const k = H.lethalShrink;
   const [ix0, ix1] = shrink(ob.x0, ob.x1, k);
-  const [is0, is1] = shrink(ob.s0, ob.s1, k);
-  const inner = lt(p.x0, p.x1, ix0, ix1) && lt(p.s0, p.s1, is0, is1);
+  const inner = lt(p.x0, p.x1, ix0, ix1);
   if (o.cls === 'bar') {
-    const pen = Math.min(p.y1, ob.y1) - Math.max(p.y0, ob.y0);
+    // 竖直穿透 = 玩家盒顶高出横档下沿多少（不按横档厚度截断：拖把杆只有 8 cm 厚，爬行撞上去也必须是「撞」，§2.4）
+    const pen = p.y1 - ob.y0;
     if (inner && pen > H.grazeY && !ducking) return { type: 'hit', severity: 'crash', mode: 'barCrash' };
     return { type: 'hit', severity: 'stumble', mode: 'barGraze' };
   }

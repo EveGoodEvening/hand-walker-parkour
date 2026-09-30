@@ -1,0 +1,30 @@
+#!/usr/bin/env node
+// scripts/verify.mjs —— `npm run verify`（DESIGN.md §8.1）。CORE 写初版，归 WP1。
+// 依次：check:owners → typecheck → test → validate → build → check:single → e2e:smoke。任何一步失败立即停止，退出码非 0。
+// `--skip-e2e` 跳过需要浏览器的两步（check:single 只做静态检查，不跑 e2e:smoke）。
+import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
+
+const ROOT = resolve(new URL('..', import.meta.url).pathname);
+const skipE2e = process.argv.includes('--skip-e2e');
+const steps = [
+  ['check:owners', ['node', 'scripts/check-owners.mjs']],
+  ['typecheck', ['npx', 'tsc', '--noEmit', '-p', 'tsconfig.json']],
+  ['test', ['npx', 'vitest', 'run']],
+  ['validate', ['npx', 'tsx', 'scripts/validate-levels.ts']],
+  ['build', ['npx', 'vite', 'build', '--logLevel', 'warn']],
+  ['check:single', ['node', 'scripts/check-single.mjs', ...(skipE2e ? ['--static'] : [])]],
+  ...(skipE2e ? [] : [['e2e:smoke', ['node', 'scripts/e2e-smoke.mjs']]]),
+];
+const t0 = Date.now();
+for (const [name, [cmd, ...args]] of steps) {
+  const t = Date.now();
+  console.log(`\n▶ ${name}`);
+  const r = spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit' });
+  if (r.status !== 0) {
+    console.error(`\n✖ verify: ${name} failed (exit ${r.status ?? r.signal})`);
+    process.exit(r.status || 1);
+  }
+  console.log(`✔ ${name} (${((Date.now() - t) / 1000).toFixed(1)} s)`);
+}
+console.log(`\nverify: all green in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
