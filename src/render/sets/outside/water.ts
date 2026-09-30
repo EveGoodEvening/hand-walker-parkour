@@ -68,7 +68,7 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
         if (z > WATER_EDGE_Z - 0.4) continue;
         const yaw = Math.atan2(-(cx - x), -(cz - z));
         const tone = rng.next();
-        crawlerFigure(cg, x, z, yaw, mix(0x6a7888, 0x5a6674, tone), mix(C.skin, 0x9aa2a6, 0.6), 0.95);
+        crawlerFigure(cg, x, z, yaw, mix(0x7a848c, 0x6a747c, tone), mix(C.skin, 0x9aa2a6, 0.7), 0.95, 0x5a6268);
       }
     });
     crowd = b.lambert(cg, 'waterCrowd');

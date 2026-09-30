@@ -135,7 +135,7 @@ export function tileLinesX(g: OGeo, x0: number, za: number, zb: number, y0: numb
 }
 
 /** 爬行的人（倒影里用；没有五官）：躯干、头、两臂撑地、腿拖在后面。yaw：头朝向（0 = −z）。 */
-export function crawlerFigure(g: OGeo, x: number, z: number, yaw: number, body: number, skin: number, s = 1): void {
+export function crawlerFigure(g: OGeo, x: number, z: number, yaw: number, body: number, skin: number, s = 1, legs: number = C.pants): void {
   const c = Math.cos(yaw), sn = Math.sin(yaw);
   const P = (lx: number, ly: number, lz: number): V3 => [x + (lx * c + lz * sn) * s, ly * s, z + (-lx * sn + lz * c) * s];
   const box = (cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, col: number) => {
@@ -149,7 +149,7 @@ export function crawlerFigure(g: OGeo, x: number, z: number, yaw: number, body: 
   };
   box(0, 0.42, 0.05, 0.34, 0.2, 0.55, body);                 // 躯干（前倾）
   box(0, 0.36, 0.52, 0.28, 0.16, 0.5, shade(body, 0.85));    // 腰腿
-  box(0, 0.12, 0.95, 0.26, 0.1, 0.5, C.pants);               // 拖在后面的腿
+  box(0, 0.12, 0.95, 0.26, 0.1, 0.5, legs);                  // 拖在后面的腿
   box(0, 0.58, -0.33, 0.18, 0.2, 0.2, mix(skin, C.hair, 0.6)); // 头
   box(-0.2, 0.22, -0.2, 0.07, 0.44, 0.07, shade(body, 0.8));  // 手臂撑地
   box(0.2, 0.22, -0.2, 0.07, 0.44, 0.07, shade(body, 0.8));
