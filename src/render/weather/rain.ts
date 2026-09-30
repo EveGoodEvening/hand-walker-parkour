@@ -153,8 +153,15 @@ export class RainField {
     this.object.visible = false;
     // 盒子中心跟着「这一帧真正用来渲染的镜头」走：frame() 早于镜头系统（order 60）运行，
     // test 模式下两次渲染之间镜头可能跳几十米，所以在 onBeforeRender 里取镜头（它在 modelViewMatrix 计算之前调用）。
-    this.object.onBeforeRender = (_r, _s, camera) => this.center(camera);
+    this.object.onBeforeRender = (_r, scene, camera) => { this.center(camera); if (scene.fog instanceof THREE.Fog) this.fog(scene.fog); };
     this.setLines(lines);
+  }
+
+  private fog(fog: THREE.Fog): void {
+    const u = this.material.uniforms as Record<string, THREE.IUniform>;
+    ((u.uFogColor as THREE.IUniform).value as THREE.Color).copy(fog.color);
+    (u.uFogNear as THREE.IUniform).value = fog.near;
+    (u.uFogFar as THREE.IUniform).value = Math.max(fog.near + 0.5, fog.far);
   }
 
   private center(camera: THREE.Camera): void {
@@ -179,11 +186,7 @@ export class RainField {
     (u.uLevel as THREE.IUniform).value = level;
     (u.uTime as THREE.IUniform).value = time % 3600;
     this.center(camera);
-    if (fog) {
-      ((u.uFogColor as THREE.IUniform).value as THREE.Color).copy(fog.color);
-      (u.uFogNear as THREE.IUniform).value = fog.near;
-      (u.uFogFar as THREE.IUniform).value = Math.max(fog.near + 0.5, fog.far);
-    }
+    if (fog) this.fog(fog);
     this.object.visible = level > 0.001 && this.lines > 0;
   }
 }
