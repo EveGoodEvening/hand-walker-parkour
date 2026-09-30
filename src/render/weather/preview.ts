@@ -68,14 +68,24 @@ export const SET_PRESETS: Record<string, { shot: string; atmo: AtmosphereId }> =
   'infirmary.ceiling': { shot: 'ceilingCrack', atmo: 'fluorescent' },
 };
 
-export interface KitOpts { beat?: number; lane?: Lane; atmo?: AtmosphereId; rain?: number; stand?: boolean; lookBack?: boolean; t?: number; figure?: boolean; lit?: number }
-export interface SetOpts { t?: number; shot?: string; atmo?: AtmosphereId; prompt?: string | null; held?: number; breakAt?: number; look?: [number, number, number]; pos?: [number, number, number] }
+export interface KitOpts {
+  beat?: number; lane?: Lane; atmo?: AtmosphereId; rain?: number; stand?: boolean; lookBack?: boolean; t?: number; figure?: boolean; lit?: number;
+  /** 像 World 一样只显示身后 1 个、前方 chunksAhead 个 chunk（缺省 true），整帧 draw call 与游戏里一致。 */
+  stream?: boolean;
+  /** 预览时间跟着模拟时间走（动画、雨；内存检查用）。 */
+  live?: boolean;
+}
+export interface SetOpts { t?: number; shot?: string; atmo?: AtmosphereId; prompt?: string | null; held?: number; breakAt?: number; look?: [number, number, number]; pos?: [number, number, number]; live?: boolean }
 
 interface Active {
   group: THREE.Group; geos: THREE.BufferGeometry[]; atmo: AtmosphereId; cam: { pos: THREE.Vector3; look: THREE.Vector3; fov: number | null };
   t: number; setId: SetId | null; variant: string; setOpts: SetOpts | null; stats: Record<string, unknown>;
   /** 检查用的补光倍数（夜景在 CORE 桩下几乎全黑；1 = 如实）。 */
   lit: number;
+  /** live：预览时间 = t0 + (模拟时间 − 开始时的模拟时间)。 */
+  live: { simT0: number; t0: number } | null;
+  /** 预览的雨强（游戏里的 goto / retry 会按关卡数据复原雨强，预览每帧再设回来）。 */
+  rain: number;
 }
 
 function presetOf(id: AtmosphereId): AtmospherePreset { return getAtmosphere(id) ?? FALLBACK_ATMOSPHERES[id]; }
@@ -94,6 +104,8 @@ export class Preview implements ViewSystem {
     if (!this.active) return;
     this.ctx.scene.remove(this.active.group);
     for (const g of this.active.geos) g.dispose();
+    // set 预览：set.build 建的几何体也一并释放（只有预览会这样反复建）
+    if (this.active.setId) this.active.group.traverse((c) => { if ((c as THREE.Mesh).isMesh) (c as THREE.Mesh).geometry.dispose(); });
     this.ctx.lamps.removeLamps('wp4.preview');
     this.active = null;
     outdoor.preview = null;
@@ -146,6 +158,7 @@ export class Preview implements ViewSystem {
       if (chunk.emissive) { cg.add(new THREE.Mesh(chunk.emissive, matEmi)); geos.push(chunk.emissive); }
       group.add(cg);
       perChunk.push({ s0: a, calls: cg.children.length, tris: triCount(chunk.floor) + triCount(chunk.static) + triCount(chunk.emissive) });
+      cg.userData.s0 = a; cg.userData.s1 = b;
       for (const l of chunk.lamps) lamps.push({ ...l, x: l.x + PREVIEW_X });
     }
     this.ctx.lamps.addLamps('wp4.preview', lamps);
@@ -159,6 +172,14 @@ export class Preview implements ViewSystem {
       const geo = fg.build();
       geos.push(geo);
       group.add(new THREE.Mesh(geo, matStatic));
+    }
+    // 流式显示：身后 1 个 chunk、前方 chunksAhead 个（与 World 相同）
+    if (o.stream !== false) {
+      const ahead = this.ctx.quality.chunksAhead * CHUNK_LEN;
+      for (const c of group.children) {
+        const u = c.userData as { s0?: number; s1?: number };
+        if (u.s0 !== undefined && u.s1 !== undefined) c.visible = u.s1 > sv - CHUNK_LEN && u.s0 < sv + ahead;
+      }
     }
     this.ctx.scene.add(group);
     const x = PREVIEW_X + lane * 1.1;
@@ -176,7 +197,7 @@ export class Preview implements ViewSystem {
     outdoor.preview = { sky: skyKindFor(atmo), sweepS, offsetX: PREVIEW_X, t };
     const stats = { kind: 'kit', key, chunks: perChunk.length, maxCallsPerChunk: Math.max(...perChunk.map((c) => c.calls)),
       maxTrisPerChunk: Math.max(...perChunk.map((c) => c.tris)), lamps: lamps.length, tier: this.ctx.quality.tier, rainLines: outdoor.rain.lineCount };
-    this.active = { group, geos, atmo, cam, t, setId: null, variant, setOpts: null, stats, lit: o.lit ?? 1 };
+    this.active = { group, geos, atmo, cam, t, setId: null, variant, setOpts: null, stats, lit: o.lit ?? 1, live: o.live ? { simT0: this.last?.t ?? 0, t0: t } : null, rain: o.rain ?? pr.rain };
     return stats;
   }
 
@@ -203,7 +224,8 @@ export class Preview implements ViewSystem {
     outdoor.level.snap(0);
     outdoor.preview = { sky: null, sweepS: null, offsetX: PREVIEW_X, t: o.t ?? 0 };
     const stats = { kind: 'set', key, drawCalls: calls, surfaces: set.surfaces?.(variant).map((s) => s.id) ?? [], stencil: this.ctx.stencil };
-    this.active = { group, geos: [], atmo: o.atmo ?? pr.atmo, cam, t: o.t ?? 0, setId, variant, setOpts: o, stats, lit: 1 };
+    this.active = { group, geos: [], atmo: o.atmo ?? pr.atmo, cam, t: o.t ?? 0, setId, variant, setOpts: o, stats, lit: 1,
+      live: o.live ? { simT0: this.last?.t ?? 0, t0: o.t ?? 0 } : null, rain: 0 };
     if (o.breakAt !== undefined) this.ctx.bus.emit('cue', { id: 'waterBreaks', body: { type: 'beat' }, segment: 'wp4preview' });
     return stats;
   }
@@ -213,6 +235,8 @@ export class Preview implements ViewSystem {
     const a = this.active;
     if (!a) return;
     const ctx = this.ctx;
+    if (a.live) { a.t = a.live.t0 + Math.max(0, next.t - a.live.simT0); if (outdoor.preview) outdoor.preview.t = a.t; }
+    if (Math.abs(outdoor.level.target - a.rain) > 1e-6) outdoor.level.snap(a.rain);
     // 镜头
     const cam = ctx.camera;
     cam.position.copy(a.cam.pos);
