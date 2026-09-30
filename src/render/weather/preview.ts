@@ -12,6 +12,7 @@ import { CHUNK_LEN, RENDER_ORDER } from '../../core/constants';
 import { FALLBACK_ATMOSPHERES } from '../../core/fallbacks';
 import { getAtmosphere, getKit, getSet, registerDebug, registerViewSystem, type AtmospherePreset } from '../../core/registry';
 import { createRng } from '../../core/rng';
+import { urlParams } from '../../core/urlParams';
 import type { AtmosphereId, KitId, Lane, SetId, SimSnapshot } from '../../core/types';
 import type { CompiledObstacle, CompiledSegment, CompiledSurface, EventBody, RunSegmentDef } from '../../levels/schema';
 import { OBSTACLES, type ObstacleKind } from '../../levels/obstacles';
@@ -283,6 +284,8 @@ registerViewSystem(preview);
 type GameHook = { start(ch: string, o: { segment?: string; beat?: number; skipCards?: boolean }): Promise<void>; step(n: number): unknown };
 
 registerDebug('wp4', async (...args: unknown[]) => {
+  // 会改变画面状态：与 __game 的其他可变方法一样，只在 ?test=1 或 ?debug=… 下可用（§8.8）
+  if (!urlParams().debugEnabled) throw new Error('debug disabled');
   const [cmd, a, b, c, d, e] = args as [string, unknown, unknown, unknown, unknown, unknown];
   if (cmd === 'off') { preview.off(); return { ok: true }; }
   if (cmd === 'kit') return preview.kit(a as KitId, b as string, (c ?? {}) as KitOpts);
