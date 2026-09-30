@@ -79,7 +79,8 @@ export class HumanBot {
     let extraHeld: ReadonlySet<Action> = new Set();
     if (v.segKind() === 'run') {
       const s = v.s();
-      const needPlan = !this.plan || this.planSeg !== seg.index || s >= this.planUntil - 10;
+      // 滚动视野：快到头时续一段；按着 ↓（长伏低、压腿）时先不续，免得续规划时松手
+      const needPlan = !this.plan || this.planSeg !== seg.index || (s >= this.planUntil - 10 && !this.held.has('down'));
       if (needPlan && (this.replanAt < 0 || t >= this.replanAt)) this.replan(v, push);
       // 执行到期的动作
       while (this.queue.length && (this.queue[0] as Sched).s <= s + 1e-9) {

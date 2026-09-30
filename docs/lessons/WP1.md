@@ -14,3 +14,5 @@
 - vitest 只按文件并行，同一文件里的用例串行。五章 × 20 个种子的 perfect 扫描按章拆成 `perfect-ch1.test.ts … perfect-ch5.test.ts`，章节还是 null 时只有一个 skip 的用例。测试工具里别用 `until(() => d.of('chapter:end').length)` 这种每 tick 扫全部事件的条件（O(n²)），用 `sim.isEnded`。
 - 无头 e2e 很快：`?test=1` 下只在截图帧渲染，第一章 128 s 的游戏时间 1 s 跑完（SwiftShader、640×360、低画质）；渲染每 60 tick 一帧也只要 1–2 s。所以 e2e:chapters 一次取锁跑完五章，远在 10 min 以内。`renderer.info.memory` 只统计上传过 GPU 的几何体，第一遍会随新 chunk 第一次可见而增长；判断泄漏要同一章跑两遍比较第二遍。
 - `tsx` 运行 `.mjs` 脚本时可以直接 `import '../src/…/x.ts'`（带扩展名），bot-difficulty 就这样在 Node 里跑模拟，不需要额外的 .ts 入口。
+- human 机器人的标定参考（合成的密集跑段，5.4 掌/s、约 50 s、稳度 3、behind）：必需动作 1.3 / 1.7 / 2.0 / 2.5 次每 10 拍 → 失败率约 0% / 3% / 10% / 20%，平均受击 2.5–2.9 次。与 §2.8 的「密度 → 目标失败率」量级一致；第一章的检查点区间在 0%（前四段是 hidden，不会失败）。集成时用 `npm run bot:difficulty -- --trials 60` 看每个区间，超标的区间在报告的 `over` 里。
+- 滚动视野的重新规划（机器人每 45 m 续一次）不要在按着 ↓ 的时候做：续规划前要松开 ↓（求解器假定起点没有按键），长桌底下一松手就会撞。等 ↓ 松开再续。
