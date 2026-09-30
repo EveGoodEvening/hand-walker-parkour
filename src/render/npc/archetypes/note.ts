@@ -56,8 +56,9 @@ export default defineArchetype({
     const note = String(o.params.note ?? '');
     const v = SOAKED_NOTES.has(note) ? 'soaked' : note === 'n1-desk' ? 'folded' : 'flat';
     const cx = (c.st.x0 + c.st.x1) / 2, cs = (o.s0 + o.s1) / 2;
-    // 每张纸条的朝向由 id 决定（不随时间变化）
-    const yaw = createRng(o.id, 'note').range(-0.5, 0.5);
+    // 每张纸条的朝向由 id 决定（不随时间变化；热路径里不分配 rng 对象）
+    const h = Math.sin(o.id * 91.345 + 3.7) * 43758.5453;
+    const yaw = (h - Math.floor(h) - 0.5);
     _p.set(cx, c.floorY, -cs);
     _q.setFromEuler(_e.set(0, yaw, 0));
     _m.compose(_p, _q, _s);

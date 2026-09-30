@@ -5,7 +5,7 @@ import { C } from '../colors';
 import { barLine, slitShadow } from '../shapes';
 
 export default defineArchetype({
-  id: 'chairBar', material: 'lambert', cap: 32,
+  id: 'chairBar', material: 'lambert', cap: 96,
   variants: [
     {
       name: 'chairBar', kind: 'chairBar',
@@ -23,6 +23,18 @@ export default defineArchetype({
         b.box([0, 0.472, 0], [0.012, 0.006, dep - 0.04], 0x7d786d);
         barLine(b, d, { y: d.bottom + 0.005 });
         slitShadow(b, w - 0.06, dep);
+      },
+    },
+    {
+      // 坐着的人身下的椅子（路边的 seatedRow，不是障碍）：人面朝 +z，椅背在 −z
+      name: 'seat',
+      build(b) {
+        b.box([0, 0.425, -0.02], [0.4, 0.03, 0.38], C.deskTop, { colors: { '+y': 0xb9b4a8 } });
+        for (const x of [-0.17, 0.17]) {
+          for (const z of [-0.18, 0.14]) b.box([x, 0.205, z], [0.025, 0.41, 0.025], C.deskLeg);
+          b.box([x, 0.66, -0.2], [0.025, 0.44, 0.025], C.deskLeg);
+        }
+        b.box([0, 0.78, -0.2], [0.38, 0.14, 0.02], C.deskTop);
       },
     },
   ],

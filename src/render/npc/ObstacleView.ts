@@ -72,7 +72,7 @@ export class ObstacleView implements ViewSystem {
   private asks = new Map<number, { t: number; part: boolean }>();
   private gazeEvents: GazeEvent[] = [];
   private silences: number[] = [];
-  private gazeMemo = new Map<string, number>();
+  private gazeMemo = new Map<number, number>();
   private decor: Decor[] = [];
   private groups: GroupInfo[] = [];
   private groupState: Array<{ gaze: Decor['gaze'] | null; applaud: number; overtake: number; overtakeS: number }> = [];
@@ -97,6 +97,8 @@ export class ObstacleView implements ViewSystem {
   private readonly target = new THREE.Vector3();
   private readonly box: AABB = { x0: 0, x1: 0, y0: 0, y1: 0, s0: 0, s1: 0 };
   private readonly m = new THREE.Matrix4();
+  private readonly fctx: FrameCtx = { s: 0, px: 0, t: 0, tAnim: 0, beat: 0, tSeg: 0, speed: 0, bps: 5, ahead: 40, behind: 5, hush: 0, stand: false };
+  private readonly fallbackLook: Look = lookFor('student', 1, 'fallback');
 
   constructor(defs: ArchetypeDef[] = []) {
     this.defs = defs;
@@ -293,7 +295,9 @@ export class ObstacleView implements ViewSystem {
     const pc = this.pc;
     pc.t = t; pc.playerX = px; pc.playerS = s; pc.bps = bps;
     pc.chapter = this.stage ? 'stage' : (this.chapter?.def.id ?? 'ch1') as ChapterId;
-    const ctx: FrameCtx = { s, px, t, tAnim, beat, tSeg, speed, bps, ahead, behind, hush, stand: next.segKind === 'stand' };
+    const ctx = this.fctx;
+    ctx.s = s; ctx.px = px; ctx.t = t; ctx.tAnim = tAnim; ctx.beat = beat; ctx.tSeg = tSeg; ctx.speed = speed; ctx.bps = bps;
+    ctx.ahead = ahead; ctx.behind = behind; ctx.hush = hush; ctx.stand = next.segKind === 'stand';
 
     // —— 障碍 ——
     if (this.stage) {
@@ -392,10 +396,9 @@ export class ObstacleView implements ViewSystem {
 
   // ——— 人腿障碍：一人一道；陈默；周主任；马老师 ———
   private legsObstacle(o: CompiledObstacle, st: ObstacleState, seg: CompiledSegment, f: FrameCtx, cur: boolean, kit: KitId, variant: string, floorY: number): void {
-    const look = this.looks.get(o.id) ?? lookFor(crowdOfKit(kit), o.id, 'fallback');
+    const look = this.looks.get(o.id) ?? this.fallbackLook;
     const sp = this.specials.get(o.id);
     const p = this.person;
-    const rng = createRng(o.id, 'legs');
     if (sp === 'chenMo') { this.chenMo(o, st, seg, f, cur, look, floorY); return; }
     const lanes = Math.max(1, Math.round((st.x1 - st.x0 - 2 * o.halfW) / LANE_WIDTH) + 1);
     const w = (st.x1 - st.x0) / lanes;
@@ -422,17 +425,19 @@ export class ObstacleView implements ViewSystem {
       const mid = (lanes - 1) / 2;
       p.x = cx + (lanes > 1 ? Math.abs(part) * (i < mid ? -1 : i > mid ? 1 : Math.sign(part)) : part);
       p.y = floorY; p.z = zc;
-      const r = rng.next();
+      const r = hash01(o.id * 31 + i * 7);
       if (b.type === 'walk') {
         p.yaw = b.speed > 0 ? Math.PI : 0;
         walkPose(Math.abs(b.speed) * f.tAnim + i * 0.3 + o.id, this.walk);
         this.applyWalk(p);
       } else {
-        p.yaw = sp ? 0 : r < 0.45 ? rng.range(-0.3, 0.3) : r < 0.7 ? Math.PI + rng.range(-0.3, 0.3) : (rng.next() < 0.5 ? 1 : -1) * Math.PI / 2;
+        // 朝向（由 id 决定，不随时间变）：45% 朝玩家，25% 背对，30% 侧身
+        const j = (hash01(o.id * 13 + i) - 0.5) * 0.6;
+        p.yaw = sp ? 0 : r < 0.45 ? j : r < 0.7 ? Math.PI + j : (hash01(o.id * 17 + i) < 0.5 ? 1 : -1) * Math.PI / 2;
         this.applyIdle(p, f.tAnim, (o.id * 0.137 + i * 0.31) % 1);
       }
       if (shiftTurn !== 0) { const turn = shiftTurn * 70 * DEG; p.footYawL += turn; p.footYawR += turn; p.legYawL += turn * 0.3; p.legYawR += turn * 0.3; }
-      this.applyGaze(p, `o${o.id}:${i}`, (o.s0 + o.s1) / 2 + st.ds, f, 'turnShoes', -1);
+      this.applyGaze(p, o.id * 8 + i, (o.s0 + o.s1) / 2 + st.ds, f, 'turnShoes', -1);
       p.upper = look.upper || f.stand;
       if (sp === 'directorZhou') p.glow = emberGlow(f.t);
       this.forest.add(p);
@@ -483,7 +488,7 @@ export class ObstacleView implements ViewSystem {
   private resetPerson(p: Person, look: Look): void {
     p.look = look; p.yaw = 0; p.hipH = STAND_HIP; p.stance = BODY.stance;
     p.hipL = p.hipR = p.kneeL = p.kneeR = 0; p.legYawL = p.legYawR = 0; p.footYawL = p.footYawR = 0;
-    p.lean = 0; p.roll = 0; p.dx = 0; p.bob = 0; p.upper = false; p.clap = 0; p.glow = 0; p.targetL = null; p.seated = false; p.squat = false;
+    p.lean = 0; p.roll = 0; p.dx = 0; p.bob = 0; p.turn = 0; p.upper = false; p.clap = 0; p.glow = 0; p.targetL = null; p.seated = false; p.squat = false;
   }
 
   /** idle：重心左右换（「安静的一秒」里动画时钟 tAnim 不走，所以人就停住了）。 */
@@ -501,7 +506,7 @@ export class ObstacleView implements ViewSystem {
   }
 
   /** 凝视：鞋尖在 0.4 s 内转向玩家，停 0.5 s，再转回（接近触发 / 受击 / 让一下 / crowd turnShoes）；center = 常驻朝走廊中央。 */
-  private applyGaze(p: Person, key: string, sN: number, f: FrameCtx, mode: Decor['gaze'], group: number): void {
+  private applyGaze(p: Person, key: number, sN: number, f: FrameCtx, mode: Decor['gaze'], group: number): void {
     const gs = group >= 0 ? this.groupState[group] : undefined;
     const m = gs?.gaze ?? mode;
     if (m === 'center') {
@@ -531,8 +536,9 @@ export class ObstacleView implements ViewSystem {
     // 目标方向：从这个人指向玩家（世界坐标：+z = −s）
     const want = Math.atan2(f.px - p.x, -(f.s) - p.z);
     const rel = Math.max(-GAZE_MAX, Math.min(GAZE_MAX, wrapPi(want - p.yaw)));
-    p.footYawL += rel * g; p.footYawR += rel * g;
-    p.legYawL += rel * g * 0.3; p.legYawR += rel * g * 0.3;
+    p.footYawL += rel * g * 0.6; p.footYawR += rel * g * 0.6;
+    p.legYawL += rel * g * 0.4; p.legYawR += rel * g * 0.4;
+    p.turn += rel * g * 0.25;
   }
 
   // ——— 路边的人、模仿者、爬行的人 ———
@@ -573,12 +579,15 @@ export class ObstacleView implements ViewSystem {
       p.x = d.x; p.y = floorY; p.z = -sN; p.yaw = d.yaw;
       if (d.pose === 'walk') { walkPose(Math.abs(d.speed) * Math.max(0, segT) + d.phase * 2, this.walk); this.applyWalk(p); }
       else if (d.pose === 'seat') {
+        // 椅子（chairBar 原型的 seat 变体）
+        const chairs = this.pools.get('chairBar');
+        if (chairs) { this.m.makeRotationY(d.yaw); this.m.setPosition(d.x, floorY, -sN); chairs.push(this.m, chairs.variantIndex('seat')); }
         p.hipH = 0.46; p.hipL = p.hipR = 90 * DEG; p.kneeL = p.kneeR = 90 * DEG; p.seated = true;
         p.legYawL = -0.08; p.legYawR = 0.08; p.stance = 0.11;
         const sw = idleSway(f.tAnim, d.phase);
         p.kneeL += sw.dx * 3; p.kneeR -= sw.dx * 3;
       } else this.applyIdle(p, f.tAnim, d.phase);
-      this.applyGaze(p, `d${i}`, sN, f, d.gaze, gi);
+      this.applyGaze(p, -1 - i, sN, f, d.gaze, gi);
       const kit = groups[gi]?.kit;
       p.upper = d.look.upper || f.stand || kit === 'plaza';
       const applaud = (gs && gs.applaud >= 0) || this.globalOp.applaud >= 0;
@@ -595,17 +604,14 @@ export class ObstacleView implements ViewSystem {
     if (t0 < 0) return;
     const dt = f.t - t0;
     const c = this.crawler;
-    const n = Math.min(this.crawlers.max, 40);
+    const n = Math.min(this.crawlers.max, OVERTAKE.length);
     for (let i = 0; i < n; i++) {
-      const side = i % 2 ? 1 : -1;
-      const rng = createRng(i + 1, 'overtake');
-      const v = rng.range(2.2, 3.6);
-      const start = s0 - 6 - rng.range(0, 14);
-      const sN = start + v * Math.max(0, dt - rng.range(0, 1.5));
+      const k = OVERTAKE[i] as OvertakeCrawler;
+      const sN = s0 - 6 - k.back + k.v * Math.max(0, dt - k.delay);
       if (sN > f.s + f.ahead || sN < f.s - f.behind) continue;
-      c.x = side * rng.range(1.4, 3.2); c.y = this.floorAt(sN); c.z = -sN; c.yaw = 0;
-      c.dist = v * dt + rng.next() * 2; c.phase = rng.next();
-      c.color.setHex(rng.pick([0x9aa3a6, 0xb7bdbb, 0x8a9396]));
+      c.x = k.x; c.y = this.floorAt(sN); c.z = -sN; c.yaw = 0;
+      c.dist = k.v * dt + k.phase * 2; c.phase = k.phase;
+      c.color.setHex(k.color);
       this.crawlers.add(c);
     }
   }
@@ -640,6 +646,23 @@ export class ObstacleView implements ViewSystem {
   get currentSegment(): number { return this.segIndex; }
   get obstacleSpec(): typeof OBSTACLES { return OBSTACLES; }
 }
+
+/** 确定性的 0..1 散列（热路径里不分配 rng 对象）。 */
+function hash01(n: number): number {
+  const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/** 4-3 超过你的爬行者：读章前一次算好（位置、速度、延迟、颜色）。 */
+interface OvertakeCrawler { x: number; v: number; back: number; delay: number; phase: number; color: number }
+const OVERTAKE: OvertakeCrawler[] = (() => {
+  const rng = createRng(4301, 'overtake');
+  const out: OvertakeCrawler[] = [];
+  for (let i = 0; i < 40; i++) {
+    out.push({ x: (i % 2 ? 1 : -1) * rng.range(1.4, 3.2), v: rng.range(2.2, 3.6), back: rng.range(0, 14), delay: rng.range(0, 1.5), phase: rng.next(), color: rng.pick([0x9aa3a6, 0xb7bdbb, 0x8a9396]) });
+  }
+  return out;
+})();
 
 interface FrameCtx { s: number; px: number; t: number; tAnim: number; beat: number; tSeg: number; speed: number; bps: number; ahead: number; behind: number; hush: number; stand: boolean }
 

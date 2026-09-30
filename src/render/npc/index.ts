@@ -94,8 +94,10 @@ registerDebug('npcAsk', (result?: unknown, targetId?: unknown) => {
   const snap = snapOrThrow();
   let id = typeof targetId === 'number' ? targetId : -1;
   if (id < 0) {
+    // 前方 1.5–12 m 内最近的人腿障碍，可请求的（askable）优先
     const cands = (npcView.stage?.obstacles ?? npcView.chapter?.segments.flatMap((s) => s.obstacles) ?? [])
-      .filter((o) => o.archetype === 'legs' && o.s0 + 0.01 > snap.player.s).sort((a, b) => a.s0 - b.s0);
+      .filter((o) => o.archetype === 'legs' && o.s0 > snap.player.s + 1.5 && o.s0 < snap.player.s + 12)
+      .sort((a, b) => (a.behavior.type === 'askable' ? 0 : 1) - (b.behavior.type === 'askable' ? 0 : 1) || a.s0 - b.s0);
     id = cands[0]?.id ?? -1;
   }
   const e = { type: 'ask', tick: snap.tick, data: { targetId: id, result: result === 'ignore' ? 'ignore' : 'part' } } as GameEvent;

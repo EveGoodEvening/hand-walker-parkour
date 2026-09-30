@@ -25,8 +25,8 @@ export interface Person {
   /** 髋角（大腿向前为正）、膝角（小腿向后屈为正）、腿绕竖轴的外展 / 转向、鞋尖额外转角。 */
   hipL: number; hipR: number; kneeL: number; kneeR: number;
   legYawL: number; legYawR: number; footYawL: number; footYawR: number;
-  /** 上身前倾（绕 x）、髋部侧倾（绕 z）、横向摆动、上下起伏。 */
-  lean: number; roll: number; dx: number; bob: number;
+  /** 上身前倾（绕 x）、髋部侧倾（绕 z）、横向摆动、上下起伏、髋和上身绕竖轴的转向（凝视时跟着鞋尖转一点）。 */
+  lean: number; roll: number; dx: number; bob: number; turn: number;
   look: Look;
   /** 是否画躯干和头（梦里、站立段）。 */
   upper: boolean;
@@ -44,7 +44,7 @@ export function newPerson(look: Look): Person {
   return {
     x: 0, y: 0, z: 0, yaw: 0, hipH: STAND_HIP, stance: BODY.stance,
     hipL: 0, hipR: 0, kneeL: 0, kneeR: 0, legYawL: 0, legYawR: 0, footYawL: 0, footYawR: 0,
-    lean: 0, roll: 0, dx: 0, bob: 0, look, upper: false, clap: 0, glow: 0, targetL: null, seated: false, squat: false,
+    lean: 0, roll: 0, dx: 0, bob: 0, turn: 0, look, upper: false, clap: 0, glow: 0, targetL: null, seated: false, squat: false,
   };
 }
 
@@ -266,6 +266,7 @@ export class LegForest {
     }
     // 髋（以及陈默的上身、周主任的烟头、班长的作业本）
     _a.makeTranslation(p.dx, p.hipH + p.bob, 0).premultiply(_root);
+    if (p.turn !== 0) _a.multiply(_b.makeRotationY(p.turn));
     _a.multiply(_b.makeRotationZ(p.roll)).multiply(_m.makeRotationX(p.lean));
     const upperOn = p.upper && !low;
     const hipsV = upperOn && look.hips === HIPS.trousers ? HIPS.noHands : look.hips;
