@@ -85,7 +85,7 @@ export default {
         [200, ['.', '.', 'car'], 4],
       ],
       windows: [{ id: 'seeShadow', from: 96, to: 104, type: 'lookBack', gain: 1 }],   // 唯一一次回头能看见东西
-      notes: [{ at: 140, lane: 1, note: 'n5-a' }],
+      notes: [{ at: 170, lane: 1, note: 'n5-a' }],
       events: [
         { at: 0, type: 'ambience', amb: 'dawnStreet', level: 1, seconds: 1.5 },
         { at: 2, type: 'hint', hint: 'duck' },
