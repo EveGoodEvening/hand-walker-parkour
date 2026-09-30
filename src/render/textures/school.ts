@@ -74,7 +74,7 @@ export const terrazzo: TexGen = (size, p) => {
     const x = rng.next() * size, y = rng.next() * size;
     const r = spec.rMin + Math.pow(rng.next(), 1.6) * (spec.rMax - spec.rMin);
     const sides = 3 + rng.int(4), rot = rng.next() * Math.PI;
-    g.fillStyle = hex(mixc(pickStone(rng.next()), base, 0.28), 0.8);
+    g.fillStyle = hex(mixc(pickStone(rng.next()), base, 0.4), 0.75);
     polygonPts(r, sides, rot, rng, pts);
     const wx = x < edge ? size : x > size - edge ? -size : 0;
     const wy = y < edge ? size : y > size - edge ? -size : 0;

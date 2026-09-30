@@ -81,6 +81,10 @@ export interface PreviewOpts {
   set?: SetId; lights?: { op: 'flicker' | 'out' | 'on' | 'sound'; from: number; to: number; every?: number };
   /** set 预览：固定的静场时间（秒），用来看某一时刻的动画（老师走到桌边、阿姨的手……）。 */
   t?: number;
+  /** 预览段里的掌光环：[拍, x, 强度]。 */
+  rings?: Array<[number, number, number]>;
+  /** 预览段里在这一拍拍一下地（声控灯）。 */
+  soundAt?: number;
 }
 
 export class World implements ViewSystem {
@@ -486,6 +490,15 @@ export class World implements ViewSystem {
     }
   }
 
+  /** 调试：直接往黑板上写一段字（不经 lines.ts；只在预览里用，会新建纹理）。 */
+  boardText(surface: string, text: string, tremble: boolean, now: number): boolean {
+    const b = BOARDS.get(surface);
+    if (!b) return false;
+    b.show(this.ctx.tex.get('chalkText', { text, tremble: tremble ? 1 : 0 }));
+    void now;
+    return true;
+  }
+
   /** 静场「按住」的进度（黑板擦除跟着手走）。 */
   private stillHoldFrac(): number | null {
     const snap = this.last;
@@ -569,11 +582,12 @@ export class World implements ViewSystem {
           const rs = camS + d * 0.45;
           if (kind === 'tube') {
             const rx = cam.x + (this.lamps.lampX(k) - cam.x) * 0.45;
-            const inten = sl.gloss * 0.5 * clamp(0.4 + d / 25, 0.4, 1);
-            this.decals.add('streak', rx, floorY + 0.01, rs, 0.16 + 0.22 * sl.gloss, 0.8 + 2.6 * sl.gloss, 0xdfe9f2, inten, ls);
+            const inten = sl.gloss * 0.42 * clamp(0.4 + d / 25, 0.4, 1);
+            this.decals.add('streak', rx, floorY + 0.01, rs, 0.1 + 0.14 * sl.gloss, 1.0 + 2.8 * sl.gloss, 0xdfe9f2, inten, ls);
           } else {
-            const rx = this.lamps.lampX(k) * 0.82;
-            this.decals.add('streak', rx, floorY + 0.01, rs, 0.55 + 0.4 * sl.gloss, 1.6 + 2.4 * sl.gloss, 0xdce6ec, sl.gloss * 0.32, null);
+            // 窗在光滑地面上的倒影：沿墙根一块拉长的柔光（不是形状，是一片亮）
+            const rx = this.lamps.lampX(k) * 0.8;
+            this.decals.add('pool', rx, floorY + 0.01, rs, 0.7 + 0.3 * sl.gloss, 2.2 + 2.6 * sl.gloss, 0xdce6ec, sl.gloss * 0.16, null);
           }
         } else if (kind === 'street' || kind === 'bulb') {
           const r = kind === 'street' ? 5.5 : 2.6;
@@ -625,6 +639,8 @@ export class World implements ViewSystem {
     this.atmo.snap(o.atmosphere ?? seg.def.atmosphere);
     this.lamps.resetStates();
     if (o.lights) this.lightsOp(o.lights.op, seg, o.lights.from, o.lights.to, o.lights.every, 0, this.lamps.now - 100);
+    if (o.soundAt !== undefined) { const keep = this.lamps.now; this.lamps.now = keep - 1; this.lamps.soundTrigger(seg.s0 + o.soundAt * seg.stride); this.lamps.now = keep; }
+    for (const [b, x, k] of o.rings ?? []) this.lamps.ring(seg.s0 + b * seg.stride, x, k, 1.1);
     return { s, floorY: seg.floorY(s), x: o.x ?? 0, setShot: false };
   }
 
@@ -637,6 +653,7 @@ export class World implements ViewSystem {
 
   get previewing(): boolean { return this.preview !== null; }
   get previewSegment(): CompiledSegment | null { return this.preview?.seg ?? null; }
+  get currentSegment(): CompiledSegment | null { return this.chapter?.segments[this.segIndex] ?? null; }
 
   private fakeSegment(o: PreviewOpts): CompiledSegment {
     const stride = o.stride ?? (o.stairs ? 0.6 : 1);

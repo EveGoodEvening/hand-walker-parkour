@@ -73,7 +73,7 @@ export function buildCanteen(ctx: HwKitChunkContext, look: Look): KitChunk {
 
   flatFloor(floor, e, { color: 0xeef0f0, x0: xl, x1: ROOM });
   brassStrips(stat, e, PAL.brass, -HW, HW);
-  for (let i = 0; i < 2; i++) floorBlob(floor, e, (rng.next() - 0.5) * 2.4, e.s0 + 1 + rng.next() * (e.L - 2), 0.3 + rng.next() * 0.4, 0.5 + rng.next(), 0xb9c0c2, rng.next());
+  for (let i = 0; i < 2; i++) floorBlob(floor, e, (rng.next() - 0.5) * 2.4, e.s0 + 1 + rng.next() * (e.L - 2), 0.3 + rng.next() * 0.4, 0.5 + rng.next(), 0xb9c0c2, rng.next(), 0xeef0f0);
 
   // —— 桌凳 ——
   const rowStep = e.period / Math.max(1, Math.round(e.period / 1.9));

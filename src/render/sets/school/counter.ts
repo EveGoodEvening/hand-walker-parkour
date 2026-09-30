@@ -88,13 +88,13 @@ function build(ctx: ViewContext): THREE.Object3D {
   const vegOnTray = lambertMesh(ctx, vegG, 'veg'), porkOnTray = lambertMesh(ctx, porkG, 'pork');
   // 窗口阿姨的手：白袖口 + 前臂 + 手，握着长柄勺
   const handG = new KitGeo();
-  handG.box([0, 0, 0.3], [0.13, 0.13, 0.36], 0xdfe3e2, { faces: '+x-x+y-y+z' });       // 袖子
-  handG.box([0, -0.01, 0.02], [0.08, 0.07, 0.24], PAL.skin, { faces: '+x-x+y-y+z-z' });  // 前臂与手
-  handG.box([0.02, -0.02, -0.12], [0.07, 0.06, 0.07], mixHex(PAL.skin, 0x8c8279, 0.2));
-  handG.segment([0.02, -0.02, -0.12], [0.02, -0.22, -0.3], 0.02, 0.02, PAL.steel);       // 勺柄
-  handG.prism([0.02, -0.28, -0.32], 0.07, 0.05, 6, PAL.steel);                          // 勺头
-  const vegL = new KitGeo(); vegL.box([0.02, -0.23, -0.32], [0.09, 0.02, 0.09], 0x5e6b5a, { faces: '+y' });
-  const porkL = new KitGeo(); porkL.box([0.02, -0.22, -0.32], [0.1, 0.03, 0.1], WARM.braisedPork, { faces: '+y' });
+  handG.box([0, 0, 0.42], [0.11, 0.11, 0.3], 0xdfe3e2, { faces: '+x-x+y-y+z-z' });       // 白袖口
+  handG.box([0, -0.005, 0.16], [0.07, 0.06, 0.24], PAL.skin, { faces: '+x-x+y-y+z-z' });  // 前臂
+  handG.box([0.01, -0.01, 0.0], [0.08, 0.05, 0.09], mixHex(PAL.skin, 0x8c8279, 0.2));      // 握勺的手
+  handG.segment([0.01, -0.01, -0.02], [0.01, -0.1, -0.2], 0.02, 0.02, PAL.steel);          // 勺柄
+  handG.prism([0.01, -0.15, -0.24], 0.065, 0.05, 6, PAL.steel);                          // 勺头
+  const vegL = new KitGeo(); vegL.box([0.01, -0.1, -0.24], [0.09, 0.02, 0.09], 0x5e6b5a, { faces: '+y' });
+  const porkL = new KitGeo(); porkL.box([0.01, -0.09, -0.24], [0.1, 0.03, 0.1], WARM.braisedPork, { faces: '+y' });
   const hand = new THREE.Group();
   hand.name = 'lunchLadyHand';
   hand.add(lambertMesh(ctx, handG, 'hand'));
@@ -114,7 +114,7 @@ function update(t: number, _snap: SimSnapshot): void {
   if (!built) return;
   const p = handAt(t);
   built.hand.position.set(p.x, p.y, p.z);
-  built.hand.rotation.set(-0.25 - p.tip * 0.9, 0.1, p.tip * 0.4);
+  built.hand.rotation.set(-0.08 - p.tip * 0.25, 0.08, p.tip * 0.9);
   // 勺里有东西：舀起来之后、倒下之前
   built.ladleVeg.visible = t > 0.62 && t < 1.55;
   built.ladlePork.visible = t > 2.32 && t < 2.85;

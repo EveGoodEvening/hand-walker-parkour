@@ -9,6 +9,7 @@ import { registerCueHandler, registerDebug, registerMaterials, registerView, reg
 import { STILL_ORIGIN } from '../core/constants';
 import { urlParams } from '../core/urlParams';
 import * as THREE from 'three';
+import type { AtmosphereId } from '../core/types';
 import { registerAtmospheres } from './atmosphere';
 import { world, type PreviewOpts } from './ChunkStreamer';
 import { LampField } from './lampField';
@@ -85,16 +86,21 @@ registerDebug('wp3PreviewOff', () => {
 });
 registerDebug('wp3Luma', (x0?: unknown, y0?: unknown, x1?: unknown, y1?: unknown) => {
   guard();
-  return view ? view.luma(Number(x0 ?? 0), Number(y0 ?? 0), Number(x1 ?? 1), Number(y1 ?? 1)) : 0;
+  return view ? view.luma(Number(x0 ?? 0), Number(y0 ?? 0), Number(x1 ?? 1), Number(y1 ?? 1)) : null;
 });
 registerDebug('wp3Mem', () => {
   const r = view?.renderer;
   return r ? { geometries: r.info.memory.geometries, textures: r.info.memory.textures, programs: r.info.programs?.length ?? 0, warmups: view?.warmups ?? 0 } : null;
 });
+registerDebug('wp3Atmo', (id?: unknown) => { guard(); world.atmo.snap(String(id) as AtmosphereId); return true; });
+registerDebug('wp3BoardText', (surface?: unknown, text?: unknown, tremble?: unknown) => {
+  guard();
+  return world.boardText(String(surface ?? ''), String(text ?? ''), !!tremble, world.lamps.now);
+});
 registerDebug('wp3Stats', () => ({ ...world.stats, slots: world.slotCount(), stencil: view?.stencil ?? false }));
 registerDebug('wp3Lights', (op?: unknown, from?: unknown, to?: unknown, every?: unknown) => {
   guard();
-  const seg = world.previewSegment;
+  const seg = world.previewSegment ?? world.currentSegment;
   if (!seg) return false;
   world.lightsOp(op as 'out', seg, Number(from ?? 0), Number(to ?? 999), every === undefined ? undefined : Number(every), 0, world.lamps.now);
   return true;

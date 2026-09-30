@@ -12,7 +12,7 @@ import type { SimSnapshot } from '../../../core/types';
 import { KitGeo } from '../../geom';
 import { chair } from '../../kits/school/classroom';
 import { PAL, SCHOOL } from '../../palette';
-import { emissiveMesh, floorRect, lambertMesh, seatedLegs, setEnv, wallX } from './common';
+import { emissiveMesh, floorRect, lambertMesh, seatedLegs, setEnv, texturedFloor, wallX } from './common';
 
 export const GLASS_X = -1.1;
 const GZ0 = -3.0, GZ1 = 1.6, GY0 = 0.75, GY1 = 2.8;
@@ -31,10 +31,11 @@ function build(ctx: ViewContext): THREE.Object3D {
   const root = new THREE.Group();
   const stat = new KitGeo(), emi = new KitGeo();
   // 这一侧：地面、窗墙（留洞）、窗台、暖气管、后面的桌子
-  floorRect(stat, GLASS_X, 4, -6, 3, 0x9ba1a0);
+  const floor = texturedFloor(ctx, GLASS_X, 4, -6, 3, 'terrazzo', { base: 0x868d8c });
   wallX(stat, GLASS_X, -1, -6, GZ0, 0, 3.6, 0xcbd1d0);
   wallX(stat, GLASS_X, -1, GZ1, 3, 0, 3.6, 0xcbd1d0);
   wallX(stat, GLASS_X, -1, GZ0, GZ1, 0, GY0, 0xe0e5e6);
+  for (let k = 1; k < 5; k++) stat.box([GLASS_X + 0.004, k * 0.15, (GZ0 + GZ1) / 2], [0.004, 0.006, GZ1 - GZ0], 0xb9c0c1, { faces: '+x' });   // 窗下瓷砖的灰缝
   wallX(stat, GLASS_X, -1, GZ0, GZ1, GY1, 3.6, 0xcbd1d0);
   stat.box([GLASS_X + 0.1, GY0 - 0.02, (GZ0 + GZ1) / 2], [0.2, 0.04, GZ1 - GZ0], 0xb9c0c1, { faces: '+y+x' });
   stat.box([GLASS_X + 0.06, 0.25, (GZ0 + GZ1) / 2], [0.08, 0.08, GZ1 - GZ0 + 2], SCHOOL.pipe, { faces: '+x+y' });   // 暖气管
@@ -75,7 +76,7 @@ function build(ctx: ViewContext): THREE.Object3D {
   const cm = new KitGeo();
   seatedLegs(cm, -0.45, -0.87, Math.PI, PAL.trousers, 0xdfe3e2, 0.09);
   chenMo = lambertMesh(ctx, cm, 'chenMoLegs');
-  root.add(lambertMesh(ctx, stat, 'canteenCorner'), emissiveMesh(ctx, emi, 'playground'), chenMo);
+  root.add(floor, lambertMesh(ctx, stat, 'canteenCorner'), emissiveMesh(ctx, emi, 'playground'), chenMo);
   update(0, null as unknown as SimSnapshot);
   return root;
 }

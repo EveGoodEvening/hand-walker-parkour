@@ -171,8 +171,8 @@ export class View implements ViewAPI {
   /** 自上次调用以来的峰值 draw call，调用后清零（e2e 用）。 */
   takePeakDrawCalls(): number { const v = this.meter.peakDrawCalls; this.meter.peakDrawCalls = 0; return v; }
 
-  /** 调试：渲染一帧并读回画布上一块区域（归一化坐标，y 向下）的平均亮度（0..1，Rec.709）。 */
-  luma(x0 = 0, y0 = 0, x1 = 1, y1 = 1): number {
+  /** 调试：渲染一帧并读回画布上一块区域（归一化坐标，y 向下）的亮度统计（0..1，Rec.709，按输出的 sRGB 值）。 */
+  luma(x0 = 0, y0 = 0, x1 = 1, y1 = 1): { mean: number; p99: number; max: number } {
     const r = this.renderer;
     r.info.reset();
     r.render(this.scene, this.camera);
@@ -182,9 +182,17 @@ export class View implements ViewAPI {
     const pw = Math.max(1, Math.floor((clamp(x1, 0, 1) - clamp(x0, 0, 1)) * W)), ph = Math.max(1, Math.floor((clamp(y1, 0, 1) - clamp(y0, 0, 1)) * H));
     const buf = new Uint8Array(pw * ph * 4);
     gl.readPixels(px, py, pw, ph, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-    let sum = 0;
-    for (let i = 0; i < pw * ph; i++) sum += (0.2126 * (buf[i * 4] as number) + 0.7152 * (buf[i * 4 + 1] as number) + 0.0722 * (buf[i * 4 + 2] as number)) / 255;
-    return sum / (pw * ph);
+    let sum = 0, max = 0;
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < pw * ph; i++) {
+      const l = (0.2126 * (buf[i * 4] as number) + 0.7152 * (buf[i * 4 + 1] as number) + 0.0722 * (buf[i * 4 + 2] as number)) / 255;
+      sum += l; max = Math.max(max, l);
+      hist[Math.min(255, Math.round(l * 255))] = (hist[Math.min(255, Math.round(l * 255))] as number) + 1;
+    }
+    let acc = 0, p99 = 0;
+    const need = pw * ph * 0.99;
+    for (let i = 0; i < 256; i++) { acc += hist[i] as number; if (acc >= need) { p99 = i / 255; break; } }
+    return { mean: sum / (pw * ph), p99, max };
   }
 }
 

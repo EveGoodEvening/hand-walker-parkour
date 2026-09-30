@@ -72,10 +72,10 @@ export function buildCorridor(ctx: HwKitChunkContext, look: Look): KitChunk {
     // 水痕：几块不规则的更暗、更蓝的湿地（同一张水磨石纹理），沿着抹布推过的方向拉长
     for (let i = 0; i < 6; i++) {
       const s = e.s0 + 1 + rng.next() * (e.L - 2), x = (rng.next() - 0.5) * 2.4;
-      floorBlob(floor, e, x, s, 0.35 + rng.next() * 0.7, 1.0 + rng.next() * 2.6, 0x8997a0, rng.next());
+      floorBlob(floor, e, x, s, 0.35 + rng.next() * 0.7, 1.0 + rng.next() * 2.6, 0x8997a0, rng.next(), look.floor);
     }
   }
-  brassStrips(stat, e);
+  brassStrips(stat, e, look.dark ? 0x2c3439 : PAL.brass);
 
   // —— 左墙：窗 ——
   const holesL: Hole[] = sideHoles(e, 'L');
@@ -142,7 +142,7 @@ export function buildCorridor(ctx: HwKitChunkContext, look: Look): KitChunk {
 
   // —— 开口（窗 / 墙镜的镜中房间，端墙镜）、门牌 ——
   mirrorRooms(stat, emi, e);
-  endWalls(stat, e, look.wall);
+  endWalls(stat, e, look.wall, undefined, undefined, emi);
   dataPlates(stat, e);
 
   // —— 段首 / 段尾 ——

@@ -62,7 +62,7 @@ export function buildWashroom(ctx: HwKitChunkContext): KitChunk {
 
   // 地面：0.3 m 小方砖（纹理 4 × 4 块 = 1.2 m），湿，反光
   flatFloor(floor, e, { color: 0xffffff, tex: 1.2, beatV: false });
-  for (let i = 0; i < 3; i++) floorBlob(floor, e, (rng.next() - 0.5) * 2.6, e.s0 + 1 + rng.next() * (e.L - 2), 0.4 + rng.next() * 0.6, 0.8 + rng.next() * 1.8, 0xa9b4ba, rng.next());
+  for (let i = 0; i < 3; i++) floorBlob(floor, e, (rng.next() - 0.5) * 2.6, e.s0 + 1 + rng.next() * (e.L - 2), 0.4 + rng.next() * 0.6, 0.8 + rng.next() * 1.8, 0xa9b4ba, rng.next(), 0xffffff);
   for (const s of stepsIn(e, e.period * 2, e.period, 0.5)) stat.box([0, 0.003, e.z(s)], [0.16, 0.004, 0.16], 0x6e7c82, { faces: '+y' }); // 地漏
 
   // 左墙：洗手池（镜子下面也有）、小便池（没有镜子的地方）
@@ -108,7 +108,7 @@ export function buildWashroom(ctx: HwKitChunkContext): KitChunk {
   for (const s of stepsIn(e, e.period * 2, e.period * 1.5, 0.5)) stat.box([-0.9, H - 0.01, e.z(s)], [0.4, 0.02, 0.4], 0x8a979e, { faces: '-y' });
 
   mirrorRooms(stat, emi, e);
-  endWalls(stat, e, WALL);
+  endWalls(stat, e, WALL, undefined, undefined, emi);
   dataPlates(stat, e);
   // 段首：从走廊拐进来，门框 + 门上方的墙（走廊比这里高）；章首：身后一面实墙
   if (e.back > 0) crossWall(stat, e, e.segS0 - e.back, -HW, HW, 3.2, 0, WALL, true);

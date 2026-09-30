@@ -41,6 +41,18 @@ export function emissiveMesh(ctx: ViewContext, g: KitGeo, name: string): THREE.M
   return m;
 }
 
+/** 贴图地面（水磨石 / 瓷砖）：单独一个网格（1 次 draw call），uv 以米为单位（tex 米一个周期）。 */
+export function texturedFloor(ctx: ViewContext, x0: number, x1: number, z0: number, z1: number, id: string, params: Readonly<Record<string, string | number>>, tex = 1, color = 0xf2f4f4): THREE.Mesh {
+  const g = new KitGeo();
+  g.quad([x0, 0, z1], [x1, 0, z1], [x1, 0, z0], [x0, 0, z0], color,
+    [[x0 / tex, -z1 / tex], [x1 / tex, -z1 / tex], [x1 / tex, -z0 / tex], [x0 / tex, -z0 / tex]], [0.9, 0.9, 1, 1]);
+  const geom = g.build();
+  ctx.mat.ensureChalkAttr(geom);
+  const m = new THREE.Mesh(geom, ctx.mat.lambert({ vertexColors: true, map: ctx.tex.get(id, { ...params, repeat: 1 }), flat: true }));
+  m.name = 'floor';
+  return m;
+}
+
 /** 一块地板（xz 矩形，顶点色带边缘变暗）。 */
 export function floorRect(g: KitGeo, x0: number, x1: number, z0: number, z1: number, color: number, y = 0): void {
   g.quad([x0, y, z1], [x1, y, z1], [x1, y, z0], [x0, y, z0], color, null, [0.85, 0.85, 1, 1]);

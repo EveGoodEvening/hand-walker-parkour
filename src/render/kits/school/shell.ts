@@ -458,7 +458,9 @@ export function dataPlates(g: KitGeo, e: Env): void {
 
 // ——————————————————— 开口与镜中房间（§5.8） ———————————————————
 export interface MirrorRoomStyle { floor: number; wall: number; back: number; ceilingY: number }
-export const DARK_ROOM: MirrorRoomStyle = { floor: PAL.mirrorDark, wall: PAL.mirrorDark, back: PAL.mirrorDarker, ceilingY: 3.1 };
+export const DARK_ROOM: MirrorRoomStyle = { floor: 0x3a464d, wall: 0x3e4a52, back: 0x2e3a42, ceilingY: 3.1 };
+/** 镜中房间里灯管倒影的颜色（暗，跟着真实的灯明灭）。 */
+export const MIRROR_TUBE = 0x7c8994;
 
 /** 侧墙开口 → 洞（给 sideWall 用）。 */
 export function sideHoles(e: Env, side: 'L' | 'R'): Hole[] {
@@ -484,7 +486,7 @@ export function mirrorRooms(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomSty
     stat.quad([xa0, 0, za], [xa1, 0, za], [xa1, 0, zb], [xa0, 0, zb], [st.floor, st.floor, st.floor, st.floor], null, side < 0 ? [0.7, 1, 1, 0.7] : [1, 0.7, 0.7, 1]);
     for (const s of stepsIn(e, 1.0, 0)) {
       if (s <= sa || s >= sb) continue;
-      stat.quad([xa0, 0.003, e.z(s) + 0.01], [xa1, 0.003, e.z(s) + 0.01], [xa1, 0.003, e.z(s) - 0.01], [xa0, 0.003, e.z(s) - 0.01], 0x2a3439);
+      stat.quad([xa0, 0.003, e.z(s) + 0.01], [xa1, 0.003, e.z(s) + 0.01], [xa1, 0.003, e.z(s) - 0.01], [xa0, 0.003, e.z(s) - 0.01], 0x55636b);
     }
     stat.quad([xa0, H, zb], [xa1, H, zb], [xa1, H, za], [xa0, H, za], st.wall, null, [0.6, 0.6, 0.6, 0.6]);
     if (o.s0 >= e.s0 - 1e-6) stat.quad([xa1, 0, za], [xa0, 0, za], [xa0, H, za], [xa1, H, za], st.wall);
@@ -492,14 +494,22 @@ export function mirrorRooms(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomSty
     const bright = backdrop === 'playground' || backdrop === 'evening' || backdrop === 'nightStreet';
     if (!bright) {
       const c = st.back;
-      if (side < 0) stat.quad([xb, 0, za], [xb, 0, zb], [xb, H, zb], [xb, H, za], [c, c, 0x26323a, 0x26323a], null, [0.8, 0.8, 1.1, 1.1]);
-      else stat.quad([xb, 0, zb], [xb, 0, za], [xb, H, za], [xb, H, zb], [c, c, 0x26323a, 0x26323a], null, [0.8, 0.8, 1.1, 1.1]);
+      if (side < 0) stat.quad([xb, 0, za], [xb, 0, zb], [xb, H, zb], [xb, H, za], [c, c, 0x46545c, 0x46545c], null, [0.8, 0.8, 1.1, 1.1]);
+      else stat.quad([xb, 0, zb], [xb, 0, za], [xb, H, za], [xb, H, zb], [c, c, 0x46545c, 0x46545c], null, [0.8, 0.8, 1.1, 1.1]);
       // 镜中那一侧的「对面墙」：几道竖向的暗影（门、隔板的倒影），只是比背墙略亮一点
       for (const s of stepsIn(e, 1.2, 0.3)) {
         if (s <= sa + 0.1 || s >= sb - 0.1) continue;
         const xq = xb - side * 0.012, z0 = e.z(s - 0.02), z1 = e.z(s + 0.02);
-        if (side < 0) stat.quad([xq, 0.15, z0], [xq, 0.15, z1], [xq, 1.95, z1], [xq, 1.95, z0], 0x2c3840);
-        else stat.quad([xq, 0.15, z1], [xq, 0.15, z0], [xq, 1.95, z0], [xq, 1.95, z1], 0x2c3840);
+        if (side < 0) stat.quad([xq, 0.15, z0], [xq, 0.15, z1], [xq, 1.95, z1], [xq, 1.95, z0], 0x4e5c64);
+        else stat.quad([xq, 0.15, z1], [xq, 0.15, z0], [xq, 1.95, z0], [xq, 1.95, z1], 0x4e5c64);
+      }
+      // 灯管的倒影：走廊中线那排灯以墙面为对称面映到 x = 2·xw，跟着真实的灯明灭（aSteady = 0）
+      const xt = side * (2 * HW);
+      for (const s of beatsIn(e, 2, 1, 0)) {
+        if (s <= sa + 0.3 || s >= sb - 0.3) continue;
+        const zt = e.z(s);
+        emi.quad([xt - 0.04, H - 0.06, zt + 0.55], [xt + 0.04, H - 0.06, zt + 0.55], [xt + 0.04, H - 0.06, zt - 0.55], [xt - 0.04, H - 0.06, zt - 0.55], MIRROR_TUBE);
+        emi.quad([xt - 0.04, H - 0.06, zt - 0.55], [xt + 0.04, H - 0.06, zt - 0.55], [xt + 0.04, H - 0.06, zt + 0.55], [xt - 0.04, H - 0.06, zt + 0.55], MIRROR_TUBE);
       }
       // 镜中那一侧的走廊墙线（暗）：墙裙的上沿
       const xr = xb - side * 0.01;
@@ -516,7 +526,7 @@ export function mirrorRooms(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomSty
 }
 
 /** 端墙开口（端墙镜）：在 s = o.s0 处立一面横墙，中间留镜子大小的洞，洞后是镜中房间。 */
-export function endWalls(stat: KitGeo, e: Env, st: WallStyle, frame: number = PAL.steel, room: MirrorRoomStyle = DARK_ROOM): void {
+export function endWalls(stat: KitGeo, e: Env, st: WallStyle, frame: number = PAL.steel, room: MirrorRoomStyle = DARK_ROOM, emi: KitGeo | null = null): void {
   for (const o of e.openings) {
     if (o.side !== 'end' || o.s0 < e.s0 - 1e-6 || o.s0 > e.s1 + 1e-6) continue;
     const ze = e.z(o.s0), H = st.height, hx = 0.95;
@@ -546,7 +556,16 @@ export function endWalls(stat: KitGeo, e: Env, st: WallStyle, frame: number = PA
     stat.quad([-hx, room.ceilingY, zb], [hx, room.ceilingY, zb], [hx, room.ceilingY, ze], [-hx, room.ceilingY, ze], room.wall, null, [0.5, 0.5, 0.5, 0.5]);
     for (let k = 1; k < 4; k++) {
       const z = ze - k * 0.95;
-      stat.quad([-hx, o.y0 + 0.002, z + 0.01], [hx, o.y0 + 0.002, z + 0.01], [hx, o.y0 + 0.002, z - 0.01], [-hx, o.y0 + 0.002, z - 0.01], 0x2a3439);
+      stat.quad([-hx, o.y0 + 0.002, z + 0.01], [hx, o.y0 + 0.002, z + 0.01], [hx, o.y0 + 0.002, z - 0.01], [-hx, o.y0 + 0.002, z - 0.01], 0x55636b);
+    }
+    // 身后那排灯管的倒影：沿镜中房间的天花板往深处退
+    if (emi) {
+      const yt = Math.min(room.ceilingY, o.y1) - 0.08;
+      for (let k = 0; k < 2; k++) {
+        const z0 = ze - 0.6 - k * 2.0, z1 = z0 - 1.0;
+        emi.quad([-0.04, yt, z1], [0.04, yt, z1], [0.04, yt, z0], [-0.04, yt, z0], MIRROR_TUBE);
+        emi.quad([-0.04, yt, z0], [0.04, yt, z0], [0.04, yt, z1], [-0.04, yt, z1], MIRROR_TUBE);
+      }
     }
   }
 }
