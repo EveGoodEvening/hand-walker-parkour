@@ -103,6 +103,12 @@ describe('七步（5-8）', () => {
     expect((tick('afterFall') - fall) * TICK_DT).toBeCloseTo(1.6, 1);
     expect(d.of('stand').find((e) => e.data.phase === 'fall')!.data.step).toBe(7);
   });
+  it('数据漏了起身输入：直接站起来，照样第 7 步摔倒、段落能结束', () => {
+    const d = new Driver(chapter([{ ...SEVEN, input: undefined } as never, runSeg({ id: 'after', beats: 20 })]));
+    d.until(() => d.snap.segment === 'after', 120 * 30);
+    expect(d.snap.segment).toBe('after');
+    expect(d.of('stand').filter((e) => e.data.phase === 'fall').map((e) => e.data.step)).toEqual([7]);
+  });
   it('摔倒后模式是 down（不是失败的 fall）', () => {
     const d = new Driver(sevenCh());
     d.sim.setAutopilot('perfect');

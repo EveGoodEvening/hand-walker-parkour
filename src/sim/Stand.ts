@@ -65,6 +65,12 @@ export class StandController {
     this.hintRepeated = false; this.riseT = 0; this.plantDelay = -1; this.plantT = 0; this.progressFired = []; this.downSaid = false;
     if (def.script === 'dream') { this.phase = 'rising'; return [{ phase: 'rise' }]; }
     this.phase = 'wait';
+    if (!def.input) {
+      // 数据漏了起身输入（校验器会报 static）：直接站起来，保证第七步照样摔倒、这一段能结束
+      const out: StandEvent[] = [{ phase: 'rise' }];
+      this.rise(out);
+      return out;
+    }
     return [];
   }
 
