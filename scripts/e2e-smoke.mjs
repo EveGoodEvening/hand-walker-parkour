@@ -69,12 +69,61 @@ try {
   if (missing.length) failures.push(`missing required beats: ${missing.join(', ')}`);
   if (g.external.length) failures.push(`external requests: ${g.external.join(', ')}`);
   if (g.errors.length) failures.push(`page errors: ${g.errors.slice(0, 5).join(' | ')}`);
+  // §8.8 / 验收 6：__game 的全部方法都可调用；依赖后续包的方法（poseTest）返回默认值、不抛错
+  const api = await p.evaluate(async () => {
+    const g = window.__game;
+    const out = {};
+    const tryCall = async (name, fn) => { try { const r = await fn(); out[name] = r === undefined ? 'ok' : typeof r; } catch (e) { out[name] = `THREW ${e.message}`; } };
+    await tryCall('version', () => g.version);
+    await tryCall('ready', () => g.ready);
+    await tryCall('getState', () => g.getState());
+    await tryCall('screen', () => g.screen());
+    await tryCall('setSeed', () => g.setSeed(1701));
+    await tryCall('start', () => g.start('ch1', { segment: '1-2', beat: 10, skipCards: true }));
+    await tryCall('goto', () => g.goto('1-3', 5));
+    await tryCall('pause', () => g.pause());
+    await tryCall('resume', () => g.resume());
+    await tryCall('step', () => g.step(12));
+    await tryCall('advance', () => g.advance(100));
+    await tryCall('render', () => g.render());
+    await tryCall('input', () => g.input('left'));
+    await tryCall('setAutopilot', () => g.setAutopilot('perfect'));
+    await tryCall('setInvincible', () => g.setInvincible(false));
+    await tryCall('setQuality', () => g.setQuality('low'));
+    await tryCall('setTimeScale', () => g.setTimeScale(1));
+    await tryCall('setSetting', () => g.setSetting('reducedFlicker', false));
+    await tryCall('unlockAll', () => g.unlockAll());
+    await tryCall('skipStill', () => g.skipStill());
+    await tryCall('perf', () => g.perf());
+    await tryCall('obstaclesAhead', () => g.obstaclesAhead(30));
+    await tryCall('events', () => g.events(10));
+    await tryCall('cues', () => g.cues(10));
+    await tryCall('beats', () => g.beats());
+    await tryCall('hash', () => g.hash());
+    await tryCall('plan', () => g.plan());
+    await tryCall('poseTest', () => g.poseTest('crawl'));
+    await tryCall('ext', () => g.ext);
+    return out;
+  });
+  const threw = Object.entries(api).filter(([, v]) => String(v).startsWith('THREW'));
+  if (threw.length) failures.push(`__game methods threw: ${threw.map(([k, v]) => `${k} (${v})`).join(', ')}`);
+  // 非 test / debug 模式：只读方法可用，可变方法抛 debug disabled
+  await p.goto(g.url.replace(/test=1&?/, ''));
+  await p.waitForFunction(() => window.__game !== undefined);
+  await p.evaluate(() => window.__game.ready);
+  const guard = await p.evaluate(() => {
+    const g = window.__game;
+    let msg = '';
+    try { g.step(1); } catch (e) { msg = e.message; }
+    return { state: typeof g.getState().screen, msg };
+  });
+  if (guard.msg !== 'debug disabled' || guard.state !== 'string') failures.push(`debug guard wrong: ${JSON.stringify(guard)}`);
   const wall = Date.now() - t0;
   if (wall > LIMIT_MS) failures.push(`wall clock ${(wall / 1000).toFixed(1)} s > ${LIMIT_MS / 1000} s`);
   console.log(JSON.stringify({
     chapter: CH, ended, ticks, simTime: +st.t.toFixed(1), falls: st.falls, stumbles: st.stumbles, crashes: st.crashes, lookBacks: st.lookBacks,
     notes: st.notes, beats: beats.length, requiredBeats: expected.length, peakDrawCalls: peakCalls, peakTriangles: peakTris,
-    external: g.external.length, pageErrors: g.errors.length, screenshots: shotSegs.size, wallSec: +(wall / 1000).toFixed(1),
+    external: g.external.length, pageErrors: g.errors.length, screenshots: shotSegs.size, apiMethods: Object.keys(api).length, wallSec: +(wall / 1000).toFixed(1),
   }));
 } finally {
   await g.close();

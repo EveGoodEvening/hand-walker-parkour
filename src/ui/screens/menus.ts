@@ -23,7 +23,7 @@ export function button(label: string, onClick: () => void, parent: HTMLElement, 
 export class ScreenEl {
   readonly el: HTMLDivElement;
   constructor(parent: HTMLElement, readonly name: ScreenName, solid = false) {
-    this.el = h('div', `hw-screen hw-${name}${solid ? ' solid' : ''}`, undefined, parent);
+    this.el = h('div', `hw-screen hw-s-${name}${solid ? ' solid' : ''}`, undefined, parent);
     this.el.setAttribute('data-screen', name);
   }
   clear(): HTMLDivElement { this.el.replaceChildren(); return this.el; }

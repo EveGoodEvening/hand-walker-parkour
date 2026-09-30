@@ -47,7 +47,7 @@ async function run(mode) {
     if (touch) await p.tap('.hw-pausebtn'); else await p.keyboard.press('Escape');
     st = await step(p, 1);
     if (st.screen !== 'pause') throw new Error(`pause did not open (screen ${st.screen})`);
-    if (touch) await p.tap('.hw-pause button:has-text("继续")'); else { await p.keyboard.press('Enter'); }
+    if (touch) await p.tap('[data-screen="pause"] button:has-text("继续")'); else { await p.keyboard.press('Enter'); }
     st = await step(p, 1);
     if (st.screen !== 'play') throw new Error(`resume failed (screen ${st.screen})`);
     // —— 游玩：按求解器路线用真实输入 ——
@@ -118,7 +118,7 @@ async function run(mode) {
     st = await state(p);
     const beats = await p.evaluate(() => window.__game.beats());
     const required = await p.evaluate(() => window.__game.ext.requiredBeats());
-    const outroText = await p.evaluate(() => document.querySelector('.hw-outro')?.textContent ?? '');
+    const outroText = await p.evaluate(() => document.querySelector('[data-screen="outro"]')?.textContent ?? '');
     const hits = await p.evaluate(() => window.__game.events().filter((e) => e.type === 'hit').map((e) => ({ tick: e.tick, ...e.data })));
     const problems = [];
     if (st.screen !== 'outro') problems.push(`did not reach outro (screen ${st.screen}, ${st.segment} beat ${st.beat.toFixed(1)})`);

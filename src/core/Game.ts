@@ -343,7 +343,12 @@ export class Game implements GameCommands {
     switch (e.type) {
       case 'fall': this.onFall(e.data); break;
       case 'chapter:end': this.onChapterEnd(e.data); break;
-      case 'checkpoint': if (this.chapterId && this.chapterId !== 'test') this.save.patch({ last: { chapter: this.chapterId, ...e.data } }); break;
+      case 'checkpoint':
+        // 只在真正游玩时记录「继续」的位置（标题背景读章时也会发 checkpoint）
+        if (this.chapterId && this.chapterId !== 'test' && (this.screenName === 'play' || this.screenName === 'intro')) {
+          this.save.patch({ last: { chapter: this.chapterId, ...e.data } });
+        }
+        break;
       case 'segment': if (e.data.kind !== 'run') { /* 第一次看完之后才允许跳过 */ }
         this.ctxLook = false; this.updateInputContext(); break;
       case 'prompt': this.ctxLook = e.data.context.look; this.updateInputContext();

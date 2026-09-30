@@ -14,7 +14,8 @@
 //   --out PATH               输出 PNG（缺省 shots/shot.png）   --touch      模拟触摸设备
 //   --no-autopilot           不自动加 autopilot=perfect（缺省会加，除非 query 里已有 autopilot=）
 //   --no-build               不检查 / 重新构建 dist/        --full       截整页（缺省只截视口）
-// --plan 文件：JSON 数组，每项 { out, query?, q?, size?, url?, touch?, autopilot?: boolean, ops?: [{steps:N}|{eval:"…"}], steps?, eval? }
+//   --wait MS                截图前再等 MS 毫秒真实时间（界面的淡入是 CSS 动画，按真实时间走；缺省 0）
+// --plan 文件：JSON 数组，每项 { out, query?, q?, size?, url?, touch?, wait?, autopilot?: boolean, ops?: [{steps:N}|{eval:"…"}], steps?, eval? }
 // 输出：每张图一行 JSON（out、屏幕、段、拍、稳度、perf、页面错误）。有页面错误时退出码 2。
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -23,7 +24,7 @@ import { acquireBrowserSlot } from './browser-lock.mjs';
 import { CHROME, CHROME_ARGS, ROOT, baseUrl, ensureBuilt } from './e2e-lib.mjs';
 
 function parseArgs(argv) {
-  const o = { q: 'low', size: '640x360', query: '', ops: [], out: 'shots/shot.png', url: null, plan: null, autopilot: true, build: true, touch: false, full: false };
+  const o = { q: 'low', size: '640x360', query: '', ops: [], out: 'shots/shot.png', url: null, plan: null, autopilot: true, build: true, touch: false, full: false, wait: 0 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const v = () => { const x = argv[++i]; if (x === undefined) throw new Error(`missing value for ${a}`); return x; };
@@ -40,6 +41,7 @@ function parseArgs(argv) {
       case '--no-build': o.build = false; break;
       case '--touch': o.touch = true; break;
       case '--full': o.full = true; break;
+      case '--wait': o.wait = Number(v()); break;
       case '-h': case '--help':
         console.log(readFileSync(new URL(import.meta.url), 'utf8').split('\n').filter((l) => l.startsWith('//')).map((l) => l.slice(3)).join('\n'));
         process.exit(0);
@@ -60,6 +62,7 @@ function normalizePlanItem(it, defaults) {
   return {
     out: it.out ?? defaults.out, query: it.query ?? '', q: it.q ?? defaults.q, size: it.size ?? defaults.size,
     url: it.url ?? defaults.url, touch: it.touch ?? defaults.touch, autopilot: it.autopilot ?? defaults.autopilot, ops, full: it.full ?? defaults.full,
+    wait: it.wait ?? defaults.wait,
   };
 }
 
@@ -97,6 +100,7 @@ async function runShot(browser, s) {
     }
   }
   await page.evaluate(() => { try { window.__game.render(); } catch { /* 非 test 模式 */ } });
+  if (s.wait > 0) await page.waitForTimeout(s.wait);
   mkdirSync(dirname(resolve(ROOT, s.out)), { recursive: true });
   await page.screenshot({ path: resolve(ROOT, s.out), fullPage: s.full });
   const info = await page.evaluate(() => {
@@ -110,7 +114,7 @@ async function runShot(browser, s) {
 
 async function main() {
   const o = parseArgs(process.argv.slice(2));
-  const defaults = { out: o.out, q: o.q, size: o.size, url: o.url, touch: o.touch, autopilot: o.autopilot, full: o.full };
+  const defaults = { out: o.out, q: o.q, size: o.size, url: o.url, touch: o.touch, autopilot: o.autopilot, full: o.full, wait: o.wait };
   const shots = o.plan
     ? JSON.parse(readFileSync(resolve(o.plan), 'utf8')).map((it, i) => normalizePlanItem({ out: `shots/plan-${i}.png`, ...it }, defaults))
     : [normalizePlanItem({ query: o.query, ops: o.ops, out: o.out }, defaults)];

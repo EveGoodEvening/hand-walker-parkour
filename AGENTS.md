@@ -25,3 +25,11 @@
 - 引用原文前先用脚本对五章原文做子串检查。常见陷阱：「疼。每天都疼。」原文中间隔着「我说」，要拆成两句；「它在所有能反光的地方，」原文后面是逗号；第二章的 "让一下。" "别。" 原文用的是 ASCII 双引号；跨段落的句子（如「我猛地回头。」「走廊空了。」）要拆开引用。
 - git 提交信息里**不要**写 AI 署名尾注（Co-Authored-By 之类），本机 PreToolUse hook 会直接拦截整条 Bash 命令（它扫描整条命令文本，包括同一命令里的 heredoc 内容，所以写文件和 git commit 要分成两条命令）。
 - 开发在 `feat/parkour-game` 分支（`main` 保持空）；并行工作包在各自 worktree 的 `wp/<WP>` 分支上提交，由 lead 按顺序合并。各工作包把 lessons 写到 `docs/lessons/<WP>.md`（避免 AGENTS.md 合并冲突），lead 集成时汇总到这里。
+- 工具链（CORE 定稿）：`.ts` 脚本一律用 `tsx` 跑（`npx tsx scripts/xxx.ts`）。Node 24 自带的类型剥离解析不了 `src/` 里不带扩展名的 import。`typescript@7.0.2` 的 `tsc --noEmit` 配 `moduleResolution: bundler` 可以直接用。`TUNING` 用了 `as const`，类字段写 `value = TUNING.x` 会被推成字面量类型，必须显式标 `: number`。npm 11 会提示 esbuild 的 postinstall 没跑，但可选依赖 `@esbuild/linux-x64` 已经装上，vite 和 tsx 都能正常工作。
+- 无头截图：界面的淡入是 CSS 动画，按真实时间走；`?test=1` 下模拟是手动 step 的，切屏后马上截图会拍到透明的界面。用 `node scripts/shot.mjs --wait 1500`。本机只有 WenQuanYi Zen Hei 这类 CJK 字体，没有竖排字形度量，`writing-mode: vertical-rl` 会叠字。竖排标题改成逐字堆叠。
+- 界面容器的类名不要和内部元素重名。`hw-screen hw-title` 曾经让整个标题屏都套上了 `.hw-title` 的竖排样式。容器现在统一用 `hw-s-<name>`，测试用 `[data-screen=…]` 选。
+- 碰撞（CORE 的解释，已写进 `sim/Collision.ts`）：内层盒只在横向缩到 85%。如果 s 向也缩，正面冲撞第一帧总是先碰到外层，永远会被判成擦边。横档的竖直穿透按「玩家盒顶 − 横档下沿」算，不按横档厚度截断，否则 8 cm 厚的拖把杆爬行撞上去永远只算绊。
+- 求解器（`sim/Solver.ts`）按时间分层做 DP，逐 tick 复用 `PlayerState` 和 `Pace` 的代码，所以路线能在 Sim 里逐 tick 复现，自动驾驶按里程执行。去重键只能编码会影响未来的状态，已经结束的动作要归一化。曾经把 `duckStartBeat` 放进键里，状态数爆炸，32 拍的测试段都解不完。
+- `SkinnedMesh` 刚性蒙皮：先 `rootBone.updateMatrixWorld(true)`，再 `new Skeleton(bones)`（逆矩阵在构造时计算），然后 `mesh.add(rootBone)`，最后 `mesh.bind(skeleton)`。设 `frustumCulled = false`。
+- 浏览器锁：§8.8 的示例在 `withBrowserSlot` 的回调里启动浏览器后立即返回，浏览器还没关锁就释放了。现在用 `acquireBrowserSlot()`，由 `openGame().close()` 负责关浏览器并释放锁。触摸 e2e 用 CDP 的 `Input.dispatchTouchEvent` 滑动，距离取 32 px：超过 24 px 阈值，又不到 2 倍阈值，所以不会连换两道。
+- 标题背景在读章时也会发 `checkpoint`。存档里「继续」的位置只在 play 或 intro 屏幕下写，否则第一次打开就会冒出「继续」。

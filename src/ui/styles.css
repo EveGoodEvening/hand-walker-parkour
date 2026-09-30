@@ -42,12 +42,15 @@
 .hw-screen { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; pointer-events: auto; background: rgba(13,18,22,.55); }
 .hw-screen.on { display: flex; animation: hw-in .4s ease-out both; }
 .hw-screen.solid { background: var(--ink); }
+.hw-s-fail { background: rgba(13,18,22,.62); }
 .hw-menu { display: flex; flex-direction: column; gap: 6px; align-items: stretch; min-width: 11em; }
 .hw-menu button, .hw-row button { font: 16px var(--sans); color: var(--chalk); background: transparent; border: 0; border-bottom: 1px solid transparent; padding: 8px 18px; letter-spacing: .2em; cursor: pointer; opacity: .75; }
 .hw-menu button:focus, .hw-menu button:hover, .hw-row button:focus, .hw-row button:hover { outline: none; opacity: 1; border-bottom-color: var(--line); }
 .hw-menu button[disabled] { opacity: .3; cursor: default; }
-.hw-title { position: absolute; right: 14%; top: 12%; writing-mode: vertical-rl; font: 56px var(--serif); letter-spacing: .4em; }
-.hw-sub { position: absolute; right: calc(14% + 78px); top: 14%; writing-mode: vertical-rl; font: 14px var(--serif); letter-spacing: .3em; color: var(--dim); }
+.hw-title, .hw-sub { position: absolute; display: flex; flex-direction: column; align-items: center; }
+.hw-title { right: 14%; top: 12%; font: 56px/1.15 var(--serif); gap: .4em; }
+.hw-sub { right: calc(14% + 78px); top: 14%; font: 14px/1.3 var(--serif); gap: .3em; color: var(--dim); }
+.hw-title span, .hw-sub span { display: block; }
 .hw-corner { position: absolute; left: calc(14px + var(--sal)); bottom: calc(10px + var(--sab)); font-size: 11px; color: var(--dim); }
 .hw-notice { position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%); font-size: 12px; color: var(--dim); white-space: nowrap; }
 .hw-pulse { position: absolute; left: 50%; bottom: 6%; transform: translateX(-50%); display: flex; gap: 10px; }
@@ -72,3 +75,4 @@
   .hw-sub { right: calc(12% + 62px); top: 10%; }
   .hw-subs { bottom: calc(28% + var(--sab)); }
 }
+@media (max-height: 420px) { .hw-title { font-size: 44px; gap: .25em; } .hw-sub { right: calc(14% + 64px); } }

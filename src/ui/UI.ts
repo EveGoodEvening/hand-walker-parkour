@@ -47,7 +47,7 @@ export class UI implements UIAPI {
     this.black = h('div', 'hw-layer hw-black', undefined, root);
     this.heat = h('div', 'hw-layer hw-heat', undefined, root);
     for (const n of ['boot', 'title', 'chapters', 'settings', 'notes', 'intro', 'pause', 'fail', 'outro', 'credits'] as ScreenName[]) {
-      this.screens.set(n, new ScreenEl(root, n, n === 'boot' || n === 'intro' || n === 'credits' || n === 'fail'));
+      this.screens.set(n, new ScreenEl(root, n, n === 'boot' || n === 'intro' || n === 'credits' || n === 'outro'));
     }
     h('div', 'hw-card', STR.boot, this.screens.get('boot')?.el);
     window.addEventListener('keydown', (e) => this.onKey(e));
@@ -87,8 +87,10 @@ export class UI implements UIAPI {
   private buildTitle(): void {
     const el = this.screens.get('title')?.clear();
     if (!el) return;
-    h('div', 'hw-title', STR.title, el);
-    h('div', 'hw-sub', STR.subtitle, el);
+    // 竖排：逐字堆叠（不依赖 writing-mode，缺竖排字形度量的字体里也不会叠字）
+    const vert = (cls: string, text: string) => { const box = h('div', cls, undefined, el); for (const ch of Array.from(text)) h('span', '', ch, box); };
+    vert('hw-title', STR.title);
+    vert('hw-sub', STR.subtitle);
     const menu = h('div', 'hw-menu', undefined, el);
     const sv = this.save.load();
     if (sv.last) button(STR.continue, () => void this.cmd.continueGame(), menu);
