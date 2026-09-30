@@ -1,170 +1,291 @@
-// src/ui/hud/Hud.ts —— HUD：章名、暂停键、字幕、操作提示、节拍器（实心点 / 空心点）、数数、纸条闪现、暗角（DESIGN.md §7.2）。
-// CORE 写初版，之后归 WP8。所有计时用模拟时间（snap.t），无头测试里截图稳定；每帧对 DOM 的写入合并成一次。
-import { FOLLOWER_MIX, HUD_PX_PER_BEAT, TEXT } from '../../core/constants';
+// src/ui/hud/Hud.ts —— HUD（DESIGN.md §7.2 Play）。WP8。
+// 左上章名（40% 不透明度，8 s 后 20%）、右上暂停（44 px）；下方三分之一是一个自下而上的纵向栈：
+//   节拍器（实心点 / 空心点）→ 平衡线（七步）→ 数数 → 操作提示（1 行）→ 字幕（最多 2 行）→ 纸条翻看。
+// 同一个栈里依次排布，所以字幕、提示、节拍器、数数在任何分辨率下都不会互相重叠；右下角的情境按钮 / 「跳过」
+// 与左下角的纸条闪现在栈的两侧（竖屏 360 px 下也留出了间距，见 e2e-touch 的版面检查）。
+// 不画进度条，不画任何数字（数数除外）。所有计时用模拟时间（snap.t）；事件只改模型，DOM 在 render() 里经 DomBatch 一次写完。
 import type { Settings } from '../../core/settings';
-import type { Device, HintId, SimSnapshot, Speaker, TextStyle } from '../../core/types';
+import type { Device, FollowerSnap, HintId, SimSnapshot, Speaker, TextStyle } from '../../core/types';
 import { lineText } from '../../levels/lines';
-import { ALWAYS_HINTS, HINTS, SPEAKERS, STR } from '../strings';
+import type { NoteDef } from '../../levels/schema';
+import { DomBatch, h } from '../dom';
+import { hintText, numZh, SPEAKERS, STR } from '../strings';
+import { metronome, type MetroView } from './metronome';
+import { SubtitleQueue, type SubLine } from './subtitles';
 
-interface SubLine { text: string; style: TextStyle; speaker: string | null; until: number; pan: number }
+export type HintSource = 'cue' | 'prompt' | 'still';
+interface HintState { id: HintId; source: HintSource; until: number; still: boolean }
+interface CountState { from: number; step: 1 | -1; len: number; lag: number; k: number; until: number }
+interface NoteOpenState { def: NoteDef | null; id: string; t0: number }
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  e.className = cls;
-  parent?.appendChild(e);
-  return e;
-}
+export const NOTE_FLASH_SEC = 1.2;
+export const CHNAME_FADE_SEC = 8;
+/** 纸条翻看（noteOpen）：正面 1.0 s → 翻面 → 背面停到 4.4 s → 0.4 s 淡出。 */
+export const NOTE_OPEN = { flipAt: 1.0, fadeAt: 4.4, endAt: 4.8 } as const;
+/** 七步平衡线：θ 达到 plantAngle（0.35 rad）时点到头（§2.4 stand.plantAngle）。 */
+export const BALANCE_RANGE = 0.35;
+export const BALANCE_HALF_PX = 56;
 
 export class Hud {
   readonly root: HTMLDivElement;
-  private chname: HTMLDivElement;
-  private subs: HTMLDivElement;
-  private hintEl: HTMLDivElement;
-  private selfDots: HTMLDivElement;
-  private followDots: HTMLDivElement;
-  private countEl: HTMLDivElement;
-  private noteEl: HTMLDivElement;
-  readonly vignette: HTMLDivElement;
+  readonly chname: HTMLDivElement;
   readonly pauseBtn: HTMLButtonElement;
-  private lines: SubLine[] = [];
-  private spoken = new Set<string>();
-  private hint: { id: HintId; until: number } | null = null;
+  readonly bottom: HTMLDivElement;
+  readonly subsEl: HTMLDivElement;
+  readonly hintEl: HTMLDivElement;
+  readonly countEl: HTMLDivElement;
+  readonly balanceEl: HTMLDivElement;
+  readonly metroEl: HTMLDivElement;
+  readonly selfDots: HTMLDivElement;
+  readonly followDots: HTMLDivElement;
+  readonly noteFlashEl: HTMLDivElement;
+  readonly noteCard: HTMLDivElement;
+  readonly skipBtn: HTMLButtonElement;
+  private readonly countSelf: HTMLSpanElement;
+  private readonly countGhost: HTMLSpanElement;
+  private readonly balanceDot: HTMLElement;
+  private readonly noteFront: HTMLDivElement;
+  private readonly noteBack: HTMLDivElement;
+  private readonly lineEls = new Map<number, HTMLDivElement>();
+
+  readonly subs = new SubtitleQueue();
+  hint: HintState | null = null;
   private flashSelf = [-1, -1, -1];
   private flashFollow = [-1, -1, -1];
-  private count: { n: number; to: number; step: number; ghost: number; shown: number; ghostShown: number; until: number } | null = null;
+  private count: CountState | null = null;
   private noteUntil = -1;
+  private noteOpen: NoteOpenState | null = null;
+  private chName = '';
   private chT0 = 0;
-  private dirty = true;
-  private lastKey = '';
+  private subsVersion = -1;
+  private noteVersion = 0;
+  private noteDrawn = -1;
   showFollower = true;
+  behindFaded = false;
   device: Device = 'keyboard';
   settings: Settings | null = null;
+  /** 当前段是不是静场（hold 提示的触摸文字随之变化）。 */
+  inStill = false;
+  /** 最近一次腿偏移的方向（straighten 提示显示反方向箭头）。 */
+  driftDir: -1 | 1 | null = null;
+  /** 「跳过」按钮是否可用（由 UI 按「看过 / 重试」判断）。 */
+  skipVisible = false;
+  skipHolding = false;
+  /** 调试（hudDemo）：强制显示平衡线，值为 θ（rad）。 */
+  forceBalance: number | null = null;
   private lastT = 0;
+  /** 最近一次 render 的节拍器视图（测试用）。 */
+  lastMetro: MetroView | null = null;
 
   constructor(parent: HTMLElement, onPause: () => void) {
-    this.vignette = el('div', 'hw-layer hw-vignette', parent);
-    this.root = el('div', 'hw-layer hw-hud', parent);
-    this.chname = el('div', 'hw-chname', this.root);
-    this.pauseBtn = el('button', 'hw-pausebtn', this.root);
+    this.root = h('div', 'hw-layer hw-hud', undefined, parent);
+    this.chname = h('div', 'hw-chname', undefined, this.root);
+    this.pauseBtn = h('button', 'hw-pausebtn', '‖', this.root);
     this.pauseBtn.type = 'button';
-    this.pauseBtn.textContent = '‖';
     this.pauseBtn.setAttribute('data-ui-control', '1');
+    this.pauseBtn.setAttribute('aria-label', STR.pause);
     this.pauseBtn.addEventListener('click', (e) => { e.stopPropagation(); onPause(); });
-    this.subs = el('div', 'hw-subs', this.root);
-    this.hintEl = el('div', 'hw-hint', this.root);
-    const metro = el('div', 'hw-metro', this.root);
-    this.followDots = el('div', 'hw-dots hw-follow', metro);
-    this.selfDots = el('div', 'hw-dots hw-self', metro);
-    for (let i = 0; i < 3; i++) { el('i', 'hw-dot', this.selfDots); el('i', 'hw-dot', this.followDots); }
-    this.countEl = el('div', 'hw-count', this.root);
-    this.noteEl = el('div', 'hw-notefl', this.root);
-    this.noteEl.textContent = STR.note;
+    this.bottom = h('div', 'hw-bottom', undefined, this.root);
+    // 纸条翻看也在纵向栈里（最上面），所以它和字幕在任何分辨率下都不会重叠
+    this.noteCard = h('div', 'hw-noteopen', undefined, this.bottom);
+    const inner = h('div', 'hw-paper-inner', undefined, this.noteCard);
+    this.noteFront = h('div', 'hw-paper-face front', undefined, inner);
+    this.noteBack = h('div', 'hw-paper-face back', undefined, inner);
+    this.subsEl = h('div', 'hw-subs', undefined, this.bottom);
+    this.hintEl = h('div', 'hw-hint', undefined, this.bottom);
+    this.countEl = h('div', 'hw-count', undefined, this.bottom);
+    this.countSelf = h('span', 'n', undefined, this.countEl);
+    this.countGhost = h('span', 'ghost', undefined, this.countEl);
+    this.balanceEl = h('div', 'hw-balance', undefined, this.bottom);
+    h('i', 'line', undefined, this.balanceEl);
+    this.balanceDot = h('b', 'dot', undefined, this.balanceEl);
+    this.metroEl = h('div', 'hw-metro', undefined, this.bottom);
+    this.followDots = h('div', 'hw-dots hw-follow', undefined, this.metroEl);
+    this.selfDots = h('div', 'hw-dots hw-self', undefined, this.metroEl);
+    for (let i = 0; i < 3; i++) { h('i', 'hw-dot', undefined, this.selfDots); h('i', 'hw-dot', undefined, this.followDots); }
+    this.noteFlashEl = h('div', 'hw-notefl', undefined, this.root);
+    h('span', 'paper', undefined, this.noteFlashEl);
+    h('span', 'label', STR.note, this.noteFlashEl);
+    this.skipBtn = h('button', 'hw-skipbtn', STR.skip, this.root);
+    this.skipBtn.type = 'button';
+    this.skipBtn.setAttribute('data-ui-control', '1');
   }
 
-  show(on: boolean): void { this.root.classList.toggle('on', on); }
-  setChapter(name: string, t: number): void { this.chname.textContent = name; this.chname.classList.remove('faded'); this.chT0 = t; }
-  reset(): void { this.lines = []; this.hint = null; this.count = null; this.flashSelf = [-1, -1, -1]; this.flashFollow = [-1, -1, -1]; this.dirty = true; }
-  resetSpeakers(): void { this.spoken.clear(); }
-
-  text(ids: readonly string[], style: TextStyle, speaker: Speaker | undefined, pan: number, t: number): void {
-    const text = ids.map((i) => lineText(i)).join('');
-    if (!text) return;
-    let sp: string | null = null;
-    if (speaker && !this.spoken.has(speaker)) { this.spoken.add(speaker); sp = SPEAKERS[speaker]; }
-    const quoted = style === 'self' || style === 'other' ? `“${text}”` : text;
-    const dur = (Array.from(text).length * TEXT.msPerChar + TEXT.baseMs) / 1000;
-    this.lines.push({ text: quoted, style, speaker: sp, until: t + dur, pan });
-    while (this.lines.length > TEXT.maxLines) this.lines.shift();
-    this.dirty = true;
+  // ——————————————— 模型（事件调用，不碰 DOM）———————————————
+  setChapter(name: string, t: number): void { this.chName = name; this.chT0 = t; }
+  /** 重来 / 读章：清空字幕、提示、数数、闪点。 */
+  reset(): void {
+    this.subs.clear(); this.hint = null; this.count = null; this.noteOpen = null; this.noteUntil = -1;
+    this.flashSelf = [-1, -1, -1]; this.flashFollow = [-1, -1, -1]; this.noteVersion++;
+  }
+  newChapter(t: number): void {
+    this.reset(); this.subs.newChapter(); this.showFollower = true; this.behindFaded = false; this.driftDir = null; this.chT0 = t;
   }
 
-  setHint(id: HintId | null, t: number, seconds = 3.2): void {
-    if (id && this.settings && !this.settings.hints && !ALWAYS_HINTS.has(id)) return;
-    this.hint = id ? { id, until: t + seconds } : null;
-    this.dirty = true;
+  text(keys: readonly string[], style: TextStyle, speaker: Speaker | undefined, pan: number, t: number): number {
+    return this.subs.push(keys, keys.map((k) => lineText(k)), style, speaker, pan, t);
   }
+  /** 直接推入显示文字（keys 仍用于「看过没有」）。 */
+  textRaw(keys: readonly string[], texts: readonly string[], style: TextStyle, pan: number, t: number): number {
+    return this.subs.push(keys, texts, style, undefined, pan, t);
+  }
+
+  showHint(id: HintId, source: HintSource, t: number, seconds: number): void {
+    this.hint = { id, source, until: t + seconds, still: source === 'still' || this.inStill };
+  }
+  /** prompt 事件的 hint = null：只撤掉由 prompt / 静场显示的提示，不影响教学提示。 */
+  clearPromptHint(): void { if (this.hint && this.hint.source !== 'cue') this.hint = null; }
+  clearHint(): void { this.hint = null; }
 
   contact(part: 'heel' | 'knuckle' | 'pad', t: number, follower: boolean): void {
     const i = part === 'heel' ? 0 : part === 'knuckle' ? 1 : 2;
     (follower ? this.flashFollow : this.flashSelf)[i] = t;
   }
 
+  /** 数数（§3、§7.2）：之后每次掌根落地计一个数；ghostLag > 0 时它的数字晚 ghostLag 个出现（灰色残影）。 */
   countStart(from: number, to: number, ghostLag: number, t: number): void {
-    this.count = { n: from, to, step: to >= from ? 1 : -1, ghost: ghostLag, shown: from - (to >= from ? 1 : -1), ghostShown: NaN, until: t + 30 };
-    this.dirty = true;
+    this.count = { from, step: to >= from ? 1 : -1, len: Math.abs(to - from) + 1, lag: Math.max(0, Math.round(ghostLag)), k: 0, until: t + 30 };
   }
   countTick(t: number): void {
     const c = this.count;
     if (!c) return;
-    c.shown += c.step;
-    c.ghostShown = c.ghost ? c.shown - c.step * c.ghost : NaN;
-    if ((c.step > 0 && c.shown > c.to) || (c.step < 0 && c.shown < c.to)) this.count = null;
-    else c.until = t + 1.5;
-    this.dirty = true;
+    c.k++;
+    if (c.k - 1 - c.lag >= c.len) { this.count = null; return; }
+    c.until = t + 1.5;
   }
-  noteFlash(t: number): void { this.noteUntil = t + 1.2; this.dirty = true; }
+  /** 当前显示的数（测试用）：[自己, 残影]，没有时为 null。 */
+  countShown(): [string | null, string | null] {
+    const c = this.count;
+    if (!c || c.k === 0) return [null, null];
+    const i = c.k - 1, g = c.k - 1 - c.lag;
+    const self = i < c.len ? numZh(c.from + c.step * i) : null;
+    const ghost = c.lag > 0 && g >= 0 && g < c.len ? numZh(c.from + c.step * g) : null;
+    return [self, ghost];
+  }
 
-  frame(snap: SimSnapshot): void {
+  noteFlash(t: number, seconds = NOTE_FLASH_SEC): void { this.noteUntil = t + seconds; }
+  openNote(id: string, def: NoteDef | null, t: number): void { this.noteOpen = { id, def, t0: t }; this.noteVersion++; }
+
+  // ——————————————— 渲染（每帧一次，经 DomBatch）———————————————
+  render(snap: SimSnapshot, b: DomBatch, o: { palm: 'none' | 'heat' | 'numb'; playing: boolean }): void {
     const t = snap.t;
-    if (t < this.lastT - 0.5) { this.reset(); }
+    if (t < this.lastT - 0.5) this.reset();        // 读章 / 跳转后模拟时钟回退
     this.lastT = t;
-    if (t - this.chT0 > 8) this.chname.classList.add('faded');
-    // 过期字幕
-    const before = this.lines.length;
-    this.lines = this.lines.filter((l) => l.until > t);
-    if (this.lines.length !== before) this.dirty = true;
-    if (this.hint && this.hint.until < t) { this.hint = null; this.dirty = true; }
-    if (this.count && this.count.until < t) { this.count = null; this.dirty = true; }
-    // 节拍器：亮度按稳度 100 / 80 / 60 / 40%，稳度 0 时轻微颤动
-    const steady = snap.player.steady;
-    const bright = [0.4, 0.6, 0.8, 1][Math.max(0, Math.min(3, steady))] as number;
-    const f = snap.follower;
-    const metro = this.settings?.metronome !== false;
-    const fShow = metro && this.showFollower && f.hud !== 'none';
-    const lagPx = Math.abs(f.lagBeats) * HUD_PX_PER_BEAT;
-    const ahead = f.from === 'front' || f.lagBeats < 0;
-    const selfLit = this.flashSelf.map((ft) => ft >= 0 && t - ft >= 0 && t - ft < 0.15);
-    const folLit = this.flashFollow.map((ft) => ft >= 0 && t - ft >= 0 && t - ft < 0.15);
-    const jitter = steady === 0 && !(this.settings?.reducedMotion) ? Math.sin(t * 40) * 1.5 : 0;
-    const vig = (f.mode === 'behind' || f.mode === 'pressure') ? (FOLLOWER_MIX[Math.max(0, Math.min(3, steady))]?.vignette ?? 0) : 0;
-    const key = [selfLit.join(), folLit.join(), bright, fShow, lagPx.toFixed(1), ahead, f.hud, jitter.toFixed(1), vig, metro, this.noteUntil > t].join('|');
-    if (!this.dirty && key === this.lastKey) return;
-    this.lastKey = key;
-    this.dirty = false;
-    // —— 一次性写 DOM ——
-    this.selfDots.style.display = metro ? '' : 'none';
-    this.selfDots.style.opacity = String(bright);
-    this.selfDots.style.transform = `translate(calc(-50% + ${jitter}px), -50%)`;
-    Array.from(this.selfDots.children).forEach((d, i) => d.classList.toggle('lit', !!selfLit[i]));
-    this.followDots.style.display = fShow ? '' : 'none';
-    this.followDots.classList.toggle('shadow', f.hud === 'shadow');
-    const dx = ahead ? lagPx : -lagPx, dy = ahead ? -lagPx * 0.5 : lagPx * 0.5;
-    this.followDots.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-    Array.from(this.followDots.children).forEach((d, i) => d.classList.toggle('lit', !!folLit[i]));
-    this.vignette.style.opacity = String(vig);
-    this.subs.replaceChildren(...this.lines.map((l) => {
-      const d = document.createElement('div');
-      d.className = `hw-line ${l.style}`;
-      if (l.speaker) { const s = document.createElement('span'); s.className = 'sp'; s.textContent = l.speaker; d.appendChild(s); }
-      d.appendChild(document.createTextNode(l.text));
-      if (l.style === 'whisper' && l.pan) d.style.transform = `translateX(${Math.round(l.pan * 22)}vw)`;
-      return d;
-    }));
-    const h = this.hint ? HINTS[this.hint.id][this.device === 'touch' ? 1 : 0] : '';
-    this.hintEl.textContent = h;
-    this.hintEl.classList.toggle('on', !!h);
-    if (this.count) {
-      this.countEl.style.display = '';
-      this.countEl.replaceChildren();
-      this.countEl.appendChild(document.createTextNode(numZh(this.count.shown)));
-      if (!Number.isNaN(this.count.ghostShown)) { const g = document.createElement('span'); g.className = 'ghost'; g.textContent = numZh(this.count.ghostShown); this.countEl.appendChild(g); }
-    } else this.countEl.style.display = 'none';
-    this.noteEl.classList.toggle('on', this.noteUntil > t);
+    const st = this.settings;
+    // 章名
+    b.text(this.chname, this.chName);
+    b.cls(this.chname, 'faded', t - this.chT0 > CHNAME_FADE_SEC);
+    // 字幕
+    this.subs.expire(t);
+    if (this.subs.version !== this.subsVersion) {
+      this.subsVersion = this.subs.version;
+      const lines = this.subs.lines.slice();
+      b.run(() => this.reconcileLines(lines));
+    }
+    // 提示
+    if (this.hint && this.hint.until < t) this.hint = null;
+    const hint = this.hint;
+    const ht = hint ? hintText(hint.id, this.device, { still: hint.still, driftDir: this.driftDir }) : '';
+    b.text(this.hintEl, ht);
+    b.cls(this.hintEl, 'on', !!ht);
+    // 数数
+    if (this.count && this.count.until < t) this.count = null;
+    const [cs, cg] = this.countShown();
+    b.cls(this.countEl, 'on', !!(cs || cg));
+    b.text(this.countSelf, cs ?? '');
+    b.text(this.countGhost, cg ?? '');
+    // 平衡线（七步）
+    const stand = snap.player.stand;
+    const bal = this.forceBalance !== null || (!!stand && stand.script === 'sevenSteps' && (stand.phase === 'walking' || stand.phase === 'planted'));
+    b.cls(this.balanceEl, 'on', bal);
+    const theta = this.forceBalance ?? stand?.theta ?? 0;
+    const bx = bal ? Math.round(Math.max(-1, Math.min(1, theta / BALANCE_RANGE)) * BALANCE_HALF_PX) : 0;
+    b.style(this.balanceDot, 'transform', `translateX(${bx}px)`);
+    // 节拍器
+    const m = metronome({
+      t, steady: snap.player.steady, follower: snap.follower as FollowerSnap, flashSelf: this.flashSelf, flashFollow: this.flashFollow,
+      metronome: st?.metronome !== false, showFollower: this.showFollower, behindFaded: this.behindFaded,
+      reducedMotion: st?.reducedMotion === true, palm: o.palm,
+    });
+    this.lastMetro = m;
+    b.cls(this.metroEl, 'on', o.playing);
+    b.style(this.selfDots, 'opacity', m.selfVisible ? String(m.selfOpacity) : '0');
+    b.style(this.selfDots, 'transform', `translate(calc(-50% + ${m.selfDx}px), calc(-50% + ${m.selfDy}px))`);
+    b.cls(this.selfDots, 'white', m.selfWhite);
+    const sd = this.selfDots.children;
+    for (let i = 0; i < 3; i++) { const d = sd[i]; if (d) b.cls(d, 'lit', m.selfLit[i] as boolean); }
+    b.style(this.followDots, 'opacity', String(m.followOpacity));
+    b.cls(this.followDots, 'shadow', m.followKind === 'shadow');
+    b.style(this.followDots, 'transform', `translate(calc(-50% + ${m.followDx}px), calc(-50% + ${m.followDy}px))`);
+    const fd = this.followDots.children;
+    for (let i = 0; i < 3; i++) { const d = fd[i]; if (d) b.cls(d, 'lit', m.followLit[i] as boolean); }
+    // 纸条闪现、纸条翻看
+    b.cls(this.noteFlashEl, 'on', this.noteUntil > t);
+    this.renderNoteOpen(t, b);
+    // 跳过
+    b.cls(this.skipBtn, 'on', this.skipVisible);
+    b.cls(this.skipBtn, 'holding', this.skipVisible && this.skipHolding);
   }
 
-  /** 当前显示的字幕文字（__game.getState().text）。 */
-  currentText(): string[] { return this.lines.map((l) => l.text); }
+  private renderNoteOpen(t: number, b: DomBatch): void {
+    const n = this.noteOpen;
+    if (n && t - n.t0 >= NOTE_OPEN.endAt) this.noteOpen = null;
+    const cur = this.noteOpen;
+    if (this.noteDrawn !== this.noteVersion) {
+      this.noteDrawn = this.noteVersion;
+      const def = cur?.def ?? null;
+      b.run(() => {
+        fillPaper(this.noteFront, def, 'front');
+        fillPaper(this.noteBack, def, 'back');
+      });
+    }
+    const k = cur ? t - cur.t0 : -1;
+    b.cls(this.noteCard, 'on', !!cur);
+    b.cls(this.noteCard, 'fading', !!cur && k >= NOTE_OPEN.fadeAt);
+    b.cls(this.noteCard, 'flipped', !!cur && k >= NOTE_OPEN.flipAt);
+  }
+
+  private reconcileLines(lines: readonly SubLine[]): void {
+    const keep = new Set(lines.map((l) => l.key));
+    for (const [k, el] of this.lineEls) if (!keep.has(k)) { el.remove(); this.lineEls.delete(k); }
+    for (const l of lines) {
+      if (this.lineEls.has(l.key)) continue;
+      const d = document.createElement('div');
+      d.className = `hw-line ${l.style}${l.side < 0 ? ' side-l' : l.side > 0 ? ' side-r' : ''}`;
+      if (l.speaker) { const s = document.createElement('span'); s.className = 'sp'; s.textContent = SPEAKERS[l.speaker]; d.appendChild(s); }
+      d.appendChild(document.createTextNode(l.text));
+      this.subsEl.appendChild(d);
+      this.lineEls.set(l.key, d);
+    }
+  }
+
+  /** 当前显示的字幕文字（测试用）。 */
+  currentText(): string[] { return this.subs.lines.map((l) => l.text); }
 }
 
-const ZH = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'];
-function numZh(n: number): string { return ZH[n] ?? String(n); }
+/** 纸条的一面（HUD 翻看与纸条界面共用）。 */
+export function fillPaper(el: HTMLElement, def: NoteDef | null, side: 'front' | 'back'): void {
+  el.replaceChildren();
+  if (!def) return;
+  if (side === 'front' && def.face === 'doodle') {
+    const d = document.createElement('div');
+    d.className = 'doodle';
+    d.innerHTML = DOODLE_SVG;
+    el.appendChild(d);
+  }
+  const line = side === 'front' ? def.front : def.back;
+  if (line) {
+    const p = document.createElement('div');
+    p.className = `pencil${side === 'back' ? ' back' : ''}`;
+    p.textContent = lineText(line);
+    el.appendChild(p);
+  }
+}
+
+/** 手掌和脚掌的简笔画（n1-a，§3「纸条」）。铅笔线，不画脸。 */
+export const DOODLE_SVG = `<svg viewBox="0 0 120 70" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+<path d="M14 58 C12 46 13 38 16 32 L15 16 C15 13 19 13 19 16 L20 29 L21 11 C21 8 25 8 25 11 L25 29 L27 12 C27 9 31 9 31 12 L30 30 L33 18 C33 15 37 16 36 19 L34 36 C36 33 40 32 41 35 C38 41 35 47 33 58 Z"/>
+<path d="M66 58 C63 50 64 42 70 36 C74 32 76 24 79 18 C81 14 87 14 88 19 C90 27 88 36 88 44 C88 52 84 58 78 59 C73 60 68 60 66 58 Z"/>
+<circle cx="81" cy="12" r="2.2"/><circle cx="86" cy="11" r="1.8"/><circle cx="90" cy="13" r="1.6"/><circle cx="93" cy="16" r="1.4"/><circle cx="95" cy="20" r="1.2"/>
+<path d="M50 40 L58 40 M55 37 L58 40 L55 43"/>
+</svg>`;
