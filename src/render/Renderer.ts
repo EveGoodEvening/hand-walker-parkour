@@ -1,5 +1,7 @@
-// src/render/Renderer.ts —— WebGL 渲染器的创建与检测（DESIGN.md §5、§5.8、§9.4）。CORE 写初版，之后归 WP3。
+// src/render/Renderer.ts —— WebGL 渲染器的创建与检测（DESIGN.md §5、§5.8、§9.4，WP3）。
 // r186 的 WebGLRenderer 默认 stencil: false，必须显式传 stencil: true；启动时检查上下文是否真的有模板缓冲。
+// 色调映射 NeutralToneMapping（曝光 1.0），输出 SRGBColorSpace；像素比按档位（高画质取 min(dpr, 1.5)）。
+// antialias 是上下文属性，只在创建时生效：之后切到高画质不会补开抗锯齿（自动档位先用中档，所以通常没有 AA）。
 import * as THREE from 'three';
 import type { QualityProfile } from '../core/contracts';
 
