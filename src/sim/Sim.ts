@@ -617,7 +617,8 @@ export class Sim implements SimAPI {
     const win = this.assist ? TUNING.assist.crispWindow : TUNING.steady.crispWindow;
     const cad = Math.max(0.5, this.cadenceNow() * this.globalMul());
     const beat = this.segBeat();
-    const nextHeel = this.t + (Math.ceil(beat + 1e-9) - beat) / cad;
+    // 输入在本 tick 推进之前处理：beat 对应的是上一 tick 末（this.t − TICK_DT）
+    const nextHeel = this.t - TICK_DT + (Math.ceil(beat + 1e-9) - beat) / cad;
     return crispDelta(intentSec(e), this.lastHeelT, nextHeel) <= win + 1e-9;
   }
 

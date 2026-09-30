@@ -104,14 +104,16 @@ function lastAtOrBefore(a: Float64Array, s: number): number {
 /** 需要长按伏低的里程区间：深的横档附近、腿自主抬起附近。 */
 function longDuckZones(seg: CompiledSegment, mev: readonly MotionEvent[]): Array<[number, number]> {
   const z: Array<[number, number]> = [];
-  for (const o of seg.obstacles) if (o.cls === 'bar' && o.s1 - o.s0 > 0.9) z.push([o.s0 - 8, o.s1]);
-  for (const e of mev) if (e.body.type === 'twitch') { const s = seg.s0 + e.at * seg.stride; z.push([s - 2, s + 12]); }
+  for (const o of seg.obstacles) if (o.cls === 'bar' && o.s1 - o.s0 > 0.9) z.push([o.s0 - 4, o.s0]);
+  void mev;   // 腿自主抬起：只在预警 / 抬起期间（p.twPhase ≠ 0）提供长按，见 solve()
   return z;
 }
 
 export class Solver implements SolverAPI {
   /** 最近一次求解扩展的节点数（性能诊断）。 */
   lastExpanded = 0;
+  /** 调试：每层的节点数。 */
+  trace: number[] | null = null;
   /** 求解的时间上限（秒），防止停拍很长的段无限展开。 */
   maxSeconds = 240;
 
@@ -200,6 +202,7 @@ export class Solver implements SolverAPI {
         }
       }
       layer = Array.from(next.values());
+      if (this.trace) this.trace.push(layer.length);
       // 已有到达终点的路线，且当前层的最优代价不可能更好时提前结束
       if (finished.length && layer.length) {
         let bestDone = Infinity, bestLayer = Infinity;
@@ -226,8 +229,16 @@ export class Solver implements SolverAPI {
     const key = n.keyDown ? `k${n.releaseTick >= 0 ? n.releaseTick - n.tick : Math.round((n.releaseBeat - beat) * 20)}` : '';
     const tw = p.twPhase ? `t${p.twPhase}_${Math.round(p.twT / TICK_DT)}_${Math.round(p.twHeld / TICK_DT)}` : '';
     const dr = p.drPhase ? `r${p.drDir}_${Math.round(p.drT / TICK_DT)}` : '';
-    const ask = n.asked.length ? `q${n.asksLeft}_${n.parts.join(',')}` : '';
-    return `${p.laneTarget}|${Math.round(n.pace.s * 1000)}|${air}|${duck}|${move}|${key}|${busy}|${cool}|${tw}|${dr}|${n.mCursor}|${ask}|${n.taken.length}|${p.onSoft ? 1 : 0}`;
+    let ask = '';
+    if (n.asked.length) {
+      // 已经让开的人只记「让开了」，不记是哪一刻让开的（否则每个开口时刻都是一条永不合并的分支）
+      ask = `q${n.asksLeft}_${n.asked.length}`;
+      for (let i = 0; i < n.parts.length; i += 2) {
+        const dt = (n.parts[i + 1] as number) - n.pace.tSeg;
+        ask += dt <= 0 ? `,p${n.parts[i]}` : `,${n.parts[i]}:${Math.round(dt / TICK_DT)}`;
+      }
+    }
+    return `${p.laneTarget}|${Math.round(n.pace.s * 5)}|${air}|${duck}|${move}|${key}|${busy}|${cool}|${tw}|${dr}|${n.mCursor}|${ask}|${n.taken.length}|${p.onSoft ? 1 : 0}`;
   }
 
   private expand(ctx: {
