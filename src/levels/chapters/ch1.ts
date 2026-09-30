@@ -1,8 +1,10 @@
 // src/levels/chapters/ch1.ts —— 第一章 · 早自习（DESIGN.md §4.1、§8.6）。CORE 编写（可玩的首章），之后归 WP2。
 // 数据照抄 §8.6，WP2 按 §10.1 的 lead 修订改了两处：
 //   · 1-2 @36：第一次出现清洁车（cart）的那一行只有它（R7「新种类首次出现，该行只有它」），写成显式种类。
-//   · 1-6：30 拍 → 38 拍，停拍从 @20 挪到 @28。1-5 窗口结束才自动回头的最坏时序下，水母影子与 1-6 的
-//     doubleMod 相隔 ≥ 20 s（原来 18.9 s，违反附录 A-11 / R6）。1-5 的回头窗口 @124–136 保持不变。
+//   · R6 / 附录 A-11：玩家不按 Q、窗口结束才自动回头的最坏时序下，1-5 的水母影子与 1-6 的 doubleMod 原来只隔 18.9 s。
+//     现在 1-5 回头窗口 @124–136 → @124–133（窗口开始不能再早：离 @24 追随者登场也要 ≥ 20 s），1-6 停拍 @20 → @23
+//     （自动爬行 3.6 s → 3.4 s，停在 @29.8，段长仍是 30 拍），第三只手从停拍 +1.4 s 挪到 +1.8 s（「嘘」仍在 +2.6 s）。
+//     两个间隔都 ≥ 20 s。各段拍数不变（tests/unit/core 断言了全章长度）。
 // 台词全部来自 lines.ts。
 import type { ChapterDef } from '../schema';
 
@@ -138,7 +140,7 @@ export default {
       ],
       patterns: [{ at: 178, pattern: 'tripleVault', lane: 0, gap: 5 }],     // 第一次「三连撑」
       notes: [{ at: 166, lane: -1, note: 'n1-b' }],
-      windows: [{ id: 'emptyHall', from: 124, to: 136, type: 'lookBack', auto: true, gain: 1, then: [
+      windows: [{ id: 'emptyHall', from: 124, to: 133, type: 'lookBack', auto: true, gain: 1, then: [
         { at: 0.0, type: 'text', line: 'c1.empty' },
         { at: 0.9, type: 'shadow', mode: 'jellyfish', seconds: 3.0 },
         { at: 1.2, type: 'text', line: 'c1.shadowProne', id: 'shadowStanding' },
@@ -156,21 +158,21 @@ export default {
     /* 1-6 擦不干净的镜子：嘘 */
     {
       id: '1-6', kind: 'run', kit: 'corridor', variant: 'mirrorEnd', atmosphere: 'morning', surface: 'terrazzo',
-      beats: 38, stride: 1.0, cadence: 4.8,
+      beats: 30, stride: 1.0, cadence: 4.8,
       follower: { mode: 'behind' },
-      surfaces: [{ id: 'endMirror', kind: 'endMirror', side: 'end', from: 38, to: 38, y: [0.15, 1.9], chipped: false, backdrop: 'darkRoom' }],
+      surfaces: [{ id: 'endMirror', kind: 'endMirror', side: 'end', from: 30, to: 30, y: [0.15, 1.9], chipped: false, backdrop: 'darkRoom' }],
       rows: [[6, 'L..'], [12, '..B']],
       events: [
         { at: 2, type: 'double', spec: { id: 'endMirror', surface: 'endMirror', source: 'history', delay: 0 } },
-        // 停拍在 @28：1-5 自动回头的水母影子（最坏时序）到这里的 doubleMod ≥ 20 s（附录 A-11）
-        { at: 28, type: 'stop', seconds: 8, timeline: [
+        // 停拍在 @23：1-5 自动回头的水母影子（最坏时序）到这里的 doubleMod ≥ 20 s（附录 A-11）
+        { at: 23, type: 'stop', seconds: 8, timeline: [
           { at: 0.6, type: 'text', line: 'c1.noLag' },
-          { at: 1.4, type: 'doubleMod', target: 'endMirror', mod: { thirdHand: { gesture: 'shush', at: 0, hold: 3 } } },
+          { at: 1.8, type: 'doubleMod', target: 'endMirror', mod: { thirdHand: { gesture: 'shush', at: 0, hold: 3 } } },
           { at: 2.6, type: 'text', line: 'c1.shush', id: 'thirdHandShush' },
           { at: 2.6, type: 'sfx', sfx: 'shush' },
           { at: 2.6, type: 'hush', seconds: 30 },
           { at: 4.2, type: 'overlay', op: 'black', seconds: 1.5 },
-          { at: 4.4, type: 'autoCrawl', speed: 2.0, seconds: 3.6 },
+          { at: 4.4, type: 'autoCrawl', speed: 2.0, seconds: 3.4 },
           { at: 5.2, type: 'text', line: 'c1.applause' },
           { at: 8.0, type: 'end' },
         ] },
