@@ -20,7 +20,7 @@ import { SetBuild, crawlerFigure } from './lib/setkit';
 export const WATER_EDGE_Z = 0.2;
 /** 水面范围 [x0, z0, x1, z1]（y = 0 平面，z0 < z1）。 */
 export const WATER_RECT: readonly [number, number, number, number] = [-40, -60, 40, WATER_EDGE_Z];
-const RINGS = 6, RING_SEG = 28;
+const RINGS = 4, RING_SEG = 28;
 
 interface WaterAnim {
   fx: THREE.Mesh; fxBase: Float32Array; overlay: THREE.MeshBasicMaterial; crowd: THREE.Mesh | null;
@@ -78,8 +78,15 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
     crowd.renderOrder = RENDER_ORDER.puddleDouble;
   }
   // 水面色调叠加层（「一大片灰色的水」）：模板区里，不写深度
+  // 近处深、远处浅（映着天）：沿 z 分几条渐变
   const og = new OGeo();
-  og.flat(0.002, x0, x1, z1, z0, C.plazaWater, true);
+  const bands = [z1, -1, -4, -10, -25, z0];
+  for (let i = 0; i + 1 < bands.length; i++) {
+    const za = bands[i] as number, zb = bands[i + 1] as number;
+    const ca = mix(shade(C.plazaWater, 0.85), C.plazaSky, i / (bands.length - 1) * 0.55), cb = mix(shade(C.plazaWater, 0.85), C.plazaSky, (i + 1) / (bands.length - 1) * 0.55);
+    og.gtri([x0, 0.002, za], [x1, 0.002, za], [x1, 0.002, zb], ca, ca, cb);
+    og.gtri([x0, 0.002, za], [x1, 0.002, zb], [x0, 0.002, zb], ca, cb, cb);
+  }
   const overlay = b.glass(og, ctx.stencil ? 0.42 : 0.82, 'waterOverlay');
   const om = overlay.material as THREE.MeshBasicMaterial;
   if (ctx.stencil) {
@@ -141,7 +148,7 @@ function animate(a: WaterAnim, t: number, snap: SimSnapshot | null): void {
     const R = burst ? 0.2 + ph * (2 + r * 0.8) : 0.05 + ph * 1.6;
     const wdt = 0.006 + ph * 0.012;
     // 双手按进水里的那几秒有涟漪，之后水面重新变平（「水面很平」）；碎开时再炸开
-    const settle = burst ? 1 : Math.max(0, 1 - Math.max(0, t - 2.5) / 1.5);
+    const settle = burst ? 1 : Math.max(0, 1 - Math.max(0, t - 1.5) / 1.5);
     const bright = (burst ? 1 - ph * 0.6 : 1 - ph) * (t < 0.2 && !burst ? t / 0.2 : 1) * settle;
     for (let i = 0; i < RING_SEG; i++) {
       const a0 = (i / RING_SEG) * Math.PI * 2, a1 = ((i + 1) / RING_SEG) * Math.PI * 2;

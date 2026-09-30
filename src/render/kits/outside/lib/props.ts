@@ -45,9 +45,9 @@ export function lampReflection(w: ChunkWork, s: number, x: number, head: number)
     const spread = 0.12 + t * 0.35;
     const cx = x * (1 - t * 0.35) + (rng.next() * 2 - 1) * spread;
     const cs = s - ds;
-    const len = 0.08 + rng.next() * 0.3, wid = 0.04 + rng.next() * 0.12;
-    const k = (1 - t) * (0.55 + rng.next() * 0.3);
-    const col = mix(C.asphalt, head, Math.max(0.15, k));
+    const len = 0.03 + rng.next() * 0.12, wid = 0.015 + rng.next() * 0.05;
+    const k = (1 - t) * (0.3 + rng.next() * 0.25);
+    const col = mix(C.asphalt, head, Math.max(0.1, k));
     const z = w.z(cs);
     const sk = (rng.next() * 2 - 1) * 0.04;
     w.emi.face([cx - wid, 0.004, z + len], [cx + wid, 0.004, z + len + sk], [cx + wid * 0.7, 0.004, z - len], [cx - wid * 0.8, 0.004, z - len - sk], col, [0, 1, 0]);

@@ -99,6 +99,7 @@ export class Outdoor implements ViewSystem {
   /** 预览（weather/preview.ts）接管时设置：强制户外、天空种类、栏杆锚点与 x 偏移。 */
   preview: { sky: SkyKind | null; sweepS: number | null; offsetX: number; t: number } | null = null;
   private lastT = 0;
+  private drawnKind: SkyKind | null = null;
 
   init(ctx: ViewContext): void {
     this.ctx = ctx;
@@ -117,7 +118,13 @@ export class Outdoor implements ViewSystem {
     this.sky.frustumCulled = false;
     this.sky.visible = false;
     // 跟着这一帧真正渲染用的镜头（镜头系统 order 60 在本系统之后才定位镜头）
-    this.sky.onBeforeRender = (_r, _s, camera) => { this.sky.position.setFromMatrixPosition(camera.matrixWorld); this.sky.updateMatrixWorld(); };
+    // 颜色也在这时取：雾色此刻已经被氛围系统（和预览）定好
+    this.sky.onBeforeRender = (_r, scene, camera) => {
+      this.sky.position.setFromMatrixPosition(camera.matrixWorld);
+      this.sky.updateMatrixWorld();
+      const k = this.drawnKind;
+      if (k && scene.fog instanceof THREE.Fog) this.skyMat.color.copy(scene.fog.color).multiplyScalar(SKY_GAIN[k]);
+    };
     ctx.scene.add(this.sky);
     // 栏杆红光：贴地一道细光 + 齐腰高的一道细线（「在我身上扫了一下，像一道浅浅的伤口」），一起前后扫
     const g = new OGeo();
@@ -201,7 +208,7 @@ export class Outdoor implements ViewSystem {
     const kind = pv ? pv.sky : this.skyKind;
     if (pv && kind) this.setSky(kind);
     this.sky.visible = outdoor && kind !== null && !!this.skyMat.map;
-    if (this.sky.visible && kind && fog) this.skyMat.color.copy(fog.color).multiplyScalar(SKY_GAIN[kind]);
+    this.drawnKind = this.sky.visible ? kind : null;
     // 栏杆红光
     let sweepS: number | null = null;
     if (pv) sweepS = pv.sweepS;

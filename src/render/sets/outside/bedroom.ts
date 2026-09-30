@@ -32,14 +32,14 @@ export function kneeHeights(t: number, prompt: string | null, held: number, rela
   if (prompt === 'hold' || prompt === 'fist') {
     const p = Math.min(1, held / holdSec);
     // 在手下轻轻挣动（像一条鱼在网里），越按越弱
-    return { r: 0.22 - 0.12 * p + 0.025 * (1 - p) * Math.sin(t * 17), l: 0.03 * (1 - p) * Math.max(0, Math.sin(t * 5)) };
+    return { r: 0.18 - 0.1 * p + 0.022 * (1 - p) * Math.sin(t * 17), l: 0.03 * (1 - p) * Math.max(0, Math.sin(t * 5)) };
   }
   if (t < 0.3) return { r: 0, l: 0 };
   // 右脚先起、保持、落下；左脚跟着一遍；右脚又来（周期 2.4 s）
   const p = (t - 0.3) % 2.4;
   const rise = (a: number, b: number, c: number, d: number) => (p < a ? 0 : p < b ? (p - a) / (b - a) : p < c ? 1 : p < d ? 1 - (p - c) / (d - c) : 0);
   const e = (v: number) => v * v * (3 - 2 * v);
-  return { r: 0.26 * e(rise(0, 0.45, 1.0, 1.3)), l: 0.24 * e(rise(1.25, 1.65, 2.0, 2.35)) };
+  return { r: 0.2 * e(rise(0, 0.45, 1.0, 1.3)), l: 0.18 * e(rise(1.25, 1.65, 2.0, 2.35)) };
 }
 
 /** 被子的高度场：腿的两道隆起 + 膝盖 + 两侧垂下 + 床尾垂下。 */
@@ -97,8 +97,8 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   glowDisc(gl, [X0 + 0.9, 0.004, -0.9], 1.0, 0x141b20, 16, [0, 1, 0], 0.35);
   b.glow(gl, 'curtainGap');
   // 被子（变形网格）
-  const q = ctx.quality.tier === 'low' ? 1 : 2;
-  const grid = heightGrid(BED.x0 - 0.1, BED.x1 + 0.1, BED.zFoot - 0.12, 1.3, 10 * q, 14 * q, 0.6, (x, z) => blanketHeight(x, z, 0, 0));
+  const q = ctx.quality.tier === 'low' ? 1 : 1.6;
+  const grid = heightGrid(BED.x0 - 0.1, BED.x1 + 0.1, BED.zFoot - 0.12, 1.3, Math.round(16 * q), Math.round(22 * q), 0.6, (x, z) => blanketHeight(x, z, 0, 0));
   bakeGeometry(grid.geometry, BED_LIGHTS, BED_AMBIENT);
   b.texturedBasic(grid.geometry, 'bedSheet', {}, 'blanket', true);
   // 天花板 + 裂缝（河）：ceiling 变体照得更清楚

@@ -133,7 +133,7 @@ describe('色彩（附录 A-9）：第四、五章的 set 没有暖色；第三�
 describe('动画时间线（纯函数）', () => {
   it('5-1：脚先自己弓起；按住时在手下挣动、越按越弱；输入完成后放松（不是「按不住」）', () => {
     expect(kneeHeights(0.1, null, 0, null)).toEqual({ r: 0, l: 0 });
-    expect(kneeHeights(0.9, null, 0, null).r).toBeGreaterThan(0.2);
+    expect(kneeHeights(0.9, null, 0, null).r).toBeGreaterThan(0.15);
     expect(kneeHeights(2.0, null, 0, null).l).toBeGreaterThan(0.1);
     const early = kneeHeights(6, 'hold', 0.1, null).r, late = kneeHeights(6, 'hold', 2.4, null).r;
     expect(early).toBeGreaterThan(late);
