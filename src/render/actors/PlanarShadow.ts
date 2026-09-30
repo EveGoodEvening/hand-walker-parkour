@@ -219,9 +219,9 @@ export class PlanarShadowSystem implements ViewSystem {
         return b.finish();
       }
       case 'threeHands': case 'pointBack': {
-        // 从胸口伸出、越过身体指向身后（向外上方抬起，投影才不会埋在身体的影子里）
-        _d.set(0.55, 0.3, 0.78).normalize();
-        applyThirdHand(b, 'point', clamp(u / 1.2, 0, 1), u, { dir: _d });
+        // 从胸口伸出、向外侧指向身后（伸出身体的轮廓，投影才不会埋在身体的影子里）
+        _d.set(0.8, 0.2, 0.56).normalize();
+        applyThirdHand(b, 'point', WP5.poseTest ? 1 : clamp(u / 1.2, 0, 1), u, { dir: _d });
         b.fkAll();
         return b.finish();
       }
