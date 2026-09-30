@@ -188,6 +188,11 @@ function posture(id: AnyClip, t: number): Posture | null {
   }
 }
 
+/** 与时间无关的体态：缓存一次，避免每帧分配（§9.4「热路径不分配内存」）。 */
+const STATIC: ReadonlySet<AnyClip> = new Set<AnyClip>(['sit', 'sitDesk', 'sitEat', 'busSeat', 'busSeatNormal', 'smile', 'kneel', 'kneelSit', 'lieBack',
+  'palmToGlass', 'pointMirror', 'pointBack', 'answerLean', 'counterStand', 'sinkLean', 'touchPillowDent', 'palmEyeHold', 'handsInWater', 'sitFloor']);
+const STATIC_CACHE = new Map<AnyClip, Posture>();
+
 /** 行走时的手臂轻摆。 */
 function armSwing(P: Posture, phase: number): Posture {
   const a = Math.sin(frac(phase) * 2 * Math.PI) * 0.12;
@@ -224,7 +229,11 @@ export function clipPose(id: AnyClip, t: number, b: PoseBuilder, out: Pose, at: 
     }
     default: break;
   }
-  const P = posture(id, t);
+  let P: Posture | null;
+  if (STATIC.has(id)) {
+    P = STATIC_CACHE.get(id) ?? null;
+    if (!P) { P = posture(id, 0); if (P) STATIC_CACHE.set(id, P); }
+  } else P = posture(id, t);
   if (!P) return copyPose(out, crawlAt(at, 0.3, b));
   return copyPose(out, applyPosture(P, at, b));
 }

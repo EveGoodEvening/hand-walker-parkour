@@ -402,11 +402,11 @@ export class DoubleSystem implements ViewSystem {
     return true;
   }
 
-  /** 头的世界坐标（替身本帧）。 */
+  /** 头心的世界坐标（替身本帧）：头骨关节沿头的朝向上移 0.1 m。 */
   private headOf(r: Rec, sl: Slot): void {
     const hi = BONE_INDEX.head;
-    this.b.toWorld(this.b.wp[hi] as THREE.Vector3, r.head);
-    r.head.y += 0.1;
+    _v.set(0, 0.1, 0).applyQuaternion(this.b.wq[hi] as THREE.Quaternion).add(this.b.wp[hi] as THREE.Vector3);
+    this.b.toWorld(_v, r.head);
     r.head.applyMatrix4(sl.box.matrix);
   }
 

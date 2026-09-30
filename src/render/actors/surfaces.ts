@@ -300,6 +300,7 @@ export class ReflectSurfaces implements ViewSystem {
   isActive(id: string): boolean { return this.views.get(id)?.active ?? false; }
   /** 强制激活（替身在上面时，优先于距离排序）。 */
   private wanted = new Set<string>();
+  private readonly cand: SurfaceView[] = [];
   want(id: string): void { this.wanted.add(id); }
 
   frame(prev: SimSnapshot, next: SimSnapshot, alpha: number, dt: number): void {
@@ -307,7 +308,9 @@ export class ReflectSurfaces implements ViewSystem {
     const run = next.segKind !== 'still';
     const far = this.ctx.quality.chunksAhead * 12 + 6;
     let mirrors = this.ctx.quality.mirrorsActive, puddles = this.ctx.quality.puddlesActive;
-    const cand = this.list.filter((v) => run && v.s1 > s - 4 && v.s0 < s + far);
+    const cand = this.cand;
+    cand.length = 0;
+    if (run) for (const v of this.list) if (v.s1 > s - 4 && v.s0 < s + far) cand.push(v);
     cand.sort((a, b) => (this.wanted.has(b.id) ? 1 : 0) - (this.wanted.has(a.id) ? 1 : 0) || Math.abs(a.s0 - s) - Math.abs(b.s0 - s));
     const stencil = this.stencil;
     for (const v of this.list) v.active = false;
