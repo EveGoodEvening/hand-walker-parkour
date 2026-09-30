@@ -1,5 +1,9 @@
 // src/levels/chapters/ch1.ts —— 第一章 · 早自习（DESIGN.md §4.1、§8.6）。CORE 编写（可玩的首章），之后归 WP2。
-// 数据逐项照抄 §8.6；台词全部来自 lines.ts。
+// 数据照抄 §8.6，WP2 按 §10.1 的 lead 修订改了两处：
+//   · 1-2 @36：第一次出现清洁车（cart）的那一行只有它（R7「新种类首次出现，该行只有它」），写成显式种类。
+//   · 1-6：30 拍 → 38 拍，停拍从 @20 挪到 @28。1-5 窗口结束才自动回头的最坏时序下，水母影子与 1-6 的
+//     doubleMod 相隔 ≥ 20 s（原来 18.9 s，违反附录 A-11 / R6）。1-5 的回头窗口 @124–136 保持不变。
+// 台词全部来自 lines.ts。
 import type { ChapterDef } from '../schema';
 
 export default {
@@ -39,7 +43,7 @@ export default {
       ],
       surfaces: [{ id: 'win3f', kind: 'window', side: 'L', from: 44, to: 56, y: [1.0, 2.2], backdrop: 'evening' }],
       rows: [
-        [17, '.B.'], [24, 'B..'], [30, '..L'], [36, 'B.B'],
+        [17, '.B.'], [24, 'B..'], [30, '..L'], [36, ['cart', '.', 'cart']],   // 清洁车第一次出现：这一行只有它（R7）
         [46, 'WWW', 3],                          // 楼梯口：拖把桶留下的水渍
         [68, 'HHH'],                             // 报名长桌横跨三道：第一次伏低
         [75, 'L..'], [80, '..B'], [85, '.H.'], [90, 'B.L'],
@@ -152,13 +156,14 @@ export default {
     /* 1-6 擦不干净的镜子：嘘 */
     {
       id: '1-6', kind: 'run', kit: 'corridor', variant: 'mirrorEnd', atmosphere: 'morning', surface: 'terrazzo',
-      beats: 30, stride: 1.0, cadence: 4.8,
+      beats: 38, stride: 1.0, cadence: 4.8,
       follower: { mode: 'behind' },
-      surfaces: [{ id: 'endMirror', kind: 'endMirror', side: 'end', from: 30, to: 30, y: [0.15, 1.9], chipped: false, backdrop: 'darkRoom' }],
+      surfaces: [{ id: 'endMirror', kind: 'endMirror', side: 'end', from: 38, to: 38, y: [0.15, 1.9], chipped: false, backdrop: 'darkRoom' }],
       rows: [[6, 'L..'], [12, '..B']],
       events: [
         { at: 2, type: 'double', spec: { id: 'endMirror', surface: 'endMirror', source: 'history', delay: 0 } },
-        { at: 20, type: 'stop', seconds: 8, timeline: [
+        // 停拍在 @28：1-5 自动回头的水母影子（最坏时序）到这里的 doubleMod ≥ 20 s（附录 A-11）
+        { at: 28, type: 'stop', seconds: 8, timeline: [
           { at: 0.6, type: 'text', line: 'c1.noLag' },
           { at: 1.4, type: 'doubleMod', target: 'endMirror', mod: { thirdHand: { gesture: 'shush', at: 0, hold: 3 } } },
           { at: 2.6, type: 'text', line: 'c1.shush', id: 'thirdHandShush' },
