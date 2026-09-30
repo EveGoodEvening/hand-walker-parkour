@@ -1,147 +1,164 @@
-// src/render/actors/index.ts —— 角色包入口（DESIGN.md §5.5、§5.6、§8.2）。CORE 写初版，之后归 WP5。
-// 注册占位 RigFactory 与主角 ViewSystem（order 30）。主角按拍做最简爬行：
-//   每只手 2 拍一个周期，左右相差 1 拍；支撑期手锁定在地面（两骨解析 IK），摆动期弧线前摆；
-//   掌根触地时腕背伸、指节 / 指腹上翘，随后放平（让三段落地在画面上读得出来）。
-// 替身、影子、第三只手、脚本姿势、PoseClip 全部由 WP5 实现；桩阶段 double / shadow 等 cue 走默认日志。
+// src/render/actors/index.ts —— 角色包入口（DESIGN.md §5.5–§5.8、§8.7、§8.8、§8.10 WP5）。WP5。
+// 注册：RigFactory（刚性蒙皮主角，1 次 draw call）、主角（order 30）、领跑者（32）、反光面（40）、替身（42）、平面影子（44）；
+// cue 处理器：double、doubleMod、doubleEnd、shadow、memory、actor（camera 在 render/camera/index.ts）。
+// 调试扩展（__game.ext）：poseTest（§8.8 的 7 种姿势）、wp5State、wp5Cam、wp5NoStencil、wp5Leader、wp5Puddle、wp5PixelCheck。
 import * as THREE from 'three';
-import type { RigHandle, ViewContext, ViewSystem } from '../../core/contracts';
-import { clamp, easeInOutSine, frac, lerp, smoothstep } from '../../core/math';
-import { registerRigFactory, registerViewSystem } from '../../core/registry';
-import { BONE_INDEX, createPose, type BoneName, type Pose } from '../../core/rig';
+import { registerCueHandler, registerDebug, registerRigFactory, registerViewSystem } from '../../core/registry';
 import type { SimSnapshot } from '../../core/types';
-import { ARM, BIND, createPlaceholderRigFactory } from './rigBuild';
+import { playerActor } from './Actor';
+import { DoubleSystem } from './Doubles';
+import { LeaderSystem } from './Leader';
+import { PlanarShadowSystem } from './PlanarShadow';
+import { ActorRigFactory, triangleCount } from './rigBuild';
+import { WP5, wp5Params, type PoseTestName } from './shared';
+import { ReflectSurfaces } from './surfaces';
 
-const DOWN = new THREE.Vector3(0, -1, 0);
-const _q = new THREE.Quaternion(), _qU = new THREE.Quaternion(), _qF = new THREE.Quaternion(), _qW = new THREE.Quaternion(), _qT = new THREE.Quaternion();
-const _S = new THREE.Vector3(), _W = new THREE.Vector3(), _E = new THREE.Vector3(), _u = new THREE.Vector3(), _v = new THREE.Vector3(), _d = new THREE.Vector3();
-const _e = new THREE.Euler();
+let factory: ActorRigFactory | null = null;
+export const surfacesSys = new ReflectSurfaces();
+export const doubles = new DoubleSystem(surfacesSys);
+export const shadowSys = new PlanarShadowSystem();
+export const leaderSys = new LeaderSystem();
 
-function setQ(p: Pose, b: BoneName, q: THREE.Quaternion): void { q.toArray(p.q, BONE_INDEX[b] * 4); }
-function setEuler(p: Pose, b: BoneName, x: number, y: number, z: number): void { _q.setFromEuler(_e.set(x, y, z, 'XYZ')); setQ(p, b, _q); }
+WP5.forceNoStencil = wp5Params().noStencil;
 
-/** 两骨解析 IK：肩 S → 腕目标 W（角色空间），肘向后外侧弯。写入上臂、前臂、掌的局部旋转。 */
-function armIK(p: Pose, side: 'L' | 'R', target: THREE.Vector3, palmPitch: number, knuckle: number, pad: number): void {
-  const sb = BIND[`upperArm${side}`];
-  _S.set(sb[0], sb[1], sb[2]);
-  _d.copy(target).sub(_S);
-  const a = ARM.upper, b = ARM.fore;
-  const dist = clamp(_d.length(), Math.abs(a - b) + 1e-3, a + b - 1e-3);
-  _u.copy(_d).normalize();
-  // 极向量：后方偏外
-  _v.set(side === 'L' ? -0.35 : 0.35, 0, 1);
-  _v.addScaledVector(_u, -_v.dot(_u)).normalize();
-  const cosA = (a * a + dist * dist - b * b) / (2 * a * dist);
-  const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
-  _E.copy(_S).addScaledVector(_u, a * cosA).addScaledVector(_v, a * sinA);
-  _W.copy(_S).addScaledVector(_u, dist);
-  // 上臂：绑定方向 −y → S→E
-  _qU.setFromUnitVectors(DOWN, _v.copy(_E).sub(_S).normalize());
-  // 前臂：在上臂坐标系里，−y → E→W
-  _d.copy(_W).sub(_E).normalize().applyQuaternion(_qT.copy(_qU).invert());
-  _qF.setFromUnitVectors(DOWN, _d);
-  setQ(p, `upperArm${side}`, _qU);
-  setQ(p, `foreArm${side}`, _qF);
-  // 掌：世界（角色空间）朝向 = 绕 x 抬起 palmPitch；局部 = (qU·qF)^-1 · qWorld
-  _qW.setFromEuler(_e.set(palmPitch, 0, 0));
-  _qT.copy(_qU).multiply(_qF).invert().multiply(_qW);
-  setQ(p, `palm${side}`, _qT);
-  setEuler(p, `knuckle${side}`, knuckle, 0, 0);
-  setEuler(p, `pad${side}`, pad, 0, 0);
-}
+registerRigFactory((ctx) => { factory = new ActorRigFactory(ctx); return factory; });
+registerViewSystem(playerActor);
+registerViewSystem(leaderSys);
+registerViewSystem(surfacesSys);
+registerViewSystem(doubles);
+registerViewSystem(shadowSys);
 
-export interface CrawlInput { s: number; x: number; y: number; floorY: number; beat: number; stride: number; duck: number; air: boolean; airT: number; mode: string; laneTarget: number; t: number }
+registerCueHandler('actor', 'WP5', (b, c) => playerActor.playClip(b.clip, b.seconds, c.snap.t));
+registerCueHandler('double', 'WP5', (b, c) => doubles.spawn(b.spec, c.snap));
+registerCueHandler('doubleMod', 'WP5', (b, c) => doubles.modify(b.target, b.mod, c.snap.t));
+registerCueHandler('doubleEnd', 'WP5', (b, c) => doubles.end(b.target, b.fade, c.snap.t));
+registerCueHandler('shadow', 'WP5', (b, c) => shadowSys.setMode(b.mode, b.seconds, c.snap.t));
+registerCueHandler('memory', 'WP5', (b, c) => doubles.memory(b.surface, b.seconds, c.snap));
 
-/** 爬行姿势（纯函数，写入 out）。 */
-export function crawlPose(i: CrawlInput, out: Pose): Pose {
-  out.q.fill(0);
-  for (let k = 0; k < out.q.length; k += 4) out.q[k + 3] = 1;
-  const stride = Math.max(0.3, i.stride);
-  const phiStance = clamp(0.6 / (2 * stride), 0.2, 0.45);
-  const R = 0.26;
-  const duckDrop = 0.12 * i.duck;
-  const bodyY = i.air ? i.y : -duckDrop;
-  // 支撑手一侧：偶数拍左手、奇数拍右手
-  const b = i.beat;
-  const heelPhase = frac(b);
-  const support = Math.floor(b) % 2 === 0 ? -1 : 1;
-  const bob = i.air ? 0 : -0.02 * (1 - smoothstep(0, 0.35, heelPhase)) + 0.012 * Math.sin(heelPhase * Math.PI);
-  const roll = i.air ? 0 : support * 0.07 * Math.sin(Math.PI * clamp(heelPhase * 1.4, 0, 1));
-  const yaw = clamp((i.laneTarget * 1.1 - i.x) * 0.25, -0.2, 0.2) + (i.air ? 0 : -support * 0.04 * Math.sin(Math.PI * heelPhase));
-  let pitch = i.air ? 0.06 : 0;
-  if (i.mode === 'stumble') pitch += 0.05;
-  let rootY = i.floorY + bodyY + bob;
-  let rollAll = roll;
-  if (i.mode === 'fall') { rootY = i.floorY - 0.16; rollAll = 0.45; pitch = 0.12; }
-  out.root[0] = i.x; out.root[1] = rootY; out.root[2] = i.s; out.root[3] = yaw; out.root[4] = pitch; out.root[5] = rollAll;
-  // 手
-  for (const side of ['L', 'R'] as const) {
-    const off = side === 'L' ? 0 : 1;
-    const phi = frac((b - off) / 2);
-    const sb = BIND[`upperArm${side}`];
-    let dz: number, dy: number, palm = 0, kn = 0, pd = 0;
-    if (i.air) {
-      const k = clamp(i.airT / 0.3, 0, 1);
-      dz = lerp(-0.1, -0.34, k); dy = 0.1 - (i.y > 0.05 ? 0.06 : 0);
-      palm = 0.25; kn = 0.2; pd = 0.15;
-    } else if (phi < phiStance) {
-      const u = phi / phiStance;
-      dz = -R + 2 * R * u; dy = 0;
-      // 掌根触地 → 指节（+26 ms）→ 指腹（+52 ms）：用拍内相位近似
-      const tSince = u * phiStance * 2 / 5;        // 约 5 掌/s 时的秒数
-      palm = 0.44 * (1 - smoothstep(0, 0.03, tSince));
-      kn = 0.35 * (1 - smoothstep(0.02, 0.05, tSince));
-      pd = 0.26 * (1 - smoothstep(0.045, 0.08, tSince));
-    } else {
-      const u = (phi - phiStance) / (1 - phiStance);
-      dz = R - 2 * R * easeInOutSine(u); dy = 0.07 * Math.sin(Math.PI * u) * (stride > 1.25 ? 2 : 1);
-      palm = u > 0.85 ? 0.44 * smoothstep(0.85, 1, u) : -0.2 * Math.sin(Math.PI * u);
-      kn = -0.4 * Math.sin(Math.PI * u); pd = -0.3 * Math.sin(Math.PI * u);
+// ———————————————————— 调试扩展 ————————————————————
+const POSES: readonly PoseTestName[] = ['crawl', 'jump', 'duck', 'twitch', 'stand', 'thirdHand', 'shadowThreeHands'];
+registerDebug('poseTest', (name: unknown) => {
+  WP5.poseTest = POSES.includes(name as PoseTestName) ? (name as PoseTestName) : null;
+  return WP5.poseTest;
+});
+registerDebug('wp5Cam', (...a: unknown[]) => {
+  const [pos, look, fov] = a as [number[] | null, number[] | undefined, number | undefined];
+  if (!pos) { WP5.debugCam = null; return null; }
+  const r = WP5.playerRoot;
+  const rel = (v: number[]) => new THREE.Vector3(r.x + (v[0] ?? 0), r.y + (v[1] ?? 0), r.z + (v[2] ?? 0));
+  WP5.debugCam = { pos: rel(pos), look: rel(look ?? [0, 0.3, 0]), fov: fov ?? 50 };
+  return true;
+});
+registerDebug('wp5NoStencil', (on: unknown) => { WP5.forceNoStencil = on === true; return WP5.forceNoStencil; });
+registerDebug('wp5Leader', (on: unknown) => { leaderSys.forced = on === true; return leaderSys.forced; });
+registerDebug('wp5State', () => ({
+  doubles: doubles.active(), shadow: { mode: shadowSys.mode, ...shadowSys.state }, leader: { ...leaderSys.state },
+  surfaces: Array.from(surfacesSys.views.values()).filter((v) => v.active).map((v) => v.id),
+  focus: WP5.focus ? { kind: WP5.focus.kind, weight: WP5.focus.weight, point: WP5.focus.point.toArray() } : null,
+  poseTest: WP5.poseTest, forceNoStencil: WP5.forceNoStencil,
+  triangles: factory ? triangleCount(factory.geometry()) : 0, history: factory ? factory.history.size : 0,
+  player: WP5.playerRoot.toArray(),
+}));
+
+/** 在玩家前方放一个调试水洼，并在里面放一个站着的替身（像素检查用）。 */
+registerDebug('wp5Puddle', (...a: unknown[]) => {
+  const o = (a[0] ?? {}) as { ahead?: number; lane?: number };
+  const snap = lastSnap;
+  if (!snap) return null;
+  const v = surfacesSys.placeDebugPuddle((o.lane ?? 0) * 1.1, snap.player.s + (o.ahead ?? 3.2), snap.player.floorY);
+  if (!v) return null;
+  doubles.spawn({ id: '__wp5Puddle', surface: v.id, source: 'script', clip: 'standIdle' }, snap);
+  return v.id;
+});
+
+let lastSnap: SimSnapshot | null = null;
+registerViewSystem({ id: 'wp5.snap', owner: 'WP5', order: 29, init() { /* */ }, frame(_p, n) { lastSnap = n; } });
+
+/**
+ * 像素检查（在页面里跑，用带模板的渲染目标读回像素）：
+ *   'puddle'：替身显示 / 隐藏两次渲染的差异像素，必须全部落在水洼遮罩（膨胀 2 px）之内；
+ *   'shadow'：影子显示 / 隐藏两次渲染，逐像素的变暗比例；有模板时重叠处只压暗一次（没有 < 0.5 的像素）。
+ * 失败时抛错（console.error → shot.mjs 退出码 2），结果对象同时返回。
+ */
+registerDebug('wp5PixelCheck', (kind: unknown) => {
+  const ctx = viewCtx;
+  if (!ctx) throw new Error('wp5PixelCheck: no view');
+  const { renderer, scene, camera } = ctx;
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  const w = Math.max(1, Math.floor(size.x)), h = Math.max(1, Math.floor(size.y));
+  const rt = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true, stencilBuffer: true });
+  const read = (): Uint8Array => {
+    const buf = new Uint8Array(w * h * 4);
+    renderer.setRenderTarget(rt); renderer.clear(true, true, true); renderer.render(scene, camera);
+    renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf);
+    renderer.setRenderTarget(null);
+    return buf;
+  };
+  const lum = (b: Uint8Array, i: number) => 0.299 * (b[i] as number) + 0.587 * (b[i + 1] as number) + 0.114 * (b[i + 2] as number);
+  try {
+    if (kind === 'puddle') {
+      const box = scene.getObjectByName(doubleBoxName('__wp5Puddle'));
+      const v = surfacesSys.debugPuddle;
+      if (!box || !v || !v.mask) throw new Error('wp5PixelCheck(puddle): call __game.ext.wp5Puddle() first');
+      const A = read();
+      const vis = box.visible; box.visible = false;
+      const B = read();
+      const maskMat = v.mask.material as THREE.Material;
+      const red = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: false });
+      v.mask.material = red; const mv = v.mask.visible; v.mask.visible = true;
+      const M = read();
+      v.mask.material = maskMat; v.mask.visible = mv; red.dispose(); box.visible = vis;
+      const inMask = new Uint8Array(w * h);
+      for (let i = 0; i < w * h; i++) if ((M[i * 4] as number) > 200 && (M[i * 4 + 1] as number) < 60) inMask[i] = 1;
+      // 膨胀 2 px（抗锯齿与光栅化边缘）
+      const dil = new Uint8Array(w * h);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let hit = 0;
+        for (let dy = -2; dy <= 2 && !hit; dy++) for (let dx = -2; dx <= 2 && !hit; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < w && yy < h && inMask[yy * w + xx]) hit = 1;
+        }
+        dil[y * w + x] = hit;
+      }
+      let changed = 0, outside = 0, mask = 0;
+      for (let i = 0; i < w * h; i++) {
+        if (inMask[i]) mask++;
+        const d = Math.abs((A[i * 4] as number) - (B[i * 4] as number)) + Math.abs((A[i * 4 + 1] as number) - (B[i * 4 + 1] as number)) + Math.abs((A[i * 4 + 2] as number) - (B[i * 4 + 2] as number));
+        if (d > 12) { changed++; if (!dil[i]) outside++; }
+      }
+      const stencil = ctx.stencil && !WP5.forceNoStencil;
+      const res = { kind, stencil, w, h, mask, changed, outside, ok: stencil ? changed > 20 && outside <= Math.max(2, changed * 0.005) : outside <= Math.max(2, changed * 0.005) };
+      if (!res.ok) { console.error('[wp5PixelCheck] puddle failed', JSON.stringify(res)); }
+      return res;
     }
-    // 目标腕位（角色空间）：地面在 y = −(bodyY + bob)
-    const ground = -(bodyY + bob) + 0.01;
-    _W.set(sb[0] * 1.25, ground + dy, sb[2] + dz);
-    armIK(out, side, _W, palm, kn, pd);
-  }
-  // 腿：行李，随步态轻摆；撑跃时向后伸直（流线型）
-  const sway = i.air ? 0 : 0.05 * Math.sin(Math.PI * b);
-  const lift = i.air ? -0.35 : 0;
-  setEuler(out, 'thighL', lift, sway, 0);
-  setEuler(out, 'thighR', lift, -sway, 0);
-  setEuler(out, 'shinL', i.air ? 0.25 : 0, 0, 0);
-  setEuler(out, 'shinR', i.air ? 0.25 : 0, 0, 0);
-  // 头：补偿一部分俯仰，微微抬头看前方
-  setEuler(out, 'head', -pitch * 0.5 - 0.05, 0, -rollAll * 0.4);
-  out.thirdHand = 0;
-  return out;
+    if (kind === 'shadow') {
+      const A = read();
+      const hide = scene.children.filter((o) => o.name === 'rig:shadow' && o.visible);
+      for (const o of hide) o.visible = false;
+      const B = read();
+      for (const o of hide) o.visible = true;
+      let changed = 0, twice = 0, sum = 0;
+      for (let i = 0; i < w * h * 4; i += 4) {
+        const lb = lum(B, i), la = lum(A, i);
+        if (lb < 40 || la >= lb - 3) continue;
+        changed++;
+        const r = la / lb;
+        sum += r;
+        if (r < 0.5) twice++;
+      }
+      const stencil = ctx.stencil && !WP5.forceNoStencil;
+      const res = { kind, stencil, w, h, changed, twice, meanRatio: changed ? sum / changed : 1, ok: changed > 50 && (stencil ? twice <= changed * 0.01 : true) };
+      if (!res.ok) console.error('[wp5PixelCheck] shadow failed', JSON.stringify(res));
+      return res;
+    }
+    throw new Error(`wp5PixelCheck: unknown kind ${String(kind)}`);
+  } finally { rt.dispose(); }
+});
+
+function doubleBoxName(id: string): string {
+  const i = doubles.slotIndexOf(id);
+  return i >= 0 ? `double${i}` : '';
 }
 
-class PlayerActor implements ViewSystem {
-  readonly id = 'actors';
-  readonly owner = 'WP5' as const;
-  readonly order = 30;
-  private rig!: RigHandle;
-  private ctx!: ViewContext;
-  private pose = createPose();
-  init(ctx: ViewContext): void {
-    this.ctx = ctx;
-    this.rig = ctx.rig.create('player');
-    ctx.scene.add(this.rig.root);
-  }
-  frame(prev: SimSnapshot, next: SimSnapshot, alpha: number): void {
-    if (next.segKind !== 'run') { this.rig.root.visible = false; return; }
-    this.rig.root.visible = true;
-    const same = prev.segIndex === next.segIndex && prev.segKind === 'run';
-    const a = same ? alpha : 1;
-    const P = prev.player, N = next.player;
-    crawlPose({
-      s: lerp(P.s, N.s, a), x: lerp(P.x, N.x, a), y: lerp(P.y, N.y, a), floorY: lerp(P.floorY, N.floorY, a),
-      beat: same ? lerp(P.beat, N.beat, a) : N.beat, stride: N.stride, duck: lerp(P.duck, N.duck, a), air: N.mode === 'air',
-      airT: N.airT, mode: N.mode, laneTarget: N.laneTarget, t: next.t,
-    }, this.pose);
-    this.rig.apply(this.pose);
-    this.ctx.rig.history.push(next.t, this.pose);
-  }
-}
-
-registerRigFactory((ctx) => createPlaceholderRigFactory(ctx));
-registerViewSystem(new PlayerActor());
+let viewCtx: import('../../core/contracts').ViewContext | null = null;
+registerViewSystem({ id: 'wp5.ctx', owner: 'WP5', order: 28, init(ctx) { viewCtx = ctx; }, frame() { /* */ } });
