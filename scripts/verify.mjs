@@ -1,12 +1,14 @@
 #!/usr/bin/env node
-// scripts/verify.mjs —— `npm run verify`（DESIGN.md §8.1）。CORE 写初版，归 WP1。
+// scripts/verify.mjs —— `npm run verify`（DESIGN.md §8.1、§8.10）。CORE 写初版，WP1 维护。
 // 依次：check:owners → typecheck → test → validate → build → check:single → e2e:smoke。任何一步失败立即停止，退出码非 0。
-// `--skip-e2e` 跳过需要浏览器的两步（check:single 只做静态检查，不跑 e2e:smoke）。
+//   --skip-e2e   跳过需要浏览器的两步（check:single 只做静态检查，不跑 e2e:smoke）
+//   --full       最后再跑 e2e:chapters 与 e2e:perf（五章全跑；浏览器经锁，一次各取一个槽位）
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
 const skipE2e = process.argv.includes('--skip-e2e');
+const full = process.argv.includes('--full') && !skipE2e;
 const steps = [
   ['check:owners', ['node', 'scripts/check-owners.mjs']],
   ['typecheck', ['npx', 'tsc', '--noEmit', '-p', 'tsconfig.json']],
@@ -15,6 +17,7 @@ const steps = [
   ['build', ['npx', 'vite', 'build', '--logLevel', 'warn']],
   ['check:single', ['node', 'scripts/check-single.mjs', ...(skipE2e ? ['--static'] : [])]],
   ...(skipE2e ? [] : [['e2e:smoke', ['node', 'scripts/e2e-smoke.mjs']]]),
+  ...(full ? [['e2e:chapters', ['node', 'scripts/e2e-chapters.mjs']], ['e2e:perf', ['node', 'scripts/e2e-perf.mjs']]] : []),
 ];
 const t0 = Date.now();
 for (const [name, [cmd, ...args]] of steps) {
