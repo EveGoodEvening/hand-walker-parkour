@@ -88,6 +88,14 @@ describe('R6：主异常', () => {
     expect(e[0]!.level).toBe('error');
     expect(errors(memAt(130, false)).some((i) => i.rule === 'R6')).toBe(true);   // 不自动的窗口：玩家也可能拖到最后才按
   });
+  it('跟随者登场只算从 hidden 出来（1-5）；absent 之后回来不算主异常', () => {
+    const mk = (from: 'hidden' | 'absent') => chapter([runSeg({ beats: 120, cadence: 4.8, follower: { mode: from },
+      surfaces: [{ id: 'm', kind: 'mirror', side: 'L', from: 30, to: 60 }],
+      events: [{ at: 20, type: 'follower', def: { mode: 'behind', steady: 3 } }, { at: 40, type: 'doubleMod', target: 'd', mod: { headLag: 0.6 } },
+        { at: 30, type: 'double', spec: { id: 'd', surface: 'm', source: 'history' } }] })]);
+    expect(errors(mk('hidden')).some((i) => i.rule === 'R6' && i.msg.includes('follower'))).toBe(true);
+    expect(errors(mk('absent')).some((i) => i.rule === 'R6')).toBe(false);
+  });
   it('两种时序都 ≥ 20 s 就通过', () => {
     expect(rules(memAt(150))).not.toContain('R6');
   });
@@ -126,6 +134,11 @@ describe('R7：新类别首次出现', () => {
     const r = rules(one({ cadence: 4.8, rows: [[20, 'LLL'], [25, 'LLL']], events: [{ at: 2, type: 'hint', hint: 'jump' }] }));
     expect(r).toContain('R7');
     expect(r).not.toContain('R3');
+  });
+  it('「首次」按整部作品算：第二章起三个类别都已在第一章学过，不再要求隔离与提示', () => {
+    const mixed = { rows: [[20, 'LH.'], [40, 'B.L']] as Array<[number, string]> };
+    expect(rules(one(mixed))).toContain('R7');                                   // test 章：独立校验
+    expect(rules(one(mixed, [], { id: 'ch2' }))).not.toContain('R7');
   });
   it('同类别占多条车道允许（1-2 @68 的 HHH）；已学类别的新种类只报 warning', () => {
     const r = validateChapter(one({ kit: 'corridor', variant: 'morning', rows: [[20, 'HHH'], [40, 'BB.']], events: [{ at: 2, type: 'hint', hint: 'duck' }, { at: 25, type: 'hint', hint: 'lane' }] }), solver);
