@@ -55,8 +55,8 @@ function blanketHeight(x: number, z: number, r: number, l: number): number {
   // 脚尖
   for (const lx of [-LEG_X, LEG_X]) y += 0.06 * Math.exp(-((x - lx) ** 2) / 0.004 - ((z + 0.42) ** 2) / 0.006);
   // 膝盖（右 = +x）
-  y += r * Math.exp(-((x - LEG_X) ** 2) / 0.012 - ((z - KNEE_Z) ** 2) / 0.05);
-  y += l * Math.exp(-((x + LEG_X) ** 2) / 0.012 - ((z - KNEE_Z) ** 2) / 0.05);
+  y += r * Math.exp(-((x - LEG_X) ** 2) / 0.03 - ((z - KNEE_Z) ** 2) / 0.09);
+  y += l * Math.exp(-((x + LEG_X) ** 2) / 0.03 - ((z - KNEE_Z) ** 2) / 0.09);
   return y;
 }
 

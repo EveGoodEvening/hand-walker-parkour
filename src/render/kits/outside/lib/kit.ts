@@ -169,12 +169,19 @@ export function mirrorRoom(w: ChunkWork, side: SideKey, sa: number, sb: number, 
   const [xa0, xa1] = sg < 0 ? [xb, xw] : [xw, xb];
   const inward = (-sg) as 1 | -1;
   if (style === 'bright') {
-    // 广场 / 操场：镜子里是同一片发白的地面和雾，没有天花板（天空与背景色透过来）
+    // 广场 / 操场：镜子里是同一片发白的地面和雾，没有天花板（天空与背景色透过来）。
+    // 房间只比镜面高一点；两端的墙朝里是雾色，近端朝外的一面画成「地面渐隐进雾里」的样子，远看几乎看不出来。
+    const top = Math.min(H, 2.9);
     w.stat.flat(0.001, xa0, xa1, za, zb, C.plaza, true);
-    w.emi.wallX(xb, za, zb, 0, H + 1.5, C.dreamFog, inward);
-    // 两端的内墙（只朝里）：从广场上看过去它们和雾同色，看起来就是更远的雾
-    if (nearEnd) w.emi.wallZ(za, xa0, xa1, 0, H + 1.5, C.dreamFog, -1);
-    if (farEnd) w.emi.wallZ(zb, xa0, xa1, 0, H + 1.5, C.dreamFog, 1);
+    w.emi.wallX(xb, za, zb, 0, top, C.dreamFog, inward);
+    if (nearEnd) {
+      w.emi.wallZ(za, xa0, xa1, 0, top, C.dreamFog, -1);
+      const lo = mix(C.plaza, C.dreamFog, 0.35), hi = C.dreamFog;
+      const zz = za + 0.002;
+      w.emi.gtri([xa0, 0, zz], [xa1, 0, zz], [xa1, top, zz], lo, lo, hi);
+      w.emi.gtri([xa0, 0, zz], [xa1, top, zz], [xa0, top, zz], lo, hi, hi);
+    }
+    if (farEnd) w.emi.wallZ(zb, xa0, xa1, 0, top, C.dreamFog, 1);
     return;
   }
   const dark = style === 'nightStreet' ? 0x141b20 : 0x1a2328, darker = style === 'nightStreet' ? 0x0d1216 : 0x121a1f;

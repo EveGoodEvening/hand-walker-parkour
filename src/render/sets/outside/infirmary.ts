@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import type { StillSet, ViewContext } from '../../../core/contracts';
 import { registerSet } from '../../../core/registry';
-import { C, shade } from '../../kits/outside/lib/colors';
+import { C, mix } from '../../kits/outside/lib/colors';
 import { OGeo, TexGeo, heightGrid } from '../../kits/outside/lib/geo';
 import { liveList } from './lib/live';
 import { SetBuild, roomShell } from './lib/setkit';
@@ -68,8 +68,9 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   if (v === 'bed') {
     e.wallZ(Z0 + 0.015, -0.2, 1.6, 1.62, 2.2, C.windowLightTop, 1);
     e.wallZ(Z0 + 0.015, -0.2, 1.6, 1.12, 1.62, C.windowLight, 1);
-    e.wallZ(Z0 + 0.016, -0.2, 1.6, 1.12, 1.2, shade(C.track, 1.1), 1);
-    e.wallZ(Z0 + 0.016, -0.2, 1.6, 1.0, 1.12, shade(C.grass, 1.3), 1);
+    // 窗外远处的跑道和草：隔着玻璃、阴天，颜色淡下去（第五章不要跳出来的暖色）
+    e.wallZ(Z0 + 0.016, -0.2, 1.6, 1.12, 1.2, mix(C.track, C.windowLight, 0.45), 1);
+    e.wallZ(Z0 + 0.016, -0.2, 1.6, 1.0, 1.12, mix(C.grass, C.windowLight, 0.3), 1);
   }
   b.emissive(e);
   // 床单（可变形网格，带枕边的凹陷）

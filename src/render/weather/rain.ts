@@ -151,7 +151,19 @@ export class RainField {
     this.object.renderOrder = RENDER_ORDER.rain;
     this.object.matrixAutoUpdate = false;
     this.object.visible = false;
+    // 盒子中心跟着「这一帧真正用来渲染的镜头」走：frame() 早于镜头系统（order 60）运行，
+    // test 模式下两次渲染之间镜头可能跳几十米，所以在 onBeforeRender 里取镜头（它在 modelViewMatrix 计算之前调用）。
+    this.object.onBeforeRender = (_r, _s, camera) => this.center(camera);
     this.setLines(lines);
+  }
+
+  private center(camera: THREE.Camera): void {
+    camera.getWorldDirection(_fwd);
+    _fwd.y = 0;
+    if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, -1);
+    _fwd.normalize().multiplyScalar(RAIN_BOX_AHEAD);
+    const u = this.material.uniforms as Record<string, THREE.IUniform>;
+    ((u.uCenter as THREE.IUniform).value as THREE.Vector3).setFromMatrixPosition(camera.matrixWorld).add(_fwd);
   }
 
   /** 档位切换：只改 drawRange（每条线 2 个顶点）。 */
@@ -166,11 +178,7 @@ export class RainField {
     const u = this.material.uniforms as Record<string, THREE.IUniform>;
     (u.uLevel as THREE.IUniform).value = level;
     (u.uTime as THREE.IUniform).value = time % 3600;
-    camera.getWorldDirection(_fwd);
-    _fwd.y = 0;
-    if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, -1);
-    _fwd.normalize().multiplyScalar(RAIN_BOX_AHEAD);
-    ((u.uCenter as THREE.IUniform).value as THREE.Vector3).copy(camera.position).add(_fwd);
+    this.center(camera);
     if (fog) {
       ((u.uFogColor as THREE.IUniform).value as THREE.Color).copy(fog.color);
       (u.uFogNear as THREE.IUniform).value = fog.near;

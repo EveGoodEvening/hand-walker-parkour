@@ -69,8 +69,8 @@ export function createSkyGeometry(radius = 150, around = 24, up = 8): THREE.Buff
     const a = P(i, j), b = P(i + 1, j), c = P(i + 1, j + 1), d = P(i, j + 1);
     // u 在接缝处取 1 而不是 0
     if (i + 1 === around) { b[3] = 1; c[3] = 1; }
-    // 从里面看逆时针：a → d → c，a → c → b
-    for (const q of [a, d, c, a, c, b]) { pos.push(q[0], q[1], q[2]); uv.push(q[3], q[4]); }
+    // 从里面看逆时针：a → c → d，a → b → c（法线朝球心）
+    for (const q of [a, c, d, a, b, c]) { pos.push(q[0], q[1], q[2]); uv.push(q[3], q[4]); }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -116,6 +116,8 @@ export class Outdoor implements ViewSystem {
     this.sky.renderOrder = RENDER_ORDER.backdrop;
     this.sky.frustumCulled = false;
     this.sky.visible = false;
+    // 跟着这一帧真正渲染用的镜头（镜头系统 order 60 在本系统之后才定位镜头）
+    this.sky.onBeforeRender = (_r, _s, camera) => { this.sky.position.setFromMatrixPosition(camera.matrixWorld); this.sky.updateMatrixWorld(); };
     ctx.scene.add(this.sky);
     // 栏杆红光：贴地一道细光 + 齐腰高的一道细线（「在我身上扫了一下，像一道浅浅的伤口」），一起前后扫
     const g = new OGeo();
@@ -199,10 +201,7 @@ export class Outdoor implements ViewSystem {
     const kind = pv ? pv.sky : this.skyKind;
     if (pv && kind) this.setSky(kind);
     this.sky.visible = outdoor && kind !== null && !!this.skyMat.map;
-    if (this.sky.visible && kind) {
-      this.sky.position.copy(cam.position);
-      if (fog) this.skyMat.color.copy(fog.color).multiplyScalar(SKY_GAIN[kind]);
-    }
+    if (this.sky.visible && kind && fog) this.skyMat.color.copy(fog.color).multiplyScalar(SKY_GAIN[kind]);
     // 栏杆红光
     let sweepS: number | null = null;
     if (pv) sweepS = pv.sweepS;

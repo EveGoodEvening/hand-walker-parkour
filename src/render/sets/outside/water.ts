@@ -68,7 +68,7 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
         if (z > WATER_EDGE_Z - 0.4) continue;
         const yaw = Math.atan2(-(cx - x), -(cz - z));
         const tone = rng.next();
-        crawlerFigure(cg, x, z, yaw, mix(0x4a5c78, 0x3e4a5c, tone), mix(C.skin, 0x8a8f94, 0.5), 0.95);
+        crawlerFigure(cg, x, z, yaw, mix(0x6a7888, 0x5a6674, tone), mix(C.skin, 0x9aa2a6, 0.6), 0.95);
       }
     });
     crowd = b.lambert(cg, 'waterCrowd');
@@ -140,7 +140,9 @@ function animate(a: WaterAnim, t: number, snap: SimSnapshot | null): void {
     const cx = burst ? 0 : (r % 2 === 0 ? -0.18 : 0.18), cz = burst ? -1.9 : -0.25;
     const R = burst ? 0.2 + ph * (2 + r * 0.8) : 0.05 + ph * 1.6;
     const wdt = 0.006 + ph * 0.012;
-    const bright = (burst ? 1 - ph * 0.6 : 1 - ph) * (t < 0.2 && !burst ? t / 0.2 : 1);
+    // 双手按进水里的那几秒有涟漪，之后水面重新变平（「水面很平」）；碎开时再炸开
+    const settle = burst ? 1 : Math.max(0, 1 - Math.max(0, t - 2.5) / 1.5);
+    const bright = (burst ? 1 - ph * 0.6 : 1 - ph) * (t < 0.2 && !burst ? t / 0.2 : 1) * settle;
     for (let i = 0; i < RING_SEG; i++) {
       const a0 = (i / RING_SEG) * Math.PI * 2, a1 = ((i + 1) / RING_SEG) * Math.PI * 2;
       const pts: Array<[number, number]> = [

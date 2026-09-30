@@ -271,7 +271,7 @@ export function genPalmEye(size: number, _p: TexParams = {}): Img {
   const F = Math.max(64, Math.round(size / 2));
   const im = img(F * 4, F);
   const skin = rgb(0xc9b8a6), crease = rgb(0x8c8279), callus = rgb(0x9b8f82), white = rgb(0xd3d8d6), iris = rgb(0x3a4046), pupil = rgb(0x0d1216), lid = rgb(0xb8a896);
-  const opens = [1, 0.45, 0, 0.45];
+  const opens = [1, 0.5, 0, 0.5];
   // 掌纹（归一化坐标，y 向下）：生命线（弧）、智慧线、感情线
   const life: Array<[number, number]> = [];
   for (let i = 0; i <= 16; i++) { const a = Math.PI * (0.62 + (i / 16) * 0.55); life.push([0.66 + Math.cos(a) * 0.36, 0.28 + Math.sin(a) * 0.62]); }
@@ -298,18 +298,18 @@ export function genPalmEye(size: number, _p: TexParams = {}): Img {
       const a = h2(i, f, 8) * Math.PI, x0 = 0.2 + h2(i, 1, 8) * 0.6, y0 = 0.15 + h2(i, 2, 8) * 0.7, l = 0.04 + h2(i, 3, 8) * 0.06;
       strokePolyline(im, toPx([[x0, y0], [x0 + Math.cos(a) * l, y0 + Math.sin(a) * l]]), F * 0.004, crease, 0.35);
     }
-    // 眼睛：杏仁形，上下眼睑按 open 收拢
-    const ew = 0.13, eh = 0.075 * open;
+    // 眼睛：杏仁形；眨眼时上眼睑往下盖（open 1 → 0），下眼睑不动
+    const ew = 0.13;
     for (let y = 0; y < F; y++) for (let x = 0; x < F; x++) {
-      const u = (x / F - eye.x) / ew, v = (y / F - eye.y);
+      const u = (x / F - eye.x) / ew, v = (y / F - eye.y);          // v < 0 在上
       const edge = (1 - u * u);
       if (edge <= 0) continue;
-      const lidH = Math.sqrt(edge) * 0.075;
-      const inLid = Math.abs(v) < lidH + 0.012;
-      if (inLid) blend(im, ox + x, y, lid, sstep(lidH + 0.012, lidH, Math.abs(v)) * 0.55);
-      if (eh <= 0.002) continue;
-      const cur = Math.sqrt(edge) * eh;
-      const cov = sstep(cur + 0.004, cur - 0.004, Math.abs(v));
+      const half = Math.sqrt(edge) * 0.075;
+      const inLid = Math.abs(v) < half + 0.012;
+      if (inLid) blend(im, ox + x, y, lid, sstep(half + 0.012, half, Math.abs(v)) * 0.55);
+      if (open <= 0) continue;
+      const top = -half + 2 * half * (1 - open);                     // 上眼睑的位置
+      const cov = Math.min(sstep(half + 0.004, half - 0.004, v), sstep(top - 0.004, top + 0.004, v));
       if (cov <= 0) continue;
       const d = Math.hypot(x / F - eye.x, y / F - eye.y);
       let c = white;
@@ -317,6 +317,8 @@ export function genPalmEye(size: number, _p: TexParams = {}): Img {
       if (d < 0.02) c = pupil;
       blend(im, ox + x, y, c, cov);
       if (d > 0.028 && d < 0.034 && x / F < eye.x && y / F < eye.y) blend(im, ox + x, y, [226, 232, 236], cov * 0.6);
+      // 上眼睑的边
+      if (open < 1 && Math.abs(v - top) < 0.006) blend(im, ox + x, y, crease, 0.7);
     }
     // 闭眼：一条线
     if (open === 0) strokePolyline(im, toPx([[eye.x - ew, eye.y], [eye.x, eye.y + 0.01], [eye.x + ew, eye.y]]), F * 0.01, crease, 0.9);

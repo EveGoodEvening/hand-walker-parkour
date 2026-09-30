@@ -74,7 +74,8 @@ function crowd(w: ChunkWork, gray: boolean): void {
         const body = gray ? mix(C.crowd, C.crowdDark, tone) : mix(0x9aa2a6, C.crowd, tone);
         const legs = shade(body, 0.88);
         const head = gray ? mix(0x8f979b, 0x7e878b, tone) : mix(0xaeb5b8, 0x9ea6aa, tone);
-        standingFigure(w.stat, x, w.z(ss), yaw, rng, { body, legs, head, detail, armsUp: !gray && rng.next() < 0.18 });
+        const det = (r === 0 && detail === 0 ? 1 : detail) as 0 | 1 | 2;
+        standingFigure(w.stat, x, w.z(ss), yaw, rng, { body, legs, head, detail: det, armsUp: !gray && rng.next() < 0.18 });
       }
     });
   }

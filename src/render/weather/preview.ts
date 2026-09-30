@@ -229,7 +229,11 @@ export class Preview implements ViewSystem {
     if (ctx.scene.background instanceof THREE.Color) ctx.scene.background.setHex(p.background);
     else ctx.scene.background = new THREE.Color(p.background);
     for (const o of ctx.scene.children) {
-      if (o instanceof THREE.HemisphereLight) { o.color.setHex(p.hemi.sky); o.groundColor.setHex(p.hemi.ground); o.intensity = p.hemi.intensity * a.lit; }
+      if (o instanceof THREE.HemisphereLight) {
+        // 检查用补光：夜景在 CORE 桩下没有 LampField，Lambert 几乎全黑；lit > 1 时把半球光换成中性灰再放大
+        if (a.lit > 1) { o.color.setHex(0xb8c4cc); o.groundColor.setHex(0x5a646a); o.intensity = 0.3 * a.lit; }
+        else { o.color.setHex(p.hemi.sky); o.groundColor.setHex(p.hemi.ground); o.intensity = p.hemi.intensity; }
+      }
       else if (o instanceof THREE.DirectionalLight) {
         o.color.setHex(p.dir?.color ?? 0xffffff); o.intensity = (p.dir?.intensity ?? 0) * a.lit + (a.lit > 1 ? 0.3 * a.lit : 0);
         const d = p.dir?.dir ?? [0.3, -1, -0.55];
