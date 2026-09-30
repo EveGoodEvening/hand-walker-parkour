@@ -18,3 +18,5 @@
 - 占位主角正好挡住中道；截图画廊把障碍放在左右两道，并用 `npcStage(name, { ahead })` 把后面几排拉近。
 - `renderer.info.memory.geometries` 在第一次跑某一章时会逐步增长（预建的 chunk 第一次被渲染才上传 GPU），跑完第一遍之后就平了（第一章 5 分钟：60 → 151 后不变）。WP6 自己的几何体（18 个原型池 + 8 个人物部件 + 2 个爬行者部件）都在 init 时一次建好。
 - 热路径不要 `createRng()`（每次都 new 一个对象）：按 id 取固定随机数用 `sin` 散列，或读章时预先算好。
+- 第二到五章的数据由 WP2 并行编写，WP6 截图时没有这些段落：`__game.ext.npcStage(name, { ahead, follow })`（只在 ?test=1 / ?debug= 下可用）用合成的障碍和人群在玩家前方搭场景，走和正式数据完全相同的放置代码；`npcCrowd(group, op)`、`npcAsk('part'|'ignore')`、`npcHit()` 模拟 crowd cue、「让一下」和人群段绊倒；`npcStats()` 返回人数、各类可见 InstancedMesh 数和本帧耗时。tests/visual/WP6.json 全部基于这些扩展。
+- 实测（无头 Chrome，本机）：森林舞台高画质 64 人，ObstacleView 每帧 0.22 ms；梦里高画质 64 人 + 爬行者：人 6 个 InstancedMesh、爬行者 2 个。第一章低画质 e2e:perf 峰值 25 次 draw call、24.5k 三角形。
