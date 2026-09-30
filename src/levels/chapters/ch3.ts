@@ -147,8 +147,8 @@ export default {
         [137, ['bikeRack', '.', 'bollard']],
         [141, ['.', 'bin', 'bin']],
         [144, ['.', '.', 'bollard']],
-        [148, ['.', 'bikeDown', 'bikeRack']],
-        [151, ['.', 'curb', 'bikeRack']],
+        [148, ['bikeRack', 'bikeDown', '.']],             // 右道留给被雨泡过的纸条 n3-b
+        [151, ['bikeRack', 'curb', '.']],
         [155, ['bikeDown', '.', 'curb']],
         [158, ['.', '.', 'bikeDown']],
         [160, ['.', 'puddle', '.']],
