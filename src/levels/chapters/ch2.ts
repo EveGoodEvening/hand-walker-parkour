@@ -94,7 +94,6 @@ export default {
         { at: 0.0, type: 'camera', shot: 'counter', seconds: 0 },
         { at: 0.3, type: 'actor', clip: 'counterStand', seconds: 7.5 },
         { at: 0.3, type: 'text', line: 'c2.counter', id: 'counterStand' },
-        { at: 2.2, type: 'sfx', sfx: 'soupSpill', gain: 0.5 },
         { at: 3.0, type: 'text', line: 'c2.eatMore', style: 'other', speaker: 'lunchLady' },
         { at: 5.2, type: 'text', line: 'c2.compensate' },
       ],
@@ -102,7 +101,7 @@ export default {
     /* 2-4 端盘：撑跃禁用，只有横档、挡道和走动的腿（R11：没有低矮） */
     {
       id: '2-4', kind: 'run', kit: 'canteen', variant: 'tray', atmosphere: 'noon', surface: 'tile',
-      beats: 70, stride: 1.0, cadence: 4.4, controls: { jump: false }, crowd: true,
+      beats: 70, stride: 1.0, cadence: 4.4, controls: { jump: false },
       follower: { mode: 'absent' },
       npcs: [{ id: 'trayTables', kind: 'seatedRow', from: 0, to: 70, side: 'both', density: 0.6, gaze: 'turnShoes' }],
       rows: [
@@ -110,7 +109,7 @@ export default {
         [16, ['.', 'cart', '.']],
         [20, ['.', '.', 'legs']],
         [24, ['cart', '.', '.']],
-        [28, ['.', '.', 'chairBar']],
+        [28, ['.', 'chairBar', '.']],
         [40, ['.', '.', 'chairBar']],
         [44, ['.', 'longTable', '.']],
         [48, ['.', '.', 'chairBar']],

@@ -91,7 +91,7 @@ export default {
       ],
       items: [
         { at: 30, lane: 0, kind: 'kneeler', id: 'dreamBoy', behavior: { type: 'fallInto', atBeat: 22 } },   // 他跪进中道，摔倒，躺在那里
-        { at: 60, lane: 1, kind: 'crawler', behavior: { type: 'walk', speed: 3.0 } },                       // 慢慢同向爬行的人
+        { at: 60, lane: 0, kind: 'crawler', behavior: { type: 'walk', speed: 3.0 } },                       // 慢慢同向爬行的人（约 @93 追上）
         { at: 80, lane: -1, kind: 'crawler', behavior: { type: 'walk', speed: 3.0 } },
       ],
       events: [
@@ -209,8 +209,8 @@ export default {
         { at: 37, lane: 1, kind: 'legs', len: 14 },
         { at: 173, lane: -1, kind: 'legs', len: 14 },
         { at: 173, lane: 1, kind: 'legs', len: 14 },
-        { at: 116, lane: 1, kind: 'crawler', behavior: { type: 'walk', speed: 3.0 } },
-        { at: 190, lane: -1, kind: 'crawler', behavior: { type: 'walk', speed: 3.0 } },
+        { at: 72, lane: 1, kind: 'crawler', behavior: { type: 'walk', speed: 3.0 } },                       // 爬行的人：约 @123 追上
+        { at: 122, lane: -1, kind: 'crawler', behavior: { type: 'walk', speed: 3.0 } },                     // 约 @207 追上（镜子在右侧）
       ],
       events: [
         { at: 0, type: 'ambience', amb: 'dream', level: 1, seconds: 1.5 },

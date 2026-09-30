@@ -228,6 +228,34 @@ describe('标志性段落的数据形状（§4）', () => {
   });
 });
 
+describe('画面上不穿模', () => {
+  const STILL = new Set(['static', 'askable', 'swing', 'shift', 'yield', 'fallInto']);
+  it.each(IDS)('%s：同车道的静止障碍互不重叠；移动障碍被追上前 6 s 的路径上没有同车道的静止障碍', (id) => {
+    const problems: string[] = [];
+    for (const seg of compile(ch(id)).segments) {
+      if (seg.kind !== 'run') continue;
+      const st = seg.obstacles.filter((o) => STILL.has(o.behavior.type) && o.cls !== 'soft' && o.cls !== 'pickup');
+      for (let i = 0; i < st.length; i++) for (let j = i + 1; j < st.length; j++) {
+        const a = st[i]!, b = st[j]!;
+        if (a.lanes.some((l) => b.lanes.includes(l)) && a.s1 > b.s0 && b.s1 > a.s0) problems.push(`${seg.def.id} ${a.kind}@${a.beat} × ${b.kind}@${b.beat}`);
+      }
+      const tl = nominalTimeline(seg);
+      for (const o of seg.obstacles) {
+        if (o.behavior.type !== 'walk') continue;
+        const v = o.behavior.speed;
+        let k = -1;
+        for (let i = 0; i < tl.n; i++) if ((tl.s[i] as number) + 0.25 >= o.s0 + v * (tl.t[i] as number)) { k = i; break; }
+        if (k < 0) { problems.push(`${seg.def.id} ${o.kind}@${o.beat} is never reached`); continue; }
+        const tm = tl.t[k] as number;
+        const p0 = o.s0 + v * Math.max(0, tm - 6), p1 = o.s0 + v * tm;
+        const lo = Math.min(p0, p1) - 1, hi = Math.max(p0, p1) + 1;
+        for (const q of st) if (q.lanes.some((l) => o.lanes.includes(l)) && q.s1 >= lo && q.s0 <= hi) problems.push(`${seg.def.id} walker ${o.kind}@${o.beat} × ${q.kind}@${q.beat}`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+});
+
 describe('校验器（验收 1：五章全部通过当前的 validate）', () => {
   it.each(IDS)('%s：没有 error，也没有 warning', (id) => {
     const r = validateChapter(ch(id), solver);
