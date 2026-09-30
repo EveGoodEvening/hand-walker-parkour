@@ -2289,3 +2289,21 @@ export const QUALITY: Record<QualityTier, Omit<QualityProfile, 'pixelRatio'> & {
 | 进段时现建整段、离开后释放 | narrative | 段落边界会卡顿，触发 GC |
 | 长按站立、双指回头、单指开口 | narrative | 高速跑段里极易误触 |
 | 每个包各自跑 SwiftShader e2e | tech | 违反「最多 2 个重度使用浏览器的 agent」 |
+
+---
+
+## 10. Lead 修订记录（优先于上文）
+
+### 10.1 CORE 集成后的回写（2026-09-30）
+
+- **碰撞**：内层盒只在横向缩到 85%，s 方向不缩（否则正面冲撞第一帧总先碰外层，永远被判成擦边）。横档的竖直穿透按「盒顶 − 横档下沿」计算。
+- **R6**：`double`（替身出现）不单独计入「20 s 内最多一个主异常」；回头窗口 `then` 里的异常按窗口开始时刻计时。**但**必须按「玩家不按 Q、等到窗口结束自动回头」的最坏时序检查：1-5 自动回头的水母影子与 1-6 的 `doubleMod` 只隔 18.9 s，违反附录 A-11，WP2 要调整第一章数据使其 ≥ 20 s。
+- **R7**：「该行只有它，另两条车道空着」按「该行只有这一类别」执行（1-2 @68 的 `HHH` 合法），只对 low / bar / block 检查；「新种类首次出现」只报 warning。WP2 仍应让每个新种类第一次出现的那一行只有它（1-2 @36 的 cart）。
+- **浏览器锁**：用 `acquireBrowserSlot()` 取锁，由 `openGame().close()` 关浏览器并释放锁（§8.8 示例里的写法会在浏览器关闭前释放锁）。
+- **契约扩展**（可选、向后兼容，已冻结）：`registerView()` 与 `ViewAPI.context`；`SimAPI` 可选的 `obstaclesAhead` / `skipStill` / `setAssist` / `currentPlan`；`SolverAPI` 参数 `from` / `forbid` / `margin`，`PlanStep.s`；`InputEvent.t` 进 Sim 前换算成模拟时钟毫秒；chunk 几何体用局部坐标；常量 `STILL_ORIGIN`、`MIN_ACTION_GAP`、`AHEAD_LAG`。
+- **读章**：读章时预建本章全部 chunk，游戏过程中不新建几何体。
+- **鞋底**：按 §5.4 的镜头参数，拖地的鞋在画面下沿之外。占位主角把小腿向后上方翘起，鞋底才能进画面；WP5 要在正后方视角加强前伸的手臂和躯干前倾，让「用手爬」在默认机位下一眼可读。
+- **Lessons**：各 WP 写 `docs/lessons/<WP>.md`，不直接改 `AGENTS.md`（与 §8.10、§8.11 的旧写法不同）。
+- **「放慢一点」**：离开本段即重置。
+- **失败慢放**：`FixedLoop.slowMul`，失败后 0–0.3 s 取 0.3（lead 已实现于 `Game.ts`）。`__game.plan()` 对静场和站立段返回 null；`poseTest` 在非调试模式下同样抛 `debug disabled`。
+- `.ts` 脚本统一用 `tsx` 运行（Node 24 自带的类型剥离解析不了不带扩展名的 import）。

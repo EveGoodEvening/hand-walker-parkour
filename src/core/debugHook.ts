@@ -117,6 +117,8 @@ export function createDebugAPI(game: Game): GameDebugAPI {
     plan(segment?: string) {
       const ch = game.compiled;
       if (!ch) return null;
+      const target = ch.segments.find((s) => s.def.id === (segment ?? game.next?.segment));
+      if (target && target.kind !== 'run') return null; // 静场、站立段没有求解计划
       if (!segment || segment === game.next?.segment) {
         const cur = game.sim.currentPlan?.();
         if (cur) return cur;
@@ -125,8 +127,9 @@ export function createDebugAPI(game: Game): GameDebugAPI {
       return seg ? game.solver.solve(seg) : null;
     },
     poseTest(name) {
+      guard();
       const f = getDebugExt().poseTest;
-      if (f) { guard(); f(name); }
+      if (f) f(name);
     },
     get ext() {
       // CORE 内置扩展 + 各包 registerDebug 注册的扩展

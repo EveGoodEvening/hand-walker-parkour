@@ -27,6 +27,8 @@ const GAMEPLAY: ReadonlySet<Action> = new Set(['left', 'right', 'up', 'down', 'l
 const INTRO_SEC = 3.4;
 const FAIL_CARD_SEC = 1.0;
 const FAIL_INPUT_SEC = 1.2;
+const FAIL_SLOW_SEC = 0.3;
+const FAIL_SLOW_MUL = 0.3;
 
 export interface StartOptions { segment?: string; beat?: number; skipCards?: boolean }
 
@@ -145,7 +147,7 @@ export class Game implements GameCommands {
     this.dispatchAll();
     this.prev = this.next;
     this.view.onReset(this.next);
-    this.failing = null;
+    this.failing = null; this.loop.slowMul = 1;
     this.texts = []; this.hint = null;
     this.dirty = true;
   }
@@ -162,7 +164,7 @@ export class Game implements GameCommands {
     if (!reuse || !this.compiled || this.compiled.def.id !== ch) await this.loadChapter(ch, at);
     else if (at) { this.sim.goto(at.segment, at.beat); this.afterJump(); }
     this.paused = false;
-    this.failing = null;
+    this.failing = null; this.loop.slowMul = 1;
     const def = getChapter(ch);
     if (o.skipCards || !def) { this.setScreen('play'); }
     else {
@@ -183,7 +185,7 @@ export class Game implements GameCommands {
     if (!this.compiled) return;
     this.sim.retry();
     this.afterJump();
-    this.failing = null;
+    this.failing = null; this.loop.slowMul = 1;
     this.setScreen('play');
     this.loop.resetClock();
   }
@@ -210,7 +212,7 @@ export class Game implements GameCommands {
     }
   }
 
-  toTitle(): void { this.paused = false; this.failing = null; this.setScreen('title'); }
+  toTitle(): void { this.paused = false; this.failing = null; this.loop.slowMul = 1; this.setScreen('title'); }
 
   nextChapter(): void {
     const n = this.chapterId ? nextChapterOf(this.chapterId) : null;
@@ -298,6 +300,8 @@ export class Game implements GameCommands {
         this.stepSim(evs);
         if (this.failing) {
           this.failing.t += TICK_DT;
+          // §2.7 失败演出第 1 步：0–0.3 s 时间放慢到 0.3 倍（只影响实时推进；test 模式的 step() 不受影响）。
+          this.loop.slowMul = this.failing.t < FAIL_SLOW_SEC ? FAIL_SLOW_MUL : 1;
           if (!this.failing.shown && this.failing.t >= FAIL_CARD_SEC) { this.failing.shown = true; this.setScreen('fail', { line: this.failing.line }); }
         }
         break;
@@ -413,7 +417,7 @@ export class Game implements GameCommands {
     const pickups = def ? def.notes.filter((n) => n.pickup).map((n) => n.id) : [];
     const got = pickups.filter((id) => d.stats.notes.includes(id)).length;
     const lines = def ? def.outro.lines.flatMap((l) => ('line' in l ? [lineText(l.line)] : [])) : [];
-    this.failing = null;
+    this.failing = null; this.loop.slowMul = 1;
     this.setScreen('outro', { chapter: d.id, stats: d.stats, next, lines, notes: { got, total: pickups.length } });
     for (const s of this.compiled?.segments ?? []) if (s.kind !== 'run') this.seenStills.add(s.def.id);
   }

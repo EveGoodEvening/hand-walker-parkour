@@ -13,6 +13,8 @@ export interface LoopHooks {
 export class FixedLoop {
   readonly step = 1 / TICK_HZ;
   timeScale = 1;
+  /** 表现用的额外慢放系数（失败演出 0–0.3 s 取 0.3，DESIGN §2.7）；与调试用的 timeScale 相乘。 */
+  slowMul = 1;
   /** true = 只渲染，不推进（test 模式或暂停）。 */
   manual = false;
   maxCatchUp = 8;
@@ -46,7 +48,7 @@ export class FixedLoop {
   frame(nowMs: number): number {
     const dtReal = this.last < 0 ? 0 : Math.min(0.1, Math.max(0, (nowMs - this.last) / 1000));
     this.last = nowMs;
-    const dt = dtReal * this.timeScale;
+    const dt = dtReal * this.timeScale * this.slowMul;
     let n = 0;
     if (!this.manual) {
       this.acc += dt;
