@@ -249,13 +249,13 @@ export function validateChapter(def: ChapterDef, solver: SolverAPI, opts: { seed
   const chId = def.id;
   const err = (rule: string, msg: string, segment?: string) => issues.push({ level: 'error', rule, chapter: chId, msg, ...(segment ? { segment } : {}) });
   const warn = (rule: string, msg: string, segment?: string) => issues.push({ level: 'warn', rule, chapter: chId, msg, ...(segment ? { segment } : {}) });
+  staticChecks(def, err, warn);
   let ch: CompiledChapter;
   try { ch = compile(def, opts.seed); } catch (e) {
     err('static', `compile failed: ${(e as Error).message}`);
     return { chapter: chId, ok: false, issues, stats: { runSec: 0, nonRunSec: 0, totalSec: 0, nonRunRatio: 0, segments: [] } };
   }
   const minGap = MIN_ACTION_GAP[chId];
-  staticChecks(def, err, warn);
 
   // —— 逐段 ——
   const segStats: Array<{ id: string; kind: string; sec: number }> = [];
