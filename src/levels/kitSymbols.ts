@@ -1,6 +1,6 @@
 // src/levels/kitSymbols.ts —— 行速记符号 → 具体障碍（DESIGN.md §4.0、§8.5）。CORE 写初版，之后归 WP2。
 // 同一行里多个候选时用 rng.sim 轮换（compile.ts）。
-import type { KitId } from '../core/types';
+import type { KitId, SetId } from '../core/types';
 import type { ObstacleKind } from './obstacles';
 
 export const KIT_VARIANTS: Record<KitId, readonly string[]> = {
@@ -8,6 +8,16 @@ export const KIT_VARIANTS: Record<KitId, readonly string[]> = {
   washroom: ['morning'], stairs: ['dayDown', 'nightDown', 'stairwellUp', 'dawnDown'], canteen: ['forest', 'tray', 'windowWall'],
   labRoom: ['default'], street: ['schoolGate', 'alley', 'shopStreet', 'compound', 'dawn'], plaza: ['bright', 'gray'],
   track: ['default'], placeholder: ['default'],
+};
+/**
+ * 静场场景的变体（§4、§5.9）。WP2 的章节只用这里列出的；WP3 / WP4 的 StillSet.variants 应当覆盖它们。
+ * deskFeet：teacher（1-4 英语老师）/ math（5-5 数学课）；bedroom：feet（5-1 被子里的脚）/ ceiling（第四章结尾卡的天花板）；
+ * infirmary：bed（5-9 病床与枕边凹陷）/ ceiling（5-10 手形裂缝）。
+ */
+export const SET_VARIANTS: Record<SetId, readonly string[]> = {
+  deskFeet: ['teacher', 'math'], counter: ['default'], canteenWindow: ['default'], labBoard: ['default'], bus: ['default'],
+  home: ['default'], bathroom: ['default'], palmEye: ['default'], water: ['default'], bedroom: ['feet', 'ceiling'],
+  infirmary: ['bed', 'ceiling'], placeholder: ['default'],
 };
 export type SymMap = Partial<Record<'L' | 'H' | 'B' | 'W', readonly ObstacleKind[]>>;
 export const KIT_SYMBOLS: Record<string, SymMap> = {            // 键 = `${kit}.${variant}`，缺省用 `${kit}.*`
