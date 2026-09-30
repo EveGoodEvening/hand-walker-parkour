@@ -1,4 +1,5 @@
-// src/levels/compile.ts —— ChapterDef → CompiledChapter（DESIGN.md §8.3「读章」、§8.5 编译规则）。CORE 写初版，之后归 WP1。
+// src/levels/compile.ts —— ChapterDef → CompiledChapter（DESIGN.md §8.3「读章」、§8.5 编译规则）。CORE 写初版，WP1 补全。
+// 站立段的按步事件（StepEventDef，没有 at）不进 CompiledSegment.events，Sim 直接读 def.events。
 // 纯函数，Node 可测。同一章、同一种子 → 完全相同的产物（从检查点重来时布局不变）。
 import { LANE_WIDTH, CORRIDOR_WIDTH } from '../core/constants';
 import { clamp } from '../core/math';
@@ -12,6 +13,9 @@ import type {
 } from './schema';
 import { isSym, LANES, laneOfIndex, parseLanes } from './shorthand';
 import { symbolsFor } from './kitSymbols';
+
+/** 「让一下」时不动的概率（§2.4 ask.ignoreChance）。compile 不依赖 sim/，这里写死同一个数，单元测试核对两者一致。 */
+export const TUNING_ASK_IGNORE = 0.3;
 
 /** 墙面位置（x = ±HALF_WALL），与占位 kit 一致。 */
 export const HALF_WALL = CORRIDOR_WIDTH / 2;
@@ -130,8 +134,12 @@ export function compile(def: ChapterDef, seed?: number): CompiledChapter {
       const obstacles: CompiledObstacle[] = [];
       const segGeo = { s0, stride };
       compileRows(ctx, sd, segGeo, rng, obstacles);
+      const askRng = createRng(chapterSeed, `${sd.id}:ask`);
       for (const it of sd.items ?? []) {
-        const o = makeObstacle(ctx, segGeo, it.kind, lanesOf(it.lane), it.at, it.len, it.behavior, it.id ? { itemId: it.id } : {});
+        const params: Record<string, number | string> = it.id ? { itemId: it.id } : {};
+        // 「让一下」：ignore 为 'seeded' 时由章种子决定这个人会不会不动（约 30%，§3），编译期定下来，Sim 与求解器读同一个值
+        if (it.behavior?.type === 'askable' && it.behavior.ignore === 'seeded') params.askIgnore = askRng.next() < TUNING_ASK_IGNORE ? 1 : 0;
+        const o = makeObstacle(ctx, segGeo, it.kind, lanesOf(it.lane), it.at, it.len, it.behavior, params);
         obstacles.push(o);
       }
       for (const n of sd.notes ?? []) {
@@ -172,7 +180,9 @@ export function compile(def: ChapterDef, seed?: number): CompiledChapter {
 /** 横向范围：障碍覆盖的 x 区间（未计行为偏移）。 */
 export function obstacleX(o: CompiledObstacle): [number, number] {
   if (OBSTACLES[o.kind].fullWidth) return [-o.halfW, o.halfW];
-  const lo = Math.min(...o.lanes), hi = Math.max(...o.lanes);
+  const ls = o.lanes;
+  let lo = 1, hi = -1;
+  for (let i = 0; i < ls.length; i++) { const l = ls[i] as number; if (l < lo) lo = l; if (l > hi) hi = l; }
   return [lo * LANE_WIDTH - o.halfW, hi * LANE_WIDTH + o.halfW];
 }
 
