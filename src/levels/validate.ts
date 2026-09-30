@@ -14,7 +14,8 @@
 //     R6 的几何部分：挂在反光面上的异常（double / doubleMod / memory / board）在事件时刻必须从**三条车道**的追尾镜头都看得见
 //     （反光面有一部分落在水平视角 ±38° 内、雾的远距离以内）；世界替身（surface 'world'）必须在前方 ≥ 6 m、±20° 以内。
 //   · R7「该行只有它，另两条车道空着」：按「该行只有这一类别」（同类别占多条车道允许，1-2 @68 的 HHH），只对 low / bar / block；
-//     「新种类首次出现时该行只有它」只报 warning（§10.1）。
+//     「新种类首次出现时该行只有它」只报 warning（§10.1）。「首次」按整部作品算：第二章起三个类别都已学过，只查新种类。
+//   · R6 的「跟随者登场」= 从 hidden 变成有声音 / HUD 的模式（第一章 1-5）；absent 之后回来不算登场。
 //   · R4 的「雾的清晰距离」取 near + 0.35 × (far × 低档 fogMul − near)。亮度一项：暗色氛围带粉笔描边（R12）即视为可读；
 //     非暗色氛围按灯亮计（LampField 由 WP3 实现，校验器在 Node 里拿不到亮度场）。
 //   · R9：腿自主抬起的「落在横档前 0.4 s」按「抬起时刻（预警开始 + 0.6 s）到横档接触时刻 = 0.4 ± 0.15 s」；「空地」= 预警开始到
@@ -31,6 +32,7 @@ import { advancePace, createPaceState, paceEvents } from '../sim/Pace';
 import { FALL_STEP, PLANT_SEC } from '../sim/Stand';
 import { obstacleState } from '../sim/Track';
 import { TUNING } from '../sim/tuning';
+import { CHAPTER_ORDER, getChapter } from './chapters/index';
 import { compile } from './compile';
 import { KIT_SYMBOLS, KIT_VARIANTS, symbolsFor } from './kitSymbols';
 import { lineText } from './lines';
@@ -170,7 +172,8 @@ function timedEvents(seg: CompiledSegment, tl: Timeline): TEv[] {
 
 function isMainAnomaly(body: EventBody, prevFollowerMode: { v: string }): boolean {
   if (body.type === 'follower' && body.def.mode) {
-    const debut = (prevFollowerMode.v === 'hidden' || prevFollowerMode.v === 'absent') && body.def.mode !== 'hidden' && body.def.mode !== 'absent';
+    // 「跟随者登场」= 从 hidden（第一章教学期，还没登场过）变成有声音 / HUD 的模式；absent 之后回来（2-7「回声回来了」）不算登场
+    const debut = prevFollowerMode.v === 'hidden' && body.def.mode !== 'hidden' && body.def.mode !== 'absent';
     prevFollowerMode.v = body.def.mode;
     return debut;
   }
@@ -263,6 +266,21 @@ export function validateChapter(def: ChapterDef, solver: SolverAPI, opts: { seed
   const seenClass = new Set<ObstacleClass>();
   const seenKind = new Set<string>();
   const hintsSeen = new Set<HintId>();
+  // R7 的「首次出现」按整部作品算：第一章教会了 low / bar / block 与 jump / lane / duck 的提示（§4.1），
+  // 之后各章只查「新种类」（warning），种类取已实现的前面各章里出现过的。test 章独立校验（合成测试用）。
+  const order = CHAPTER_ORDER.indexOf(chId);
+  if (order > 0) {
+    for (const c of ['low', 'bar', 'block'] as const) seenClass.add(c);
+    for (const h of ['jump', 'lane', 'duck'] as const) hintsSeen.add(h);
+    for (const prev of CHAPTER_ORDER.slice(0, order)) {
+      const pd = getChapter(prev);
+      if (!pd) continue;
+      try {
+        for (const sg of compile(pd).segments) for (const o of sg.obstacles) if (REQUIRED.has(o.cls)) seenKind.add(o.kind);
+        for (const sd of pd.segments) for (const e of (sd.events ?? []) as Array<{ type: string; hint?: HintId }>) if (e.type === 'hint' && e.hint) hintsSeen.add(e.hint);
+      } catch { /* 前面的章自己编译不过，会在它自己的校验里报 */ }
+    }
+  }
   const anomalies: Array<{ a: number; b: number; what: string; seg: string; window: string | null }> = [];
   const followerMode = { v: 'hidden' };
   const doubles = new Map<string, DoubleSpec>();

@@ -1,5 +1,6 @@
 // src/sim/Track.ts —— 障碍的运行时状态与流入流出（DESIGN.md §2.5、§8.5 Behavior、§8.9-5）。CORE 编写，归 WP1。
-// 行为：static / walk / swing / yield / stretch / shift（fallInto、askable 先按 static 处理，WP1 补全）。
+// 行为：static / walk / swing / yield / stretch / shift / fallInto（到点前不参与碰撞）/ askable（本身静止；
+// 「让一下」之后的让开由 Ask.ts 的 AskRuntime 记录，Sim 与求解器在碰撞时跳过已让开的人）。CORE 编写，WP1 补全。
 // 所有行为只取决于段内时间 tSeg 和玩家段内拍号（yield / shift / fallInto 按「到点」触发），
 // 与玩家横向位置无关（§5.7：伸进过道的脚「不是成心的，只是习惯」）。
 import { LANE_WIDTH } from '../core/constants';
