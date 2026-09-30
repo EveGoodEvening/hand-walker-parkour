@@ -14,3 +14,4 @@
 - **R7 新种类与种子**：`KIT_SYMBOLS` 的轮换起点由种子决定，`'B.B'` 这种两格同符号的行一定是两个不同种类。想让「新种类第一次出现时这一行只有它」对所有种子都成立，早期的行写显式种类（`['cart', '.', 'cart']`）。`tests/unit/content/chapters.test.ts` 用种子 1–20 加章节种子检查。
 - **加密谱面的办法**：先算出每段的休息窗（文字 −0.4/+0.8 s、主异常 −1/+2 s、检查点 +1.6 s、段末 −0.8 s、回头窗口到 then + 0.8 s），在休息窗外按 3.5–4 拍补行，再用 `validateChapter` 反复验证、删掉被点名的行；休息窗里可以放只占边道的「被动」行（玩家待在中道不用动）。纸条所在车道前后 2 拍要留空，否则自动驾驶够不着。
 - **浏览器**：`node scripts/e2e-smoke.mjs --ch chN`（或 `node scripts/e2e-chapters.mjs`）能跑任意章，必备节拍取自 `__game.ext.requiredBeats`；五章各 2–3 s 墙钟。ch4 缺 `fingerPractice`（结尾卡输入，Game 还不支持），ch5 缺 `seventhFall` / `theyPractice`（站立段的 atStep 事件，WP1 Stand），其余全部触发、0 摔倒。
+- **移动障碍会穿模**：`walk` 的位移是 `speed × tSeg`（从段首算起），段里越晚被追上的人走得越远。用名义时间算出追上的位置，保证它被追上前约 6 s 的路径上同车道没有静止障碍（`tests/unit/content/chapters.test.ts` 的「画面上不穿模」）；同向爬行者要放在早一点的拍上，不然会一路穿过别的障碍，甚至到段末都追不上。

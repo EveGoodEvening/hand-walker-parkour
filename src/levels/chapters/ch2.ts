@@ -250,7 +250,7 @@ export default {
         { at: 0.2, type: 'noteOpen', note: 'n1-desk', id: 'noteBehind' },
         { at: 0.2, type: 'sfx', sfx: 'paper' },
         { at: 0.4, type: 'text', line: 'c2.blank' },
-        { at: 4.4, type: 'shadow', mode: 'threeHands', seconds: 8 },
+        { at: 4.4, type: 'shadow', mode: 'pointBack', seconds: 8 },                     // 多了一只手，从胸口伸出来指向身后
         { at: 4.4, type: 'text', line: 'c2.extraHand', id: 'threeHands' },
         { at: 5.2, type: 'camera', shot: 'turnBack', seconds: 0.8 },
         { at: 6.0, type: 'board', surface: 'board', op: 'write', line: 'c2.whyNotStand', tremble: true, id: 'boardQuestion' },
