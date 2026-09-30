@@ -1,0 +1,708 @@
+// src/audio/Engine.ts —— WebAudio 实现的 AudioAPI（DESIGN.md §6、§8.7「事件与 cue 的唯一处理者」中 WP7 的部分）。WP7。
+//
+// 只依赖事件和快照（§8.10 WP7）：
+//   contact → 自己的三段声（预渲染库，按模拟时间戳前瞻 50 ms 调度）；followerContact → 追随者（混音按稳度与模式，§2.6）；
+//   hit → 擦地 / 闷响，人群段「安静的一秒」；fall → 膝盖闷响、节拍合一、环境掐断、其余淡出；lookBack → 追随者静音 1.2 s；
+//   twitch / drift → 肌肉声；stand → 自己的「先轻后重」；ask → 低语与短笑；快照 hush → 静音段；segment → 混响与环境音。
+//   bell / sfx / ambience / silence 四种 cue 由 index.ts 注册的处理器转到这里。
+// AudioContext 在第一次 pointerdown / keydown（Game 调 unlock）时才创建；之前只维护「期望状态」并记录 cue。
+import type { AudioAPI, LampFieldAPI, Volumes } from '../core/contracts';
+import { FlatLampField } from '../core/fallbacks';
+import type { GameEvent, GameEvents } from '../core/events';
+import type { AmbienceId, BellKind, ChapterId, ContactPart, Hand, SfxId, SimSnapshot, Surface } from '../core/types';
+import type { ChapterDef, EventBody } from '../levels/schema';
+import { Ambience, Hum, Rain, type AmbDeps } from './ambience';
+import { SimClock } from './clock';
+import { CueLog, cueNames } from './cueLog';
+import { dbToGain, mulberry32 } from './dsp';
+import { followerMix, mixKey, SILENT_MIX } from './follower';
+import { NoiseBank } from './graph';
+import { applauseLoop, renderOneShots, type ApplauseKind, type MakeOffline } from './library';
+import { LightModel } from './lights';
+import { Mixer, type FollowerMix, type GateBus } from './mixer';
+import type { AudioImpl } from './NullAudio';
+import { placeOf, soundStateAt, type AmbState, type KitLookup, type Place } from './places';
+import { rr, type BusId, type OneShot } from './recipes/common';
+import { allPalmKeys, palmKeyString, palmRecipe, partsOf, type PalmKey } from './recipes/palm';
+import { BELL_SFX, SFX, allOneShots, type GrainId, type OneShotId } from './recipes/sfx';
+import { VoicePool } from './voices';
+
+export interface EngineDeps {
+  /** 创建实时 AudioContext（在 unlock 里、用户手势之内调用）。 */
+  createContext(): BaseAudioContext;
+  makeOffline: MakeOffline;
+  /** true：context 是 OfflineAudioContext（测试）——不 resume，「现在」由模拟时间换算。 */
+  offline?: boolean;
+  seed?: number;
+  /** WP3 的 LampField（经 index.ts 注册的探针 ViewSystem 拿到）。 */
+  lamps?: () => LampFieldAPI | null;
+  chapter?: (id: ChapterId) => ChapterDef | null;
+  kitLookup?: KitLookup;
+  perfNow?: () => number;
+}
+
+const HUSH_BUSES: readonly GateBus[] = ['follower', 'npc', 'ambience', 'floor', 'revB'];
+const SILENCE_BUSES: readonly GateBus[] = ['ambience', 'floor', 'npc', 'follower', 'revB'];
+const FAIL_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'sfx', 'ui', 'revA', 'revB'];
+const GLASS_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'ambience', 'floor', 'ui', 'revB'];
+const MENU_SCREENS = new Set(['title', 'chapters', 'settings', 'notes', 'pause', 'outro', 'credits', 'fail']);
+
+interface PlayOpts { key: string; bus: BusId; at: number; gainDb: number; peakDb: number; pan?: number; send?: number; tau: number; prio: number; rate?: number; dest?: AudioNode }
+
+export class AudioEngine implements AudioImpl, AudioAPI {
+  readonly enabled = true;
+  ctx: BaseAudioContext | null = null;
+  mixer: Mixer | null = null;
+  readonly clock = new SimClock();
+  readonly voices = new VoicePool();
+  /** 预渲染库与压缩器校准完成。 */
+  ready: Promise<void> = Promise.resolve();
+  libraryReady = false;
+  /** 最近排程的一次性声音（测试与调试用，环形 512）。 */
+  readonly scheduled: Array<{ key: string; at: number; bus: BusId; gainDb: number; pan: number }> = [];
+  screen = 'boot';
+
+  private noise: NoiseBank | null = null;
+  private ambDeps: AmbDeps | null = null;
+  private palms: Map<string, AudioBuffer[]> | null = null;
+  private sfxLib: Map<string, AudioBuffer[]> | null = null;
+  private loops = new Map<ApplauseKind, AudioBuffer>();
+  private rain: Rain | null = null;
+  private hum: Hum | null = null;
+  private amb: Ambience | null = null;
+  private fading: Ambience[] = [];
+  private readonly log = new CueLog();
+  private readonly rng: () => number;
+  private readonly seed: number;
+  private readonly lights = new LightModel();
+  private volumes: Volumes = { master: 80, sfx: 90, ambience: 70 };
+  private suspended = false;
+  private errors = 0;
+
+  // 期望状态（没有 context 时也维护，建图时一次性应用）
+  private place: Place | null = null;
+  private wantAmb: AmbState = { amb: 'none', level: 1 };
+  private wantRain = 0;
+  private pendingAmb: { st: AmbState; tick: number } | null = null;
+  private segIndex = -1;
+  private jump = true;
+  private hush = false;
+  private failing = false;
+  private screenQuiet = false;
+  private folMix: FollowerMix = SILENT_MIX;
+  private folKey = '';
+  private width = { from: 0, to: 0, t0: 0 };
+  private skipKnuckleUntil = -1;
+  private crispUntil: Record<Hand, number> = { L: -1, R: -1 };
+  private lastVariant = new Map<string, number>();
+  private lastSnap: SimSnapshot | null = null;
+  private lastTick = 0;
+  private brightPrev = 1;
+  private lastClick = -10;
+  private lastSpeed = -1;
+  private recipeCache = new Map<string, OneShot | null>();
+  // 主线程开销
+  private cost = 0;
+  private frames = 0;
+  private costTotal = 0;
+  costMax = 0;
+
+  constructor(private readonly deps: EngineDeps) {
+    this.seed = deps.seed ?? 20260930;
+    this.rng = mulberry32(this.seed ^ 0x5eed);
+    if (deps.offline) this.clock.maxLead = Infinity;
+  }
+
+  // ——————————————————— AudioAPI ———————————————————
+  async unlock(): Promise<void> {
+    try {
+      if (!this.ctx) {
+        this.ctx = this.deps.createContext();
+        this.build();
+      }
+      if (this.deps.offline) return;
+      const ctx = this.ctx as AudioContext;
+      // iOS：在触摸事件里先播放一段静音 buffer，再 resume（§6.1）
+      const b = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const s = ctx.createBufferSource();
+      s.buffer = b; s.connect(ctx.destination); s.start(0);
+      if (!this.suspended && ctx.state !== 'running') await ctx.resume();
+    } catch (err) { this.error(err); }
+  }
+
+  onEvent(e: GameEvent, snap: SimSnapshot): void {
+    const t0 = this.perf();
+    try {
+      this.lastSnap = snap;
+      this.lastTick = e.tick;
+      for (const n of cueNames(e)) this.log.record(n);
+      if (this.pendingAmb && e.tick > this.pendingAmb.tick) this.flushPendingAmb(snap);
+      this.handle(e, snap);
+      this.observe(snap);
+    } catch (err) { this.error(err); }
+    this.cost += this.perf() - t0;
+  }
+
+  frame(snap: SimSnapshot, _dt: number): void {
+    const t0 = this.perf();
+    try {
+      this.lastSnap = snap;
+      this.observe(snap);
+      if (this.ctx && this.mixer) {
+        if (this.pendingAmb) this.flushPendingAmb(snap);
+        const now = this.now();
+        if (!this.deps.offline) this.clock.track(snap.t, now);
+        const until = now + 0.35;
+        this.amb?.advance(until);
+        this.rain?.advance(until);
+        this.updateHum(snap, now);
+        if (this.amb?.id === 'dream' && Math.abs(snap.player.speed - this.lastSpeed) > 0.2) {
+          this.lastSpeed = snap.player.speed;
+          this.amb.param('speed', snap.player.speed, now);
+        }
+        this.voices.prune(now);
+        this.mixer.tidy(now);
+        for (let i = this.fading.length - 1; i >= 0; i--) {
+          const a = this.fading[i] as Ambience;
+          if (now > a.stopAt + 0.2) { a.disconnect(); this.fading.splice(i, 1); }
+        }
+      }
+    } catch (err) { this.error(err); }
+    const c = this.cost + this.perf() - t0;
+    this.cost = 0;
+    this.frames++;
+    this.costTotal += c;
+    if (c > this.costMax) this.costMax = c;
+  }
+
+  setVolumes(v: Volumes): void {
+    this.volumes = { ...v };
+    if (this.mixer) this.mixer.setVolumes(v, this.now());
+  }
+
+  suspend(on: boolean): void {
+    this.suspended = on;
+    if (!this.ctx || this.deps.offline) return;
+    const ctx = this.ctx as AudioContext;
+    try {
+      if (on) void ctx.suspend().catch(() => undefined);
+      else { this.clock.reset(); void ctx.resume().catch(() => undefined); }
+    } catch (err) { this.error(err); }
+  }
+
+  cues(n: number): string[] { return this.log.recent(n); }
+
+  // ——————————————————— WP7 的 cue ———————————————————
+  onBell(kind: BellKind, snap: SimSnapshot): void {
+    this.log.record(`bell:${kind}`);
+    this.guard(() => this.sfx(BELL_SFX[kind], this.atSnap(snap), {}));
+  }
+
+  onSfx(id: SfxId, pan: number | undefined, g: number | undefined, snap: SimSnapshot): void {
+    this.log.record(`sfx:${id}`);
+    this.guard(() => {
+      const at = this.atSnap(snap);
+      const gainDb = g !== undefined && g > 0 ? Math.min(0, 20 * Math.log10(g)) : 0;
+      const p = pan ?? (id === 'shush' ? -0.3 : 0);
+      this.sfx(id, at, { pan: p, gainDb });
+      if (id === 'glassTouch' && this.mixer) {
+        const now = this.now();
+        for (const b of GLASS_BUSES) this.mixer.gate(b).set('glass', dbToGain(-9), at + 0.3, at + 2.3, 0.1, 0.25, now);
+      }
+    });
+  }
+
+  onAmbience(amb: AmbienceId, level: number, seconds: number, snap: SimSnapshot): void {
+    this.log.record(`ambience:${amb}`);
+    this.pendingAmb = null;
+    this.guard(() => this.setAmbience(amb, level, seconds, this.peekSnap(snap)));
+  }
+
+  onSilence(seconds: number, snap: SimSnapshot): void {
+    this.log.record(`silence:${seconds}`);
+    this.guard(() => {
+      if (!this.mixer) return;
+      const at = this.atSnap(snap), now = this.now();
+      for (const b of SILENCE_BUSES) this.mixer.gate(b).set('silence', 0, at, at + 0.06 + seconds, 0.008, 0.12, now);
+    });
+  }
+
+  /** UI：移动（极轻的纸张声 −40 dBFS）/ 确认（一次指腹触地声 −30 dBFS）。 */
+  ui(kind: 'move' | 'confirm'): void {
+    this.log.record(`ui:${kind}`);
+    this.guard(() => {
+      if (!this.ctx) return;
+      const at = this.now() + 0.01;
+      if (kind === 'move') this.sfx('uiMove', at, {});
+      else this.palm({ voice: 'self', surface: 'terrazzo', part: 'pad', heavy: false }, at, { bus: 'ui', gainDb: -13, pan: 0, send: 0 });
+    });
+  }
+
+  get menuScreen(): boolean { return MENU_SCREENS.has(this.screen); }
+
+  stats(): Record<string, unknown> {
+    const ctx = this.ctx as (AudioContext & { state?: string }) | null;
+    return {
+      enabled: true, context: !!ctx, state: ctx?.state ?? null, sampleRate: ctx?.sampleRate ?? null,
+      libraryReady: this.libraryReady, voices: this.voices.list.length, maxVoices: this.voices.maxSeen,
+      stolen: this.voices.stolen, dropped: this.voices.dropped, reanchors: this.clock.reanchors,
+      frames: this.frames, avgFrameMs: this.frames ? this.costTotal / this.frames : 0, maxFrameMs: this.costMax,
+      ambience: this.amb?.id ?? null, reverb: this.mixer?.reverb ?? null, place: this.place?.key ?? null,
+      hush: this.hush, failing: this.failing, rain: this.wantRain, follower: this.folMix, makeup: this.mixer?.makeupDb ?? null,
+      errors: this.errors,
+    };
+  }
+
+  // ——————————————————— 建图 ———————————————————
+  private build(): void {
+    const ctx = this.ctx as BaseAudioContext;
+    this.noise = new NoiseBank(ctx, this.seed);
+    this.mixer = new Mixer(ctx, ctx.destination, this.seed);
+    const now = this.now();
+    this.mixer.setVolumes(this.volumes, now);
+    this.ambDeps = {
+      ctx, noise: this.noise, rng: this.rng, amb: this.mixer.dry('ambience'), floor: this.mixer.dry('floor'),
+      grain: (id, at, db, pan, dest) => this.grain(id, at, db, pan, dest),
+      loop: (k) => this.loopBuffer(k),
+    };
+    this.rain = new Rain(this.ambDeps, this.mixer.rainIn);
+    this.hum = new Hum(this.ambDeps, this.mixer.dry('ambience'));
+    this.mixer.setReverb(this.place?.reverb ?? 'corridor', now, 0);
+    if (this.place) this.mixer.setRainExposure(this.place.rain, now);
+    this.mixer.setFollower(this.folMix, now, 0);
+    if (this.hush) for (const b of HUSH_BUSES) this.mixer.gate(b).set('hush', 0, now, Infinity, 0.04, 0.3, now);
+    if (this.failing) this.applyFail(true, now);
+    this.setAmbience(this.wantAmb.amb, this.wantAmb.level, 1.2, now);
+    if (this.wantRain > 0) this.setRain(this.wantRain, 1.2, now);
+    this.ready = this.loadLibrary();
+  }
+
+  private async loadLibrary(): Promise<void> {
+    const ctx = this.ctx as BaseAudioContext;
+    const mk = this.deps.makeOffline;
+    try { await (this.mixer as Mixer).calibrate(mk); } catch (err) { this.error(err); }
+    try {
+      const palms = allPalmKeys().map((k) => this.recipe(palmKeyString(k), () => palmRecipe(k))).filter((r): r is OneShot => !!r);
+      this.palms = (await renderOneShots(ctx, mk, palms, { seed: this.seed, batchSec: 12 })).buffers;
+      this.sfxLib = (await renderOneShots(ctx, mk, allOneShots(), { seed: this.seed + 1, batchSec: 12 })).buffers;
+      this.libraryReady = true;
+    } catch (err) { this.error(err); }
+  }
+
+  private loopBuffer(k: ApplauseKind): AudioBuffer | null {
+    const hit = this.loops.get(k);
+    if (hit || !this.ctx) return hit ?? null;
+    const [l, r] = applauseLoop(k, this.ctx.sampleRate, this.seed);
+    const b = this.ctx.createBuffer(2, l.length, this.ctx.sampleRate);
+    b.copyToChannel(l, 0); b.copyToChannel(r, 1);
+    this.loops.set(k, b);
+    return b;
+  }
+
+  // ——————————————————— 时间 ———————————————————
+  private perf(): number { return this.deps.perfNow ? this.deps.perfNow() : (typeof performance !== 'undefined' ? performance.now() : 0); }
+  /** 音频时钟的「现在」。离线模式由最新模拟时刻反推。 */
+  now(): number {
+    if (!this.ctx) return 0;
+    return this.deps.offline ? this.clock.virtualNow(this.lastSnap?.t ?? 0) : this.ctx.currentTime;
+  }
+  /** 模拟时刻 → 音频时刻（前瞻调度）。 */
+  private at(simT: number): number { return this.clock.toAudio(simT, this.now()); }
+  private atSnap(snap: SimSnapshot): number { return this.at(snap.t); }
+  /** 非节拍关键的自动化用：不重新对齐时钟。 */
+  private peekSnap(snap: SimSnapshot): number { return this.clock.peek(snap.t, this.now()); }
+
+  // ——————————————————— 事件 ———————————————————
+  private handle(e: GameEvent, snap: SimSnapshot): void {
+    switch (e.type) {
+      case 'chapter:start':
+        this.jump = true; this.segIndex = -1; this.skipKnuckleUntil = -1; this.crispUntil = { L: -1, R: -1 };
+        this.setFail(false, snap);
+        if (e.data.id === 'ch4' && this.ctx) setTimeout(() => { this.loopBuffer('sparse'); this.loopBuffer('dense'); this.loopBuffer('aligned'); }, 0);
+        return;
+      case 'segment': this.onSegment(e.data, snap); return;
+      case 'retry': this.setFail(false, snap); return;
+      case 'screen': this.onScreen(e.data.name); return;
+      default: break;
+    }
+    if (!this.ctx || !this.mixer) return;
+    switch (e.type) {
+      case 'contact': this.onContact(e.data); break;
+      case 'followerContact': this.onFollowerContact(e.data, snap); break;
+      case 'hit': this.onHit(e.data, snap); break;
+      case 'fall': this.onFall(snap); break;
+      case 'lookBack':
+        if (e.data.phase === 'start') {
+          const at = this.atSnap(snap);
+          this.mixer.followerMute.set('look', 0, at, at + 1.2, 0.015, 0.1, this.now());
+        }
+        break;
+      case 'twitch': if (e.data.phase === 'warn') this.sfx('muscle', this.atSnap(snap), {}); break;
+      case 'drift': if (e.data.phase === 'warn') this.sfx('muscle', this.atSnap(snap), { gainDb: -4, pan: e.data.dir * 0.3 }); break;
+      case 'stand': this.onStand(e.data, snap); break;
+      case 'nearMiss': this.sfx('cloth', this.atSnap(snap), { gainDb: -2, pan: e.data.side * 0.5 }); break;
+      case 'ask': {
+        const at = this.atSnap(snap);
+        this.sfx('whisper', at + 0.8, { pan: 0.5 });
+        this.sfx('laughShort', at + 1.25, { pan: 0.5 });
+        break;
+      }
+      case 'note': this.sfx('paper', this.atSnap(snap), { gainDb: -2 }); break;
+      case 'action':
+        if (e.data.kind === 'duck') this.soundLight(snap);
+        if (e.data.kind === 'lane' && (snap.player.surface === 'water' || snap.player.surface === 'asphaltWet' || snap.player.surface === 'leavesWet')) {
+          this.sfx('splash', this.atSnap(snap), { gainDb: -6, pan: (e.data.dir ?? 0) * 0.3 });
+        }
+        break;
+      case 'land': this.soundLight(snap); break;
+      case 'cue': this.onOtherCue(e.data.body, snap); break;
+      default: break;
+    }
+  }
+
+  /** 快照里的持续状态：静音段、追随者混音。 */
+  private observe(snap: SimSnapshot): void {
+    if (snap.hush !== this.hush) {
+      this.hush = snap.hush;
+      if (snap.hush) this.log.record('hush');
+      if (this.mixer) {
+        const now = this.now(), at = this.clock.peek(snap.t, now);
+        for (const b of HUSH_BUSES) {
+          if (snap.hush) this.mixer.gate(b).set('hush', 0, at, Infinity, 0.04, 0.3, now);
+          else this.mixer.gate(b).clear('hush', at, 0.3, now);
+        }
+      }
+    }
+    const m = followerMix(snap.follower, snap.player.steady);
+    const k = mixKey(m);
+    if (k !== this.folKey) {
+      this.width = { from: this.widthAt(snap.t), to: m.panWidth, t0: snap.t };
+      this.folKey = k;
+      this.folMix = m;
+      if (this.mixer) this.mixer.setFollower(m, this.clock.peek(snap.t, this.now()), 0.3);
+    }
+  }
+
+  private widthAt(t: number): number {
+    const w = this.width;
+    const x = Math.min(1, Math.max(0, (t - w.t0) / 0.3));
+    return w.from + (w.to - w.from) * x;
+  }
+
+  private onScreen(name: string): void {
+    this.screen = name;
+    const quiet = name === 'outro' || name === 'credits';
+    if (quiet === this.screenQuiet) return;
+    this.screenQuiet = quiet;
+    if (!this.mixer) return;
+    const now = this.now();
+    for (const b of ['self', 'follower', 'npc', 'sfx', 'ambience', 'floor', 'revA', 'revB'] as const) {
+      if (quiet) this.mixer.gate(b).set('screen', 0, now, Infinity, 0.4, 0.3, now);
+      else this.mixer.gate(b).clear('screen', now, 0.3, now);
+    }
+  }
+
+  // ——————————————————— 地点、环境音、雨 ———————————————————
+  private chapterDef(id: ChapterId): ChapterDef | null { return this.deps.chapter?.(id) ?? null; }
+
+  private onSegment(d: GameEvents['segment'], snap: SimSnapshot): void {
+    const jump = this.jump || d.index !== this.segIndex + 1 || snap.segBeat > 0.5;
+    this.segIndex = d.index;
+    this.lights.reset();
+    const def = this.chapterDef(snap.chapter);
+    const seg = def?.segments[d.index];
+    if (!def || !seg) { this.jump = false; return; }
+    const place = placeOf(seg, this.deps.kitLookup);
+    const changed = !this.place || this.place.key !== place.key;
+    this.setPlace(place, snap, jump ? 0.3 : 0.8);
+    if (jump) {
+      this.jump = false;
+      this.pendingAmb = null;
+      const st = soundStateAt(def, d.index, snap.segBeat, this.deps.kitLookup);
+      if (st) { this.setAmbience(st.ambience.amb, st.ambience.level, 0.6, this.peekSnap(snap)); this.setRain(st.rain, 0.6, this.peekSnap(snap)); }
+    } else if (changed) {
+      // 同一 tick 里如果还有 ambience cue，它会覆盖这里（onAmbience 清掉 pending）
+      this.pendingAmb = { st: { amb: place.ambience, level: place.ambLevel }, tick: this.lastTick };
+    }
+  }
+
+  private flushPendingAmb(snap: SimSnapshot): void {
+    const p = this.pendingAmb;
+    this.pendingAmb = null;
+    if (p) this.setAmbience(p.st.amb, p.st.level, 1.2, this.peekSnap(snap));
+  }
+
+  private setPlace(place: Place, snap: SimSnapshot, fade: number): void {
+    this.place = place;
+    if (!this.mixer) return;
+    const at = this.clock.peek(snap.t, this.now());
+    this.mixer.setReverb(place.reverb, at, fade);
+    this.mixer.setRainExposure(place.rain, at);
+  }
+
+  private setAmbience(amb: AmbienceId, level: number, secs: number, at: number): void {
+    this.wantAmb = { amb, level };
+    if (!this.ctx || !this.ambDeps) return;
+    const now = this.now();
+    const s = Math.max(0.05, secs);
+    if (amb === 'none' || level <= 0) {
+      if (this.amb) { this.amb.stop(at, s); this.fading.push(this.amb); this.amb = null; }
+      return;
+    }
+    if (this.amb && this.amb.id === amb) { this.amb.fadeTo(level, at, s); return; }
+    if (this.amb) { this.amb.stop(at, s); this.fading.push(this.amb); }
+    this.amb = new Ambience(this.ambDeps, amb, at);
+    this.amb.fadeTo(level, at, s);
+    this.amb.param('rain', this.wantRain, at);
+    this.amb.advance(now + 0.35);
+  }
+
+  private setRain(intensity: number, secs: number, at: number): void {
+    this.wantRain = intensity;
+    if (!this.rain) return;
+    this.rain.set(intensity, at, Math.max(0.05, secs));
+    this.amb?.param('rain', intensity, at);
+  }
+
+  private onOtherCue(b: EventBody, snap: SimSnapshot): void {
+    switch (b.type) {
+      case 'text': if (b.style === 'whisper') this.sfx('whisper', this.atSnap(snap), { pan: b.pan ?? -0.5 }); break;
+      case 'rain': this.setRain(b.intensity, b.seconds, this.peekSnap(snap)); break;
+      case 'lights': this.lights.onCue(b, snap); break;
+      case 'crowd':
+        if (this.amb?.id === 'dreamApplause') {
+          const at = this.clock.peek(snap.t, this.now());
+          if (b.op === 'applaud' || b.op === 'crawlOvertake') { this.amb.param('align', 1, at); this.amb.param('density', 1, at); }
+          else if (b.op === 'normal') this.amb.param('align', 0, at);
+        }
+        break;
+      case 'board': this.sfx(b.op === 'write' ? 'chalk' : 'cloth', this.atSnap(snap), { gainDb: b.op === 'write' ? 0 : -3 }); break;
+      case 'noteOpen': this.sfx('paper', this.atSnap(snap), {}); break;
+      default: break;
+    }
+  }
+
+  // ——————————————————— 灯管嗡鸣与声控灯 ———————————————————
+  private updateHum(snap: SimSnapshot, now: number): void {
+    if (!this.hum) return;
+    const lamps = this.deps.lamps?.() ?? null;
+    const real = !!lamps && !(lamps instanceof FlatLampField) && snap.segKind !== 'still';
+    const b = real ? Math.max(0, Math.min(1, (lamps as LampFieldAPI).brightnessAt(snap.player.s))) : this.lights.brightness(snap);
+    const active = this.place?.hum ?? false;
+    const at = this.clock.peek(snap.t, now);
+    if (active && (this.brightPrev >= 0.5) !== (b >= 0.5) && snap.t - this.lastClick >= 0.3) {
+      this.lastClick = snap.t;
+      this.sfx('click', at, {});                  // 每次亮灭加一个 1 ms 的「咔」（−32 dBFS）
+    }
+    this.brightPrev = b;
+    this.hum.set(active ? b : 0, at, b > this.hum.current ? 0.07 : 0.05);
+  }
+
+  /** 撑跃落地或 ↓ 拍地：声控灯（继电器「咔」，随后嗡鸣 200 ms 渐入）。 */
+  private soundLight(snap: SimSnapshot): void {
+    if (this.lights.trigger(snap)) this.sfx('relay', this.atSnap(snap) + this.lights.soundDelay, {});
+  }
+
+  // ——————————————————— 手掌 ———————————————————
+  private recipe(key: string, make: () => OneShot | null): OneShot | null {
+    if (!this.recipeCache.has(key)) this.recipeCache.set(key, make());
+    return this.recipeCache.get(key) ?? null;
+  }
+
+  private pick(key: string, bufs: readonly AudioBuffer[]): AudioBuffer | null {
+    if (!bufs.length) return null;
+    const last = this.lastVariant.get(key) ?? -1;
+    let i = Math.floor(this.rng() * bufs.length);
+    if (i === last && bufs.length > 1) i = (i + 1) % bufs.length;
+    this.lastVariant.set(key, i);
+    return bufs[i] ?? null;
+  }
+
+  /** 播放库里的一段手掌声；库还没就绪时现场合成（同一配方）。 */
+  private palm(k: PalmKey, at: number, o: { bus: BusId; gainDb: number; pan: number; send: number; prio?: number; dest?: AudioNode }): void {
+    const key = palmKeyString(k);
+    const r = this.recipe(key, () => palmRecipe(k));
+    if (!r) return;
+    const bufs = this.palms?.get(key);
+    const opts: PlayOpts = { key, bus: o.bus, at, gainDb: o.gainDb, peakDb: r.peakDb, pan: o.pan, send: o.send, tau: r.tau, prio: o.prio ?? 2 };
+    if (o.dest) opts.dest = o.dest;
+    if (bufs) { const b = this.pick(key, bufs); if (b) this.play(b, opts); }
+    else this.live(r, opts);
+  }
+
+  private onContact(c: GameEvents['contact']): void {
+    const part = c.part;
+    if (part === 'knuckle' && this.skipKnuckleUntil >= 0 && c.t <= this.skipKnuckleUntil) { this.skipKnuckleUntil = -1; return; }   // 绊：缺指节
+    if (!partsOf(c.surface).includes(part)) return;
+    if (part === 'heel') this.crispUntil[c.hand] = c.crisp ? c.t + 0.1 : -1;
+    const crisp = c.t <= this.crispUntil[c.hand];
+    const heavy = c.heavy;
+    const k: PalmKey = { voice: 'self', surface: c.surface, part, heavy: heavy && part === 'heel' };
+    const r = this.recipe(palmKeyString(k), () => palmRecipe(k));
+    if (!r) return;
+    let gainDb = crisp ? 0 : rr(this.rng, -1.5, 1.5);           // 随机化：增益 ±1.5 dB；干脆时严格
+    if (crisp && part === 'pad') gainDb += 2;                    // 干脆：指腹 +2 dB
+    if (heavy) gainDb += part === 'heel' ? 2 : 3;                // 撑跃落地：整体加重
+    gainDb = Math.min(gainDb, -9 - r.peakDb);                    // 单个声部永远不超过 −9 dBFS
+    const dt = crisp ? 0 : rr(this.rng, -0.004, 0.004);          // 时间 ±4 ms；干脆时严格对齐
+    const pan = (c.hand === 'L' ? -0.2 : 0.2) + rr(this.rng, -0.03, 0.03);
+    this.palm(k, this.at(c.t) + dt, { bus: 'self', gainDb, pan, send: r.send });
+  }
+
+  private onFollowerContact(c: GameEvents['followerContact'], snap: SimSnapshot): void {
+    if (!this.folMix.audible) return;
+    const surface: Surface = snap.player.surface;
+    if (!partsOf(surface).includes(c.part)) return;
+    const w = this.widthAt(snap.t);
+    this.palm({ voice: 'follower', surface, part: c.part, heavy: false }, this.at(c.t),
+      { bus: 'follower', gainDb: rr(this.rng, -1, 1), pan: (c.hand === 'L' ? -1 : 1) * w, send: 0, prio: 1 });
+  }
+
+  private onHit(h: GameEvents['hit'], snap: SimSnapshot): void {
+    const at = this.atSnap(snap);
+    if (h.severity === 'stumble') {
+      this.skipKnuckleUntil = snap.t + 0.3;
+      this.sfx('scrape', at, {});
+    } else this.sfx('crashThud', at, {});
+    if (h.kind === 'mopBucket' || h.kind === 'cone' || h.kind === 'bin') this.sfx('bucketKnock', at + 0.01, { gainDb: -3 });
+    if (h.crowd && this.mixer) {
+      // 安静的一秒：环境总线 60 ms 内掐断，保持 1.0 s，再用 600 ms 恢复
+      this.mixer.gate('ambience').set('quiet', 0, at, at + 0.06 + 1.0, 0.008, 0.12, this.now());
+    }
+  }
+
+  private onFall(snap: SimSnapshot): void {
+    const at = this.atSnap(snap);
+    this.sfx('kneeThud', at, { bus: 'floor' });
+    if (this.folMix.audible) {
+      // 两串节拍合成一个声音，持续 0.6 s
+      const surface = snap.player.surface;
+      for (const dt of [0.05, 0.36]) {
+        for (const part of partsOf(surface)) {
+          const off = part === 'heel' ? 0 : part === 'knuckle' ? 0.026 : 0.052;
+          for (const voice of ['self', 'follower'] as const) {
+            this.palm({ voice, surface, part, heavy: false }, at + dt + off, { bus: 'floor', gainDb: dt > 0.1 ? -8 : -3, pan: 0, send: 0 });
+          }
+        }
+      }
+    }
+    this.setFail(true, snap);
+  }
+
+  private setFail(on: boolean, snap: SimSnapshot): void {
+    if (on === this.failing) return;
+    this.failing = on;
+    if (!this.mixer) return;
+    const now = this.now();
+    this.applyFail(on, on ? this.clock.peek(snap.t, now) : now);
+  }
+
+  private applyFail(on: boolean, at: number): void {
+    const m = this.mixer as Mixer;
+    const now = this.now();
+    if (on) {
+      m.gate('ambience').set('fail', 0, at, Infinity, 0.008, 0.1, now);          // 环境 60 ms 内掐断
+      for (const b of FAIL_BUSES) m.gate(b).set('fail', 0, at + 0.01, Infinity, 0.04, 0.1, now);   // 其余 0.3 s 内淡出
+    } else {
+      for (const b of ['ambience', ...FAIL_BUSES] as const) m.gate(b).clear('fail', now, 0.1, now);
+    }
+  }
+
+  private onStand(s: GameEvents['stand'], snap: SimSnapshot): void {
+    const at = this.atSnap(snap);
+    switch (s.phase) {
+      case 'step': this.sfx('stepSelf', at, { pan: ((s.step ?? 0) % 2 ? 0.12 : -0.12), rate: 1 + rr(this.rng, -0.05, 0.05) }); break;
+      case 'rise': this.sfx('cloth', at, { gainDb: -4, bus: 'self' }); break;
+      case 'plant':
+        for (const [hand, off] of [['L', 0], ['R', 0.012]] as const) {
+          for (const part of ['heel', 'knuckle', 'pad'] as ContactPart[]) {
+            this.onContact({ hand, part, t: snap.t + off + (part === 'heel' ? 0 : part === 'knuckle' ? 0.026 : 0.052), s: snap.player.s, x: 0,
+              surface: snap.player.surface, crisp: false, heavy: true });
+          }
+        }
+        break;
+      case 'fall': this.sfx('kneeThud', at, { bus: 'self' }); break;
+      default: break;
+    }
+  }
+
+  // ——————————————————— 播放 ———————————————————
+  /** 播放一个预渲染的一次性声音。 */
+  private sfx(id: OneShotId, at: number, o: { pan?: number; gainDb?: number; bus?: BusId; rate?: number }): void {
+    const r = SFX[id];
+    if (!r || !this.ctx) return;
+    const opts: PlayOpts = { key: id, bus: o.bus ?? r.bus, at, gainDb: o.gainDb ?? 0, peakDb: r.peakDb, pan: o.pan ?? 0, send: r.send, tau: r.tau, prio: 1 };
+    if (o.rate) opts.rate = o.rate;
+    const bufs = this.sfxLib?.get(id);
+    if (bufs) { const b = this.pick(id, bufs); if (b) this.play(b, opts); }
+    else this.live(r, opts);
+  }
+
+  /** 环境颗粒（低优先级：声部满时直接放弃）。 */
+  private grain(id: GrainId, at: number, gainDb: number, pan: number, dest?: AudioNode): void {
+    const r = SFX[id];
+    const bufs = this.sfxLib?.get(id);
+    if (!r || !bufs) return;
+    const b = this.pick(id, bufs);
+    if (!b) return;
+    const opts: PlayOpts = { key: id, bus: r.bus, at, gainDb, peakDb: r.peakDb, pan, send: 0, tau: r.tau, prio: 0 };
+    if (dest) opts.dest = dest;
+    this.play(b, opts);
+  }
+
+  private play(buf: AudioBuffer, o: PlayOpts): boolean {
+    const ctx = this.ctx as BaseAudioContext, mixer = this.mixer as Mixer;
+    const now = this.now();
+    const at = Math.max(o.at, now);
+    if (!this.voices.admit(now, at, o.prio)) return false;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const rate = o.rate ?? 1;
+    if (rate !== 1) src.playbackRate.value = rate;
+    const g = ctx.createGain();
+    g.gain.value = dbToGain(o.gainDb);
+    src.connect(g);
+    const dest = o.dest ?? mixer.dry(o.bus);
+    if (o.pan) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, o.pan));
+      g.connect(p); p.connect(dest);
+    } else g.connect(dest);
+    const send = o.dest ? null : mixer.send(o.bus);
+    if (send && o.send && o.send > 0) {
+      const sg = ctx.createGain();
+      sg.gain.value = o.send;
+      g.connect(sg); sg.connect(send);
+    }
+    src.start(at);
+    this.voices.add({ src, g, start: at, end: at + buf.duration / rate, peak: dbToGain(o.peakDb + o.gainDb), tau: o.tau, prio: o.prio });
+    this.logScheduled(o, at);
+    return true;
+  }
+
+  /** 库还没渲染好时的回落：在实时 context 上现场搭同一个配方（电平保守地低 6 dB）。 */
+  private live(r: OneShot, o: PlayOpts): void {
+    const ctx = this.ctx as BaseAudioContext, mixer = this.mixer as Mixer;
+    const now = this.now();
+    const at = Math.max(o.at, now);
+    if (!this.voices.admit(now, at, o.prio)) return;
+    const g = ctx.createGain();
+    g.gain.value = dbToGain(o.gainDb - 6 - (r.key.startsWith('self:') || r.key.startsWith('follower:') ? 6 : 0));
+    const dest = o.dest ?? mixer.dry(o.bus);
+    if (o.pan) { const p = ctx.createStereoPanner(); p.pan.value = o.pan; g.connect(p); p.connect(dest); } else g.connect(dest);
+    r.build({ ctx, out: g, t0: at, rng: this.rng, noise: this.noise as NoiseBank });
+    this.voices.add({ src: null, g, start: at, end: at + r.dur, peak: dbToGain(o.peakDb + o.gainDb - 6), tau: o.tau, prio: o.prio });
+    this.logScheduled(o, at);
+  }
+
+  private logScheduled(o: PlayOpts, at: number): void {
+    this.scheduled.push({ key: o.key, at, bus: o.bus, gainDb: o.gainDb, pan: o.pan ?? 0 });
+    if (this.scheduled.length > 512) this.scheduled.splice(0, this.scheduled.length - 512);
+  }
+
+  private guard(fn: () => void): void { try { fn(); } catch (err) { this.error(err); } }
+  private error(err: unknown): void {
+    this.errors++;
+    if (this.errors <= 3) console.warn('[audio]', err);
+  }
+}
