@@ -439,6 +439,7 @@ export class ObstacleView implements ViewSystem {
       if (shiftTurn !== 0) { const turn = shiftTurn * 70 * DEG; p.footYawL += turn; p.footYawR += turn; p.legYawL += turn * 0.3; p.legYawR += turn * 0.3; }
       this.applyGaze(p, o.id * 8 + i, (o.s0 + o.s1) / 2 + st.ds, f, 'turnShoes', -1);
       p.upper = look.upper || f.stand;
+      if (p.upper && this.globalOp.applaud >= 0) p.clap = clapClosed(f.tAnim, hash01(o.id + i)) ? 2 : 1;
       if (sp === 'directorZhou') p.glow = emberGlow(f.t);
       this.forest.add(p);
     }
@@ -452,9 +453,10 @@ export class ObstacleView implements ViewSystem {
     const b = o.behavior;
     const at = b.type === 'yield' ? b.atBeat : Number.POSITIVE_INFINITY;
     const beat = cur ? f.beat : -1;
-    // 起身：at − 2 → at − 0.8 拍；让开：at − 0.8 → at + 0.2 拍（画面先于碰撞，§2.5 先看见后碰到）
-    const rise = clamp01((beat - (at - 2)) / 1.2);
-    const step = clamp01((beat - (at - 0.8)) / 1.0);
+    // 起身：at − 2.6 → at − 1.6 拍；让开：at − 1.6 → at − 0.6 拍。画面先于碰撞（先看见、后碰到）：
+    // 他留在过道里的脚从 at − 1.3 拍起就在画面上，第一章按 1-2 的减速曲线算，离接触还有 ≥ 1.2 s（R4）。
+    const rise = clamp01((beat - (at - 2.6)) / 1.0);
+    const step = clamp01((beat - (at - 1.6)) / 1.0);
     const cx = (o.lanes.reduce<number>((acc, l) => acc + l, 0) / Math.max(1, o.lanes.length)) * LANE_WIDTH;
     const zc = -((o.s0 + o.s1) / 2);
     const foot = this.chenFoot.get(o.id);
@@ -472,7 +474,7 @@ export class ObstacleView implements ViewSystem {
     p.legYawL = -lerp(0.35, 0.04, r); p.legYawR = lerp(0.35, 0.04, r);
     p.lean = lerp(0.45, 0, r);
     p.squat = rise < 0.5; p.seated = false;
-    if (foot && step > 0.55) {
+    if (foot && step > 0.3) {
       // 留在过道里的脚：左腿伸直指向脚的位置（碰撞盒中心），鞋尖朝过道另一侧
       this.target.set(fx - side * 0.06, floorY + BODY.ankle, -fs);
       if (side > 0) { p.targetL = this.target; p.footYawL = -Math.PI / 2; }

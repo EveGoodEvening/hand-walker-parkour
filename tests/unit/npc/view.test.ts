@@ -55,6 +55,55 @@ describe('WP6 draw call 与数量上限（§9.4；验收 1）', () => {
   });
 });
 
+describe('站立段与梦里：躯干和头（§5.7「只在站立段、梦里、远景中显示」）', () => {
+  it('跑段里只到腰带；同一群人在站立段里画出躯干和头（高画质）；crowd applaud 时手在胸前开合', () => {
+    const { view, vd } = withStage('high', 'forest', 10);
+    expect(view.forest.counts().torso).toBe(0);
+    const snap = vd.d.snap;
+    const stand = { ...snap, segKind: 'stand' as const };
+    view.frame(stand, stand, 1, 0);
+    expect(view.forest.counts().torso).toBeGreaterThan(5);
+    expect(view.forest.counts().head).toBe(view.forest.counts().torso);
+    view.crowdOp('*', 'applaud', stand);
+    view.frame(stand, stand, 1, 0);
+    const p = view.forest.pool('torso');
+    const vs = new Set<number>();
+    for (let i = 0; i < p.n; i++) vs.add(p.variantAt(i));
+    expect(vs.has(1) || vs.has(2)).toBe(true);
+    expect(vs.has(0)).toBe(false);
+  });
+  it('静场里什么都不画', () => {
+    const { view, vd } = withStage('high', 'forest', 10);
+    const still = { ...vd.d.snap, segKind: 'still' as const };
+    view.frame(still, still, 1, 0);
+    expect(view.visibleMeshes()).toBe(0);
+  });
+});
+
+describe('陈默（§4.1 1-2）：蹲在过道里 → 起身 → 让开，脚留在过道里', () => {
+  it('他留在过道里的脚在接触前 ≥ 1.2 s 出现在画面上（R4），且画面上的脚正好落在 footOut 碰撞盒里', () => {
+    const { view } = makeView('high');
+    const vd = new ViewDriver(view, getChapter('ch1') as ChapterDef, { segment: '1-2', beat: 100 });
+    vd.d.sim.setAutopilot('perfect');
+    const seg = vd.ch.segments.find((x) => x.def.id === '1-2');
+    const foot = seg?.obstacles.find((o) => o.params.itemId === 'chenmoFoot');
+    expect(foot).toBeDefined();
+    let tSeen = -1, tContact = -1;
+    const ankle = new THREE.Vector3();
+    for (let i = 0; i < 120 * 12 && tContact < 0; i++) {
+      const snap = vd.step(1);
+      if (tSeen < 0 && view.forest.lastTargetL(ankle)) tSeen = snap.t;
+      if (snap.player.s + 0.25 >= (foot?.s0 ?? 0)) tContact = snap.t;
+    }
+    expect(tSeen).toBeGreaterThan(0);
+    expect(tContact - tSeen).toBeGreaterThanOrEqual(1.2);
+    // 画面上的脚踝在碰撞盒里（横向 ±halfW，纵向 s0..s1）
+    expect(Math.abs(ankle.x)).toBeLessThan(foot?.halfW ?? 0);
+    expect(-ankle.z).toBeGreaterThanOrEqual(foot?.s0 ?? 0);
+    expect(-ankle.z).toBeLessThanOrEqual(foot?.s1 ?? 0);
+  });
+});
+
 describe('每种障碍都能正确显示（验收 5）', () => {
   it('四个画廊覆盖 obstacles.ts 的全部种类，每种都放进了对应原型池、用对应变体', () => {
     const seen = new Set<string>();

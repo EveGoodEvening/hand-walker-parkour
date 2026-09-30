@@ -83,6 +83,9 @@ registerDebug('npcHitbox', (on?: unknown) => { guard(); npcView.enableHitbox(on 
 registerDebug('npcStats', () => ({
   ...npcView.stats,
   visibleMeshes: npcView.visibleMeshes(),
+  forestMeshes: npcView.forest.meshes.filter((m) => m.visible).length,
+  crawlerMeshes: npcView.crawlers.meshes.filter((m) => m.visible).length,
+  archetypeMeshes: Array.from(npcView.pools.values()).filter((p) => p.pool.mesh.visible).length,
   pools: Object.fromEntries(Array.from(npcView.pools, ([k, p]) => [k, p.pool.n])),
   forest: npcView.forest.counts(),
   stage: npcView.stage?.name ?? null,

@@ -1,39 +1,586 @@
 [
-  { "out": "shots/visual/WP6/gallery-low-a.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-low')" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-low-b.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-low', { ahead: -5.2 })" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-low-c.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-low', { ahead: -10.4 })" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-bar-a.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-bar')" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-bar-b.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-bar', { ahead: -5.2 })" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-bar-c.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-bar', { ahead: -10.4 })" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-bar-d.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-bar', { ahead: -15.6 })" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-block-a.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-block')" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-block-b.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-block', { ahead: -5.2 })" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-block-c.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-block', { ahead: -10.4 })" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-block-d.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-block', { ahead: -18 })" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-soft.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-soft', { ahead: -1.5 })" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-low-q-low.png", "q": "low", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-low')" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/gallery-block-q-low.png", "q": "low", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('gallery-block')" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/hitbox-bar.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1&debug=hitbox", "ops": [{ "eval": "__game.ext.npcStage('gallery-bar', { ahead: -5.2 })" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/hitbox-low.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1&debug=hitbox", "ops": [{ "eval": "__game.ext.npcStage('gallery-low', { ahead: -5.2 })" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/hitbox-block.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1&debug=hitbox", "ops": [{ "eval": "__game.ext.npcStage('gallery-block')" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/hitbox-ch1-stalls.png", "q": "high", "size": "960x540", "query": "ch=ch1&seg=1-3&beat=12&debug=hitbox", "ops": [{ "steps": 30 }] },
-  { "out": "shots/visual/WP6/ch1-classroom-feet.png", "q": "high", "size": "960x540", "query": "ch=ch1&seg=1-1&beat=3", "ops": [{ "steps": 20 }] },
-  { "out": "shots/visual/WP6/ch1-classroom-low.png", "q": "low", "query": "ch=ch1&seg=1-1&beat=3", "ops": [{ "steps": 20 }] },
-  { "out": "shots/visual/WP6/ch1-chenmo-squat.png", "q": "high", "size": "960x540", "query": "ch=ch1&seg=1-2&beat=104", "ops": [{ "steps": 300 }] },
-  { "out": "shots/visual/WP6/ch1-chenmo-rise.png", "q": "high", "size": "960x540", "query": "ch=ch1&seg=1-2&beat=104", "ops": [{ "steps": 560 }] },
-  { "out": "shots/visual/WP6/ch1-chenmo-foot.png", "q": "high", "size": "960x540", "query": "ch=ch1&seg=1-2&beat=104", "ops": [{ "steps": 700 }] },
-  { "out": "shots/visual/WP6/ch1-eyes.png", "q": "high", "size": "960x540", "query": "ch=ch1&seg=1-2&beat=146", "ops": [{ "steps": 90 }] },
-  { "out": "shots/visual/WP6/gaze-before.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('forest')" }, { "steps": 60 }] },
-  { "out": "shots/visual/WP6/gaze-after.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('forest')" }, { "steps": 12 }, { "eval": "__game.render()" }, { "eval": "__game.ext.npcCrowd('*', 'turnShoes')" }, { "steps": 48 }] },
-  { "out": "shots/visual/WP6/stretch-a.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('stretch', { ahead: -1 })" }, { "steps": 20 }] },
-  { "out": "shots/visual/WP6/stretch-b.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('stretch', { ahead: -1 })" }, { "steps": 90 }] },
-  { "out": "shots/visual/WP6/ask-before.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('forest')" }, { "steps": 350 }] },
-  { "out": "shots/visual/WP6/ask-part.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('forest')" }, { "steps": 250 }, { "eval": "__game.render()" }, { "eval": "__game.ext.npcAsk('part')" }, { "steps": 100 }] },
-  { "out": "shots/visual/WP6/quiet-second.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('forest')" }, { "steps": 100 }, { "eval": "__game.render()" }, { "eval": "__game.ext.npcHit()" }, { "steps": 60 }] },
-  { "out": "shots/visual/WP6/specials.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('specials', { ahead: 1 })" }, { "steps": 120 }] },
-  { "out": "shots/visual/WP6/night-zhou-barrier.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('night', { ahead: -2 })" }, { "steps": 1 }] },
-  { "out": "shots/visual/WP6/dream.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('dream')" }, { "steps": 40 }] },
-  { "out": "shots/visual/WP6/dream-overtake.png", "q": "high", "size": "960x540", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('dream')" }, { "steps": 10 }, { "eval": "__game.render()" }, { "eval": "__game.ext.npcCrowd('*', 'crawlOvertake')" }, { "eval": "__game.ext.npcCrowd('*', 'applaud')" }, { "steps": 240 }] },
-  { "out": "shots/visual/WP6/dream-q-low.png", "q": "low", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('dream')" }, { "steps": 40 }, { "eval": "__game.ext.npcStats()" }] },
-  { "out": "shots/visual/WP6/portrait.png", "q": "medium", "size": "360x640", "query": "ch=test&seg=t-1&beat=1", "ops": [{ "eval": "__game.ext.npcStage('forest')" }, { "steps": 60 }] }
+  {
+    "out": "shots/visual/WP6/gallery-low-a.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-low')"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-low-b.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-low', { ahead: -5.2 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-low-c.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-low', { ahead: -10.4 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-bar-a.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-bar')"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-bar-b.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-bar', { ahead: -5.2 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-bar-c.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-bar', { ahead: -10.4 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-bar-d.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-bar', { ahead: -15.6 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-block-a.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-block')"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-block-b.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-block', { ahead: -5.2 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-block-c.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-block', { ahead: -10.4 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-block-d.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-block', { ahead: -18 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-soft.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-soft', { ahead: -1.5 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-low-q-low.png",
+    "q": "low",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-low')"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gallery-block-q-low.png",
+    "q": "low",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-block')"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/hitbox-bar.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1&debug=hitbox",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-bar', { ahead: -5.2 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/hitbox-low.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1&debug=hitbox",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-low', { ahead: -5.2 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/hitbox-block.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1&debug=hitbox",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('gallery-block')"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/hitbox-ch1-stalls.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=ch1&seg=1-3&beat=12&debug=hitbox",
+    "ops": [
+      {
+        "steps": 30
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ch1-classroom-feet.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=ch1&seg=1-1&beat=3",
+    "ops": [
+      {
+        "steps": 20
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ch1-classroom-low.png",
+    "q": "low",
+    "query": "ch=ch1&seg=1-1&beat=3",
+    "ops": [
+      {
+        "steps": 20
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ch1-chenmo-squat.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=ch1&seg=1-2&beat=104",
+    "ops": [
+      {
+        "steps": 300
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ch1-chenmo-rise.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=ch1&seg=1-2&beat=104",
+    "ops": [
+      {
+        "steps": 560
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ch1-chenmo-foot.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=ch1&seg=1-2&beat=104",
+    "ops": [
+      {
+        "steps": 700
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ch1-eyes.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=ch1&seg=1-2&beat=146",
+    "ops": [
+      {
+        "steps": 90
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gaze-before.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('forest')"
+      },
+      {
+        "steps": 60
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/gaze-after.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('forest')"
+      },
+      {
+        "steps": 12
+      },
+      {
+        "eval": "__game.render()"
+      },
+      {
+        "eval": "__game.ext.npcCrowd('*', 'turnShoes')"
+      },
+      {
+        "steps": 48
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/stretch-a.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('stretch', { ahead: -1 })"
+      },
+      {
+        "steps": 20
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/stretch-b.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('stretch', { ahead: -1 })"
+      },
+      {
+        "steps": 90
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ask-before.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('forest')"
+      },
+      {
+        "steps": 350
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ask-part.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('forest')"
+      },
+      {
+        "steps": 250
+      },
+      {
+        "eval": "__game.render()"
+      },
+      {
+        "eval": "__game.ext.npcAsk('part')"
+      },
+      {
+        "steps": 100
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/quiet-second.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('forest')"
+      },
+      {
+        "steps": 100
+      },
+      {
+        "eval": "__game.render()"
+      },
+      {
+        "eval": "__game.ext.npcHit()"
+      },
+      {
+        "steps": 60
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/specials.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('specials', { ahead: 1 })"
+      },
+      {
+        "steps": 120
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/night-zhou-barrier.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('night', { ahead: -2 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/dream.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('dream')"
+      },
+      {
+        "steps": 40
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/dream-overtake.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('dream')"
+      },
+      {
+        "steps": 10
+      },
+      {
+        "eval": "__game.render()"
+      },
+      {
+        "eval": "__game.ext.npcCrowd('*', 'crawlOvertake')"
+      },
+      {
+        "eval": "__game.ext.npcCrowd('*', 'applaud')"
+      },
+      {
+        "steps": 240
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/dream-q-low.png",
+    "q": "low",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('dream')"
+      },
+      {
+        "steps": 40
+      },
+      {
+        "eval": "__game.ext.npcStats()"
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/portrait.png",
+    "q": "medium",
+    "size": "360x640",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('forest')"
+      },
+      {
+        "steps": 60
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/center-shoes.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('forest')"
+      },
+      {
+        "steps": 10
+      },
+      {
+        "eval": "__game.render()"
+      },
+      {
+        "eval": "__game.ext.npcCrowd('*', 'centerShoes')"
+      },
+      {
+        "steps": 30
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/dream-applaud.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('dream', { ahead: -16.5 })"
+      },
+      {
+        "steps": 2
+      },
+      {
+        "eval": "__game.render()"
+      },
+      {
+        "eval": "__game.ext.npcCrowd('*', 'applaud')"
+      },
+      {
+        "steps": 10
+      },
+      {
+        "eval": "__game.ext.npcStats()"
+      }
+    ]
+  }
 ]

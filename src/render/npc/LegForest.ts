@@ -185,6 +185,10 @@ export class LegForest {
   private tier: QualityProfile['tier'] = 'low';
   /** 本帧画了多少人（不含被容量截掉的）。 */
   people = 0;
+  private hadTarget = false;
+  private readonly targetSeen = new THREE.Vector3();
+  /** 本帧是否画过伸向目标的腿（陈默的脚）；有则把脚踝位置写进 out（测试用）。 */
+  lastTargetL(out: THREE.Vector3): boolean { if (this.hadTarget) out.copy(this.targetSeen); return this.hadTarget; }
 
   constructor() { this.group.name = 'legForest'; }
 
@@ -214,7 +218,7 @@ export class LegForest {
   pool(id: PartId): InstPool { return this.parts.get(id) as InstPool; }
   get meshes(): THREE.InstancedMesh[] { return Array.from(this.parts.values(), (p) => p.mesh); }
 
-  begin(): void { this.people = 0; for (const p of this.parts.values()) p.begin(); }
+  begin(): void { this.people = 0; this.hadTarget = false; for (const p of this.parts.values()) p.begin(); }
   end(): void { for (const p of this.parts.values()) p.end(); }
 
   /** 画一个人。 */
@@ -235,6 +239,7 @@ export class LegForest {
       const target = s < 0 ? p.targetL : null;
       if (target) {
         _v.copy(target);
+        this.hadTarget = true; this.targetSeen.copy(target);
       } else {
         // 正向运动学：大腿（髋角）→ 小腿（膝角）→ 脚踝
         _a.multiply(_b.makeRotationY(legYaw));
