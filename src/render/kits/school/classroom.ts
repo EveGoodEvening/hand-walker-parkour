@@ -10,7 +10,7 @@ import type { HwKitChunkContext } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
 import { ATLAS } from '../../textures/school';
 import {
-  CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_WINDOW, beatsIn, brassStrips, ceilingBack, ceilingQuad, crossWall, dataPlates, flatFloor, geos,
+  CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_WINDOW, beatsIn, brassStrips, chunkZ, contactShadow, floorUV, ceilingBack, ceilingQuad, crossWall, dataPlates, flatFloor, geos,
   makeEnv, mirrorRooms, noticeBoard, radiator, sideHoles, sideWall, stepsIn, wallPaper, windowPane, type Env, type Hole, type WallStyle, type WindowStyle,
 } from './shell';
 
@@ -69,6 +69,7 @@ export function buildClassroom(ctx: HwKitChunkContext, look: Look): KitChunk {
 
   // —— 地面（整间教室宽）——
   flatFloor(floor, e, { color: 0xf2f4f4, x0: -ROOM, x1: ROOM });
+  const fuv = floorUV(e);
   brassStrips(stat, e, PAL.brass, -HW, HW);
 
   // —— 课桌椅：每行约 1.33 m（整除 chunk），两侧各两对同桌（车道外沿 1.32 m 以外）——
@@ -83,6 +84,7 @@ export function buildClassroom(ctx: HwKitChunkContext, look: Look): KitChunk {
           const xx = side * x + (rng.next() - 0.5) * 0.05;
           desk(stat, e, xx, z + (rng.next() - 0.5) * 0.06, rng.next() < 0.55 ? 1 + rng.int(4) : 0, rng.next() < 0.3);
           chair(stat, e, xx + (rng.next() - 0.5) * 0.06, z, rng.next() * 0.12);
+          contactShadow(floor, xx, z + 0.18, 0.56, 0.85, fuv, 0xb4bcbe, 0xf2f4f4, 0.14, 0.0015, chunkZ(e));
         }
       }
     }

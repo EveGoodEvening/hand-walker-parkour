@@ -9,6 +9,7 @@ import { clamp, smoothstep } from '../../../core/math';
 import type { QualityTier, Rng } from '../../../core/types';
 import type { CompiledSurface } from '../../../levels/schema';
 import { KitGeo, subRect, type Rect, type V3 } from '../../geom';
+import { mixHex } from '../../../core/geo';
 import type { HwKitChunkContext, HwKitExt } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
 import { ATLAS, ATLAS_WHITE_UV, WALL_PERIOD } from '../../textures/school';
@@ -143,6 +144,37 @@ export function floorBlob(g: KitGeo, e: Env, xc: number, s: number, rx: number, 
     g.quad([cx, y, e.z(cs)], [px, y, e.z(ps)], [qx, y, e.z(qs)], [cx, y, e.z(cs)], [color, rim, rim, color],
       [uvOf(cx, cs), uvOf(px, ps), uvOf(qx, qs), uvOf(cx, cs)]);
   }
+}
+
+/**
+ * 家具下的接触阴影：地面上一块柔边的暗矩形（中心 color，外圈渐变到 rim = 地面顶点色），画进 floor 几何体，贴同一张地面纹理。
+ * 让桌椅、柜子、实验台「落」在地上，而不是浮着。uvOf(x, z) 与该 kit 地面的 uv 映射一致。
+ */
+export function contactShadow(g: KitGeo, xc: number, zc: number, w: number, d: number, uvOf: (x: number, z: number) => [number, number],
+  color = 0x9aa2a6, rim = 0xffffff, feather = 0.18, y = 0.0015, zRange: readonly [number, number] | null = null): void {
+  // 夹在本 chunk 的 z 范围内（地面不写深度，越界的部分会被下一个 chunk 的地面盖掉，留下一道硬边）
+  const lo = zRange ? zRange[0] : -Infinity, hi = zRange ? zRange[1] : Infinity;
+  const cz = (z: number) => Math.min(hi, Math.max(lo, z));
+  const x0 = xc - w / 2, x1 = xc + w / 2, z0 = cz(zc - d / 2), z1 = cz(zc + d / 2);
+  const X0 = x0 - feather, X1 = x1 + feather, Z0 = cz(z0 - feather), Z1 = cz(z1 + feather);
+  if (z1 - z0 < 1e-3) return;
+  const P = (x: number, z: number): V3 => [x, y, z];
+  const U = (x: number, z: number) => uvOf(x, z);
+  // 中心（从上往下看逆时针：x 增、z 减）
+  g.quad(P(x0, z1), P(x1, z1), P(x1, z0), P(x0, z0), color, [U(x0, z1), U(x1, z1), U(x1, z0), U(x0, z0)]);
+  // 四条羽化边
+  g.quad(P(X0, Z1), P(X1, Z1), P(x1, z1), P(x0, z1), [rim, rim, color, color], [U(X0, Z1), U(X1, Z1), U(x1, z1), U(x0, z1)]);
+  g.quad(P(x0, z0), P(x1, z0), P(X1, Z0), P(X0, Z0), [color, color, rim, rim], [U(x0, z0), U(x1, z0), U(X1, Z0), U(X0, Z0)]);
+  g.quad(P(X0, Z1), P(x0, z1), P(x0, z0), P(X0, Z0), [rim, color, color, rim], [U(X0, Z1), U(x0, z1), U(x0, z0), U(X0, Z0)]);
+  g.quad(P(x1, z1), P(X1, Z1), P(X1, Z0), P(x1, z0), [color, rim, rim, color], [U(x1, z1), U(X1, Z1), U(X1, Z0), U(x1, z0)]);
+}
+
+/** 与 flatFloor 相同的 uv 映射（beatV：v = 段内拍号；否则 v = 米 / tex）。 */
+/** 本 chunk 地面的 z 范围（contactShadow 的 zRange）。 */
+export function chunkZ(e: Env): [number, number] { return [-e.L, e.back]; }
+
+export function floorUV(e: Env, tex = 1, beatV = true): (x: number, z: number) => [number, number] {
+  return (x, z) => [(x + 0.5) / tex, beatV ? -z / e.stride : (-z + (e.s0 - e.segS0)) / tex];
 }
 
 // ——————————————————— 墙 ———————————————————
@@ -312,20 +344,23 @@ export function windowPane(emi: KitGeo, stat: KitGeo, e: Env, side: -1 | 1, h: H
   };
   emi.withSteady(1, () => {
     if (ws.horizon != null) {
-      const yh = h.y0 + (h.y1 - h.y0) * 0.32;
-      q(h.y0, yh, ws.horizon, ws.horizon);
-      q(yh, h.y1, ws.bottom, ws.top);
-      // 楼群的剪影：几块高低不一的矩形，贴在玻璃前 1 cm
-      const xs = xg - side * 0.01;
-      const rng = e.rng;
-      let s = sa;
-      while (s < sb - 0.2) {
-        const w = 0.6 + rng.next() * 1.4, hh = (h.y1 - h.y0) * (0.08 + rng.next() * 0.22);
-        const s2 = Math.min(sb, s + w);
-        const c = ws.horizon;
-        if (side < 0) emi.quad([xs, yh, e.z(s)], [xs, yh, e.z(s2)], [xs, yh + hh, e.z(s2)], [xs, yh + hh, e.z(s)], c);
-        else emi.quad([xs, yh, e.z(s2)], [xs, yh, e.z(s)], [xs, yh + hh, e.z(s)], [xs, yh + hh, e.z(s2)], c);
-        s = s2 + rng.next() * 0.8;
+      // 窗外：天（渐变）+ 对面那栋教学楼（一条楼带、一排排更暗的窗）+ 楼下的一截地面
+      const yg = h.y0 + (h.y1 - h.y0) * 0.18, yb0 = yg, yb1 = h.y0 + (h.y1 - h.y0) * 0.55;
+      q(h.y0, yg, ws.horizon, ws.horizon);
+      q(yg, h.y1, ws.bottom, ws.top);
+      const xs = xg - side * 0.01, xw2 = xg - side * 0.015;
+      const band = (a: number, b: number, y0: number, y1: number, c: number, x: number) => {
+        if (side < 0) emi.quad([x, y0, e.z(a)], [x, y0, e.z(b)], [x, y1, e.z(b)], [x, y1, e.z(a)], c);
+        else emi.quad([x, y0, e.z(b)], [x, y0, e.z(a)], [x, y1, e.z(a)], [x, y1, e.z(b)], c);
+      };
+      const bc = mixHex(ws.horizon, ws.bottom, 0.35);
+      band(sa, sb, yb0, yb1, bc, xs);
+      if (!e.low && !ws.night) {
+        const rows = 3, pitch = 0.42;
+        for (let r = 0; r < rows; r++) {
+          const y0 = yb0 + 0.05 + r * ((yb1 - yb0 - 0.08) / rows), y1 = y0 + (yb1 - yb0) / rows * 0.45;
+          for (let s = Math.ceil((sa - e.segS0) / pitch) * pitch + e.segS0 + 0.08; s + 0.2 < sb; s += pitch) band(s, s + 0.2, y0, y1, ws.horizon, xw2);
+        }
       }
     } else q(h.y0, h.y1, ws.bottom, ws.top);
   });

@@ -9,7 +9,7 @@ import type { HwKitChunkContext } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
 import { ATLAS } from '../../textures/school';
 import {
-  CORRIDOR_WALL, NORTH_WINDOW, beatsIn, ceilingBack, ceilingQuad, crossWall, dataPlates, flatFloor, geos, makeEnv, mirrorRooms,
+  CORRIDOR_WALL, NORTH_WINDOW, beatsIn, ceilingBack, chunkZ, contactShadow, floorUV, ceilingQuad, crossWall, dataPlates, flatFloor, geos, makeEnv, mirrorRooms,
   sideHoles, sideWall, stepsIn, wallPaper, windowPane, type Env, type Hole, type WallStyle,
 } from './shell';
 
@@ -59,12 +59,14 @@ export function buildLabRoom(ctx: HwKitChunkContext): KitChunk {
   const from = e.s0 - e.back;
 
   flatFloor(floor, e, { color: 0xffffff, x0: -ROOM, x1: ROOM, tex: 1.2, beatV: false });
+  const fuv = floorUV(e, 1.2, false);
 
   // —— 实验台：两侧各两列，每列一张台长 period − 0.6 ——
   for (const s of stepsIn(e, e.period, e.period / 2, 0.2)) {
     for (const x of [-3.9, -2.35, 2.35, 3.9]) {
       if (rng.next() < 0.05) continue;
       bench(stat, e, x, s, e.period - 0.6);
+      contactShadow(floor, x, e.z(s), 0.95, e.period - 0.5, fuv, 0xb0b8ba, 0xffffff, 0.2, 0.0015, chunkZ(e));
       for (const dz of [-0.8, 0, 0.8]) if (rng.next() < 0.7) stool(stat, e, x + (x < 0 ? 0.62 : -0.62), e.z(s) + dz + (rng.next() - 0.5) * 0.2);
     }
   }

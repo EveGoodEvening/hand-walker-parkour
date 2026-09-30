@@ -10,7 +10,7 @@ import type { HwKitChunkContext } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
 import { ATLAS } from '../../textures/school';
 import {
-  CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_WINDOW, NORTH_WINDOW, brassStrips, ceilingBack, ceilingQuad, crossWall, dataPlates, endWalls, flatFloor, floorBlob,
+  CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_WINDOW, NORTH_WINDOW, brassStrips, ceilingBack, ceilingQuad, chunkZ, contactShadow, crossWall, dataPlates, endWalls, flatFloor, floorBlob, floorUV,
   geos, hydrantBox, makeEnv, mirrorRooms, noticeBoard, radiator, sideDoor, sideHoles, sideWall, tubes, wallPaper, windowPane,
   type Env, type Hole, type WallStyle, type WindowStyle,
 } from './shell';
@@ -111,7 +111,10 @@ export function buildCorridor(ctx: HwKitChunkContext, look: Look): KitChunk {
         leaf: look.doorLeaf, windowPane: look.doorPane, plate, open: look.doorOpen > 0 && rng.next() < 0.7 ? look.doorOpen : 0,
         frame: look.dark ? 0x101316 : SCHOOL.doorFrame,
       }));
-    } else if (r < 0.62 && look.lockers) lockerBank(stat, e, c, Math.min(e.period - 0.4, 2.4), look);
+    } else if (r < 0.62 && look.lockers) {
+      lockerBank(stat, e, c, Math.min(e.period - 0.4, 2.4), look);
+      contactShadow(floor, HW - 0.17, e.z(c), 0.34, Math.min(e.period - 0.4, 2.4), floorUV(e), 0x9aa2a6, look.floor, 0.16, 0.0015, chunkZ(e));
+    }
     else if (r < 0.8 && !look.dark) {
       if (look.roster) wallPaper(stat, e, 1, c, 1.55, 0.42, 0.56, ATLAS.roster, (rng.next() - 0.5) * 0.05);
       else noticeBoard(stat, e, 1, c, Math.min(1.8, e.period - 0.6));

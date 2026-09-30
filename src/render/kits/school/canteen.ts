@@ -10,7 +10,7 @@ import type { HwKitChunkContext } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
 import { ATLAS } from '../../textures/school';
 import {
-  CORRIDOR_WALL, DAY_WINDOW, HW, beatsIn, brassStrips, ceilingBack, ceilingQuad, crossWall, dataPlates, flatFloor, floorBlob, geos,
+  CORRIDOR_WALL, DAY_WINDOW, HW, beatsIn, brassStrips, chunkZ, contactShadow, floorUV, ceilingBack, ceilingQuad, crossWall, dataPlates, flatFloor, floorBlob, geos,
   makeEnv, mirrorRooms, sideHoles, sideWall, stepsIn, wallPaper, windowPane, type Env, type Hole, type WallStyle,
 } from './shell';
 
@@ -72,6 +72,7 @@ export function buildCanteen(ctx: HwKitChunkContext, look: Look): KitChunk {
   const from = e.s0 - e.back;
 
   flatFloor(floor, e, { color: 0xeef0f0, x0: xl, x1: ROOM });
+  const fuv = floorUV(e);
   brassStrips(stat, e, PAL.brass, -HW, HW);
   for (let i = 0; i < 2; i++) floorBlob(floor, e, (rng.next() - 0.5) * 2.4, e.s0 + 1 + rng.next() * (e.L - 2), 0.3 + rng.next() * 0.4, 0.5 + rng.next(), 0xb9c0c2, rng.next(), 0xeef0f0);
 
@@ -82,7 +83,9 @@ export function buildCanteen(ctx: HwKitChunkContext, look: Look): KitChunk {
     for (const x of look.windows ? [2.85, 4.45] : [-4.45, -2.85, 2.85, 4.45]) {
       if (look.counter && x < -3.5) continue;
       if (rng.next() < 0.1) continue;
-      table(stat, e, x, z + (rng.next() - 0.5) * 0.1, false);
+      const zt = z + (rng.next() - 0.5) * 0.1;
+      table(stat, e, x, zt, false);
+      contactShadow(floor, x, zt, 1.1, 1.3, fuv, 0xb2b9ba, 0xeef0f0, 0.25, 0.0015, chunkZ(e));
       if (rng.next() < 0.5) trays(stat, e, x, z);
     }
   }
