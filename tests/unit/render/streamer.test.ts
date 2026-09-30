@@ -137,3 +137,59 @@ describe('ChunkStreamer', () => {
     expect(shared).toBeLessThan(after.size);    // chunk 几何体换成了新的
   });
 });
+
+describe('ChunkStreamer：静场黑板与站立段', () => {
+  const def = {
+    id: 'test', title: '测试', name: '测试', seed: 9, card: ['c1.card'], outro: { lines: [] }, notes: [], requiredBeats: [],
+    segments: [
+      { id: 'r1', kind: 'run', kit: 'corridor', variant: 'labNorth', atmosphere: 'labNorth', surface: 'terrazzo', beats: 40, stride: 1, cadence: 4.8, follower: { mode: 'behind' } },
+      { id: 's1', kind: 'still', set: 'labBoard', atmosphere: 'labNorth', duration: 10, follower: { mode: 'hidden' },
+        events: [{ at: 2, type: 'board', surface: 'labBoard', op: 'write', line: 'c1.card', tremble: true }],
+        input: { at: 4, hint: 'wipe', mode: 'hold', holdSeconds: 1.2, timeout: 5, onDone: [{ at: 0.5, type: 'board', surface: 'labBoard', op: 'write', line: 'c1.out3', byPlayer: true }] } },
+      { id: 't1', kind: 'stand', kit: 'corridor', variant: 'morning', script: 'dream', atmosphere: 'dream', duration: 10, follower: { mode: 'absent' }, events: [] },
+    ],
+  } as unknown as ChapterDef;
+
+  it('读章时按全部 board cue 预先生成字的纹理；board cue 只切换纹理、推进显隐', async () => {
+    await import('../../../src/render/sets/school/labBoard');
+    const { BOARDS } = await import('../../../src/render/boards');
+    const ctx = fakeCtx('low');
+    const ch = compile(def);
+    (ctx.surfaces as unknown as { load(c: CompiledChapter): void }).load(ch);
+    const w = new World();
+    w.init(ctx);
+    await w.loadChapter(ch);
+    const bank = ctx.tex as unknown as { generated: number; all(): THREE.Texture[] };
+    const before = bank.all().length;
+    const board = BOARDS.get('labBoard');
+    expect(board).toBeTruthy();
+    if (!board) return;
+    // 两段字（段事件里的 write 与静场输入 onDone 里的 write）都在读章时生成好了
+    expect((w as unknown as { boardTex: Map<string, unknown> }).boardTex.size).toBe(2);
+    w.boardOp({ type: 'board', surface: 'labBoard', op: 'write', line: 'c1.card', tremble: true } as never, 100);
+    w.boardOp({ type: 'board', surface: 'labBoard', op: 'write', line: 'c1.out3', byPlayer: true } as never, 101);
+    expect(bank.all().length).toBe(before);         // 没有新建纹理
+    expect((w as unknown as { boardTex: Map<string, unknown> }).boardTex.size).toBe(2);
+    board.update(101.2);
+    expect(board.uniforms.uReveal.value).toBeGreaterThan(0);
+    w.boardOp({ type: 'board', surface: 'labBoard', op: 'wipe' } as never, 102);
+    board.update(102.6);
+    expect(board.uniforms.uWipe.value).toBeGreaterThan(0.4);
+  });
+
+  it('站立段：显示为它单独预建的几个 chunk，跑段 chunk 隐藏', async () => {
+    const ctx = fakeCtx('low');
+    const ch = compile(def);
+    (ctx.surfaces as unknown as { load(c: CompiledChapter): void }).load(ch);
+    const w = new World();
+    w.init(ctx);
+    await w.loadChapter(ch);
+    const stand = ch.segments[2];
+    if (!stand) return;
+    const sn = snap({ s: stand.s0, t: 30, segIndex: 2, segKind: 'stand' });
+    w.frame(sn, sn, 1, 1 / 60);
+    const vis = w.root.children.filter((c) => c.name.startsWith('chunk:') && c.visible).map((c) => c.name);
+    expect(vis.length).toBeGreaterThan(0);
+    expect(vis.every((n) => n.startsWith('chunk:t1'))).toBe(true);
+  });
+});
