@@ -199,7 +199,12 @@ export class Game implements GameCommands {
   }
 
   pause(on: boolean): void {
-    if (on && this.screenName === 'play' && !this.failing) { this.paused = true; this.setScreen('pause'); this.audio.suspend(true); }
+    if (on && this.screenName === 'play' && !this.failing) {
+      this.paused = true;
+      // 同一个检查点连续失败 3 次后，暂停菜单里安静地多出「放慢一点」（§2.7）
+      this.setScreen('pause', { slowAvailable: this.failCountAtCheckpoint() >= 3, slowOn: this.next.slowOption });
+      this.audio.suspend(true);
+    }
     else if (!on && (this.screenName === 'pause' || this.screenName === 'settings') && this.paused) {
       this.paused = false; this.setScreen('play'); this.audio.suspend(false); this.loop.resetClock();
     }
@@ -239,7 +244,11 @@ export class Game implements GameCommands {
     this.dirty = true;
   }
 
-  setSlowOption(on: boolean): void { this.sim.setSlowOption(on); }
+  setSlowOption(on: boolean): void {
+    this.sim.setSlowOption(on);
+    this.next = { ...this.next, slowOption: on };
+    this.dirty = true;
+  }
 
   setQuality(t: QualityTier): void {
     this.quality = t;

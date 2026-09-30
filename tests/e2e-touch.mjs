@@ -5,17 +5,18 @@
 //   touch   ：360×640 竖屏、Chrome 设备模拟（hasTouch / isMobile）。点「开始」→ 等开场卡 → 用 CDP 触摸事件滑动
 //             （左右滑换道、上滑撑跃、下滑不抬手 = 伏低 / 按住）、点情境按钮「回头」→ 结尾卡。
 // 另外检查：暂停（Esc / 右上角‖）→ 继续。断言：到达结尾卡、0 摔倒、必备节拍全部触发、零页面错误。
-// 用法：node tests/e2e-touch.mjs [--only keyboard|touch]
+// 用法：node tests/e2e-touch.mjs [--only keyboard|touch] [--url http://localhost:5173/]（缺省用 dist/index.html）
 import { ensureBuilt, openGame } from '../scripts/e2e-lib.mjs';
 
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
+const url = process.argv.includes('--url') ? process.argv[process.argv.indexOf('--url') + 1] : undefined;   // 例如 vite dev：http://localhost:5173/
 
 async function state(p) { return p.evaluate(() => window.__game.getState()); }
 async function step(p, n) { return p.evaluate((k) => window.__game.step(k), n); }
 
 async function run(mode) {
   const touch = mode === 'touch';
-  const g = await openGame('', { touch, viewport: touch ? { width: 360, height: 640 } : { width: 640, height: 360 }, who: `e2e-touch:${mode}` });
+  const g = await openGame('', { touch, url, viewport: touch ? { width: 360, height: 640 } : { width: 640, height: 360 }, who: `e2e-touch:${mode}` });
   const { p } = g;
   const log = [];
   let cdp = null;
@@ -137,7 +138,7 @@ async function run(mode) {
   }
 }
 
-ensureBuilt();
+if (!url) ensureBuilt();
 const problems = [];
 for (const m of ['keyboard', 'touch']) {
   if (only && only !== m) continue;

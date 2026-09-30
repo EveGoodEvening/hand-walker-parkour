@@ -73,7 +73,7 @@ export class UI implements UIAPI {
     if (s === 'settings') this.buildSettings();
     if (s === 'notes') this.buildNotes();
     if (s === 'intro') this.buildIntro(data as IntroData);
-    if (s === 'pause') this.buildPause();
+    if (s === 'pause') this.buildPause(data as { slowAvailable?: boolean; slowOn?: boolean } | undefined);
     if (s === 'fail') this.buildFail(data as FailData);
     if (s === 'outro') { this.lastOutro = data as OutroData; this.buildOutro(data as OutroData); }
     if (s === 'credits') this.buildCredits();
@@ -179,16 +179,27 @@ export class UI implements UIAPI {
     d.lines.forEach((l, i) => { const e = h('div', 'line', l, card); e.style.animationDelay = `${1.2 + i * 0.6}s`; });
   }
 
-  private buildPause(): void {
+  private buildPause(d?: { slowAvailable?: boolean; slowOn?: boolean }): void {
     const el = this.screens.get('pause')?.clear();
     if (!el) return;
+    if (d) this.pauseData = d;
+    const pd = this.pauseData;
     h('div', 'hw-h', STR.pause, el);
     const menu = h('div', 'hw-menu', undefined, el);
     button(STR.resume, () => this.cmd.pause(false), menu);
     button(STR.retry, () => this.cmd.retry(), menu);
     button(STR.settings, () => { this.settingsReturn = 'pause'; this.show('settings'); }, menu);
+    if (pd.slowAvailable) {
+      // 「放慢一点」：只对本段生效，速度 ×0.9；不弹窗、不劝说（§2.7）
+      const b = button(`${STR.slower}　${pd.slowOn ? STR.on : STR.off}`, () => {
+        pd.slowOn = !pd.slowOn;
+        this.cmd.setSlowOption(!!pd.slowOn);
+        b.textContent = `${STR.slower}　${pd.slowOn ? STR.on : STR.off}`;
+      }, menu);
+    }
     button(STR.toTitle, () => this.cmd.toTitle(), menu);
   }
+  private pauseData: { slowAvailable?: boolean; slowOn?: boolean } = {};
 
   private buildFail(d: FailData | undefined): void {
     const el = this.screens.get('fail')?.clear();

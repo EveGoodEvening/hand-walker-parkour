@@ -329,6 +329,7 @@ export class Sim implements SimAPI {
     if (this.segIndex + 1 >= ch.segments.length) { this.endChapter(); return; }
     const nextSeg = ch.segments[this.segIndex + 1] as CompiledSegment;
     const s = this.pace.s;
+    this.slowOption = false;   // 「放慢一点」只对本段生效（§2.7）
     const lane = this.P.laneTarget;
     const fdef: Partial<FollowerDef> = nextSeg.def.follower;
     const changed = this.follower.apply(fdef);
