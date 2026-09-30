@@ -195,7 +195,7 @@ export default {
         { at: 24, type: 'drift', dir: 1 },                                                // 第三次腿偏移（向右）
         { at: 54, type: 'slow', speed: 0.8, seconds: 8.5, ramp: 0.5, timeline: [      // 慢行：仍然可以换道，这段没有障碍
           { at: 0.0, type: 'double', spec: { id: 'standMe', surface: 'world', source: 'script', clip: 'walkUpright',
-            anchor: { sAhead: 14, speed: -0.6 }, avoidPlayerLane: true, ttl: 8.5 }, id: 'standingMeWalks' },
+            anchor: { sAhead: 12, speed: -1.2 }, avoidPlayerLane: true, ttl: 8.5 }, id: 'standingMeWalks' },   // 迎面 1.2 m/s：约 3.5 s 走到 5 m
           { at: 0.3, type: 'text', line: 'c5.who', style: 'whisper', speaker: 'classmate', pan: -0.5 },
           { at: 1.4, type: 'text', line: 'c5.seemsLike', style: 'whisper', speaker: 'classmate', pan: 0.5 },
           { at: 3.2, type: 'text', line: 'c5.myFace' },

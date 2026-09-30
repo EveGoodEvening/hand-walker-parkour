@@ -7,7 +7,7 @@
 //   第 3 章.md sha256 42a1cb89663588303708114667d70bf9a4d02015aff6f806ca8825e1300baacf
 //   第 4 章.md sha256 e960bb7bdcd3faba47f3116036414229e45bfb80252c402444f6d19aeb19e863
 //   第 5 章.md sha256 f0f08b4911676d72d8562a7ae572fc069936ada74665340e83787599748dc381
-// 重新生成：node <scratchpad>/tools/gen-source.mjs <小说目录> src/levels/sourceQuotes.ts（见 docs/lessons/WP2.md）。
+// 重新生成：node tests/unit/content/tools/gen-source.mjs <小说目录> src/levels/sourceQuotes.ts
 
 /** 章号 → 原文全文（Markdown 原样，含标题与分隔线）。 */
 export const SOURCE_CHAPTERS: Readonly<Record<1 | 2 | 3 | 4 | 5, string>> = {

@@ -2,3 +2,15 @@
 
 只追加（OWNERS.json APPEND）。记录可复用的经验：库版本、踩过的坑、被纠正的做法。lead 集成时汇总到 AGENTS.md。
 
+
+## 2026-09-30
+
+- **原文核对**：`src/levels/sourceQuotes.ts` 由 `node tests/unit/content/tools/gen-source.mjs <小说目录> src/levels/sourceQuotes.ts` 生成（逐行 JSON 字符串，join 后与原文件逐字节一致，头注释里有 sha256）。`tests/unit/content/quotes.test.ts` 对每条 `quote: true` 做子串检查。第四章原文用中文引号“”，其余四章用 ASCII 双引号；台词一律不带引号存（界面按样式加）。句中片段（如「水洼里的影子没有抬。」「它是反的。」「它比我快。」）是原文的连续片段，可以直接用。
+- **原文不进产物**：`tests/unit/content/isolation.test.ts` 从 `src/main.ts` 沿 import（含 `import.meta.glob`）走依赖图，断言 `sourceQuotes.ts`、`lint.ts` 不可达；`lint.ts` 自己也不 import 原文（由调用方传入）。构建后用 `node tests/unit/content/tools/leak-check.mjs` 检查 `dist/index.html`：原文每个 25 字窗口都不应命中（lines 每行 ≤ 24 字）。
+- **R6（20 s 一个主异常）按事件计数**：每个 `doubleMod`、非 normal/blob 的 `shadow`、`memory`、`board`、以及追随者从 hidden/absent 变成别的模式的 `follower` 事件都算一次；`double` 不算；段定义里的 `follower`（段切换）也不算。同一个异常的连续演出要写成一个事件（组合 doubleMod），否则 1–3 s 内会被算成好几个。回头窗口里的异常要同时满足「窗口开始 vs 前一个异常」和「窗口结束 vs 下一个异常」两个 20 s。静场里的异常校验器不查（2-9、3-10、4-3 按设计本来就在一个场景里连着出现）。
+- **修第一章时不要改段长**：`tests/unit/core/levels.test.ts`（CORE，WP 不能改）断言第一章全长 518 拍。能动的是窗口、停拍位置和停拍 timeline。
+- **CORE 求解器的伏低只有 2 拍**（按住选项 1–13 tick，松手后按 `duck.minBeats` 收）：进深 1.2 m 的 `labBench`、`len ≥ 2` 的长桌在 CORE 校验器下无解。实验台用 `[beat, 'HHH', 0.8]`（len 单位是拍）。
+- **R8 与 R7 的坑**：求解器从每个段首和检查点的中道出发，段首 / 检查点 1.6 s 内不能要求动作，所以前两行别放在中道。新类别第一次出现要在「按静态 s0 算的接触时刻」前 ≥ 1.2 s 有提示：移动障碍（walk）按生成位置算，提示要更早。每章都要重新给 jump / lane / duck 提示（校验器按章记），即使玩家已经看过。
+- **R7 新种类与种子**：`KIT_SYMBOLS` 的轮换起点由种子决定，`'B.B'` 这种两格同符号的行一定是两个不同种类。想让「新种类第一次出现时这一行只有它」对所有种子都成立，早期的行写显式种类（`['cart', '.', 'cart']`）。`tests/unit/content/chapters.test.ts` 用种子 1–20 加章节种子检查。
+- **加密谱面的办法**：先算出每段的休息窗（文字 −0.4/+0.8 s、主异常 −1/+2 s、检查点 +1.6 s、段末 −0.8 s、回头窗口到 then + 0.8 s），在休息窗外按 3.5–4 拍补行，再用 `validateChapter` 反复验证、删掉被点名的行；休息窗里可以放只占边道的「被动」行（玩家待在中道不用动）。纸条所在车道前后 2 拍要留空，否则自动驾驶够不着。
+- **浏览器**：`node scripts/e2e-smoke.mjs --ch chN`（或 `node scripts/e2e-chapters.mjs`）能跑任意章，必备节拍取自 `__game.ext.requiredBeats`；五章各 2–3 s 墙钟。ch4 缺 `fingerPractice`（结尾卡输入，Game 还不支持），ch5 缺 `seventhFall` / `theyPractice`（站立段的 atStep 事件，WP1 Stand），其余全部触发、0 摔倒。
