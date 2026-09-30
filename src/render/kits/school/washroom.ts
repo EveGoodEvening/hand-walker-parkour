@@ -46,8 +46,9 @@ function stall(g: KitGeo, e: Env, s: number, w: number, open: number): void {
   g.quad([ex, 0.15, ez], [hx, 0.15, hz], [hx, 1.95, hz], [ex, 1.95, ez], SCHOOL.stallDark, null, [0.8, 0.8, 1, 1]);
   g.quad([hx, 0.15, hz], [ex, 0.15, ez], [ex, 1.95, ez], [hx, 1.95, hz], SCHOOL.stall, null, [0.8, 0.8, 1, 1]);
   // 隔间内：地、后墙、蹲坑
-  g.quad([HW, 0.001, za], [xb, 0.001, za], [xb, 0.001, zb], [HW, 0.001, zb], 0xb9c1c2);
-  g.quad([xb, 0, zb], [xb, 0, za], [xb, H, za], [xb, H, zb], 0xd5dbdc, null, [0.7, 0.7, 0.9, 0.9]);
+  // 隔间里的地与后墙（彼此多搭 5 cm，接缝处不漏背景色）
+  g.quad([HW - 0.05, 0.001, za + 0.05], [xb + 0.05, 0.001, za + 0.05], [xb + 0.05, 0.001, zb - 0.05], [HW - 0.05, 0.001, zb - 0.05], 0xb9c1c2);
+  g.quad([xb, -0.06, zb - 0.05], [xb, -0.06, za + 0.05], [xb, H, za + 0.05], [xb, H, zb - 0.05], 0xd5dbdc, null, [0.7, 0.7, 0.9, 0.9]);
   g.box([HW + STALL_DEPTH * 0.6, 0.01, (za + zb) / 2], [0.36, 0.02, 0.26], 0x8a979e, { faces: '+y' });
   if (!e.low) g.box([xb - 0.1, 1.9, (za + zb) / 2], [0.2, 0.35, 0.22], SCHOOL.porcelain, { faces: '-x+y-y+z-z' }); // 水箱
   // 隔板顶上的横梁（连到下一格）

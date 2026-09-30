@@ -238,12 +238,14 @@ export function wallPiece(g: KitGeo, e: Env, side: -1 | 1, st: WallStyle, sa: nu
     const za = e.z(sa), zb = e.z(sb);
     const ba = base(sa), bb = base(sb);
     const sh0 = wallShade(y0, H), sh1 = wallShade(y1, H);
+    // 贴地的一段往地面以下多伸 6 cm：墙与地面在 T 形接缝处不会漏出背景色的亮点（低画质没有抗锯齿时明显）
+    const yLo = y0 <= 1e-6 ? -0.06 : y0;
     if (side < 0) {
-      const p: [V3, V3, V3, V3] = [[xw, ba + y0, za], [xw, bb + y0, zb], [xw, bb + y1, zb], [xw, ba + y1, za]];
+      const p: [V3, V3, V3, V3] = [[xw, ba + yLo, za], [xw, bb + yLo, zb], [xw, bb + y1, zb], [xw, ba + y1, za]];
       if (r) g.quad(p[0], p[1], p[2], p[3], color, [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]], [sh0, sh0, sh1, sh1]);
       else g.quad(p[0], p[1], p[2], p[3], color, null, [sh0, sh0, sh1, sh1]);
     } else {
-      const p: [V3, V3, V3, V3] = [[xw, bb + y0, zb], [xw, ba + y0, za], [xw, ba + y1, za], [xw, bb + y1, zb]];
+      const p: [V3, V3, V3, V3] = [[xw, bb + yLo, zb], [xw, ba + yLo, za], [xw, ba + y1, za], [xw, bb + y1, zb]];
       if (r) g.quad(p[0], p[1], p[2], p[3], color, [[r[2], r[1]], [r[0], r[1]], [r[0], r[3]], [r[2], r[3]]], [sh0, sh0, sh1, sh1]);
       else g.quad(p[0], p[1], p[2], p[3], color, null, [sh0, sh0, sh1, sh1]);
     }
@@ -620,8 +622,9 @@ export function crossWall(g: KitGeo, e: Env, s: number, x0: number, x1: number, 
       const ya = Math.max(y0, b0), yb = Math.min(y1, b1);
       if (yb <= ya) continue;
       const sa = wallShade(ya, H), sb = wallShade(yb, H);
-      g.quad([a, ya, z], [b, ya, z], [b, yb, z], [a, yb, z], c, null, [sa, sa, sb, sb]);          // 朝 +z
-      g.quad([b, ya, z - 0.02], [a, ya, z - 0.02], [a, yb, z - 0.02], [b, yb, z - 0.02], c, null, [sa, sa, sb, sb]);   // 朝 −z
+      const yl = ya <= 1e-6 ? -0.06 : ya;
+      g.quad([a, yl, z], [b, yl, z], [b, yb, z], [a, yb, z], c, null, [sa, sa, sb, sb]);          // 朝 +z
+      g.quad([b, yl, z - 0.02], [a, yl, z - 0.02], [a, yb, z - 0.02], [b, yb, z - 0.02], c, null, [sa, sa, sb, sb]);   // 朝 −z
     }
   };
   if (solid) { piece(x0, x1, 0, H); return; }
