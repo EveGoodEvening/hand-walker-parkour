@@ -6,10 +6,10 @@
 //   总墙钟时间 ≤ 10 min。
 // 还没实现的章（WP2 合并前返回 null 的桩）打印 skipped，合并后自动覆盖。章节元数据来自 `tsx scripts/validate-levels.ts --meta`。
 //   --ch ch3    只跑一章          --no-shots   不截图           --json   只输出 JSON 汇总
-import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT, ensureBuilt, openGame } from './e2e-lib.mjs';
+import { chapterMeta } from './chapters-list.mjs';
 
 const args = process.argv.slice(2);
 const only = args.includes('--ch') ? args[args.indexOf('--ch') + 1] : null;
@@ -18,9 +18,8 @@ const LIMIT_MS = 10 * 60 * 1000;
 const DRAW_LIMIT = 50;
 const MAX_TICKS = 120 * 900;
 
-const metaRun = spawnSync('npx', ['tsx', 'scripts/validate-levels.ts', '--meta'], { cwd: ROOT, encoding: 'utf8' });
-if (metaRun.status !== 0) { console.error(metaRun.stderr); process.exit(1); }
-const meta = JSON.parse(metaRun.stdout).filter((m) => m.id !== 'test' && (!only || m.id === only));
+const meta = chapterMeta().filter((m) => !only || m.id === only);
+if (meta.some((m) => m.implemented && !m.requiredBeats)) { console.error('e2e:chapters: could not read chapter metadata (tsx scripts/validate-levels.ts --meta)'); process.exit(1); }
 for (const m of meta) if (!m.implemented) console.log(`- ${m.id}: not implemented yet (skipped)`);
 const todo = meta.filter((m) => m.implemented);
 if (!todo.length) { console.log('e2e:chapters: nothing to run'); process.exit(only ? 1 : 0); }
