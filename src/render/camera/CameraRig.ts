@@ -19,6 +19,13 @@ import { FOLLOW, RUN_SHOT_OFFSETS, SET_DEFAULT_SHOT, SET_SHOTS, STAND_SHOTS, DEF
 
 export interface CamPose { pos: THREE.Vector3; look: THREE.Vector3; roll: number; fov: number }
 
+/** poseTest 机位：[pos x, y, z, look x, y, z, fov]（相对玩家根，世界坐标）。 */
+const POSE_CAMS: Record<string, [number, number, number, number, number, number, number]> = {
+  crawl: [1.35, 0.8, 1.15, 0, 0.32, -0.25, 46], duck: [1.35, 0.75, 1.15, 0, 0.25, -0.25, 46], twitch: [1.45, 0.9, 1.3, 0, 0.35, -0.1, 46],
+  jump: [2.1, 1.1, 1.8, 0, 0.75, -0.3, 46], stand: [2.2, 1.2, 2.0, 0, 0.85, 0, 46], thirdHand: [0.95, 0.72, -1.25, 0, 0.5, -0.35, 44],
+  shadowThreeHands: [0.2, 2.4, 1.3, 0.35, 0, -0.7, 55],
+};
+
 const _off = new THREE.Vector3(), _g = new THREE.Vector3(), _gl = new THREE.Vector3(), _d = new THREE.Vector3(), _a = new THREE.Vector3();
 const _sp: [number, number] = [0, 0];
 
@@ -103,8 +110,10 @@ export class CameraRig implements ViewSystem {
     const dbg = WP5.debugCam;
     if (dbg) { o.pos.copy(dbg.pos); o.look.copy(dbg.look); o.roll = 0; o.fov = dbg.fov; return o; }
     if (WP5.poseTest && WP5.playerVisible) {
+      // poseTest（§8.8）：3/4 侧后方的展示机位；站、跳抬高，第三只手看脸，影子从上方看
       const r = WP5.playerRoot;
-      o.pos.set(r.x + 1.35, r.y + 0.8, r.z + 1.15); o.look.set(r.x, r.y + 0.32, r.z - 0.25); o.roll = 0; o.fov = 46;
+      const v = (POSE_CAMS[WP5.poseTest] ?? POSE_CAMS.crawl) as [number, number, number, number, number, number, number];
+      o.pos.set(r.x + v[0], r.y + v[1], r.z + v[2]); o.look.set(r.x + v[3], r.y + v[4], r.z + v[5]); o.roll = 0; o.fov = v[6];
       return o;
     }
     // —— 静场 ——

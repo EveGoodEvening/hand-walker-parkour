@@ -80,7 +80,7 @@ export class PlanarShadowSystem implements ViewSystem {
     const f = ctx.rig as unknown as ActorRigFactory;
     const mk = (stencil: boolean) => {
       const m = ctx.mat.basic({ color: 0x0b0f12, transparent: true, opacity: 0.38 });
-      m.depthWrite = false; m.side = THREE.DoubleSide;
+      m.depthWrite = false; m.side = THREE.FrontSide;   // 压扁的闭合网格：朝上的面投下来是正面，朝下的面被剔除（没有模板时也只一层）
       m.polygonOffset = true; m.polygonOffsetFactor = -1; m.polygonOffsetUnits = -1;
       if (stencil) {
         m.stencilWrite = true; m.stencilRef = 0; m.stencilFuncMask = STENCIL.shadowMask; m.stencilWriteMask = STENCIL.shadowMask;
@@ -219,13 +219,14 @@ export class PlanarShadowSystem implements ViewSystem {
         return b.finish();
       }
       case 'threeHands': case 'pointBack': {
-        _d.set(0.15, 0, 1).normalize();
+        // 从胸口伸出、越过身体指向身后（向外上方抬起，投影才不会埋在身体的影子里）
+        _d.set(0.55, 0.3, 0.78).normalize();
         applyThirdHand(b, 'point', clamp(u / 1.2, 0, 1), u, { dir: _d });
         b.fkAll();
         return b.finish();
       }
       case 'pointMirror': {
-        _d.set(-0.05, 0.05, -1).normalize();
+        _d.set(-0.12, 0.3, -1).normalize();
         applyThirdHand(b, 'point', clamp(u / 1.2, 0, 1), u, { dir: _d });
         b.fkAll();
         return b.finish();

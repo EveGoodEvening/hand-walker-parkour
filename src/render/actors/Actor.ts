@@ -100,6 +100,7 @@ export class PlayerActor implements ViewSystem {
         pose = blendPoses(pose, this.clipOut, smoothstep(0, 1, this.clipWeight), this.mix);
       }
       rig.apply(pose);
+      rig.setProps({ head: next.player.carrying === 'tray' ? 'tray' : 'none', back: next.player.carrying === 'bag' ? 'bag' : 'none' });
       rig.root.visible = true;
       copyPose(WP5.playerPose, pose);
       WP5.playerVisible = true;

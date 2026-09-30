@@ -458,6 +458,10 @@ export function crawlPose(i: CrawlInput, b: PoseBuilder): Pose {
     spread: air ? 0.02 : lerp(0.05, 0.32, duck), twitch: tw, drift: clamp(i.drift, -1, 1),
     hip: i.legHip ?? 0, knee: i.legKnee ?? 0, flat: air ? 0 : flat * 0.8, ground: i.floorY - rootY,
   });
+  // 头顶的餐盘保持水平（只随身体偏航，轻微摇晃）
+  _pq.setFromEuler(_e.set(0.03 * Math.sin(w * 0.5), yaw, 0.04 * Math.sin(w), 'YXZ'));
+  b.quatToChar(_pq, _pq2);
+  b.world('propHead', _pq2);
   b.fkAll(BONE_INDEX.arm3Upper);
   return b.finish();
 }

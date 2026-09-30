@@ -65,7 +65,10 @@ registerDebug('wp5Puddle', (...a: unknown[]) => {
   const o = (a[0] ?? {}) as { ahead?: number; lane?: number };
   const snap = lastSnap;
   if (!snap) return null;
-  const v = surfacesSys.placeDebugPuddle((o.lane ?? 0) * 1.1, snap.player.s + (o.ahead ?? 3.2), snap.player.floorY);
+  // 当前里程：优先读 __game.getState()（无头测试里 step(n) 之后还没渲染，lastSnap 是旧的）
+  const g = (globalThis as { __game?: { getState?: () => { s: number } } }).__game;
+  const sNow = g?.getState?.().s ?? snap.player.s;
+  const v = surfacesSys.placeDebugPuddle((o.lane ?? 0) * 1.1, sNow + (o.ahead ?? 3.2), snap.player.floorY);
   if (!v) return null;
   doubles.spawn({ id: '__wp5Puddle', surface: v.id, source: 'script', clip: 'standIdle' }, snap);
   return v.id;
@@ -106,8 +109,13 @@ registerDebug('wp5PixelCheck', (kind: unknown) => {
       const maskMat = v.mask.material as THREE.Material;
       const red = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: false });
       v.mask.material = red; const mv = v.mask.visible; v.mask.visible = true;
+      const ov = v.overlay?.visible ?? false, bl = v.blob?.visible ?? false;
+      if (v.overlay) v.overlay.visible = false;
+      if (v.blob) v.blob.visible = false;
       const M = read();
       v.mask.material = maskMat; v.mask.visible = mv; red.dispose(); box.visible = vis;
+      if (v.overlay) v.overlay.visible = ov;
+      if (v.blob) v.blob.visible = bl;
       const inMask = new Uint8Array(w * h);
       for (let i = 0; i < w * h; i++) if ((M[i * 4] as number) > 200 && (M[i * 4 + 1] as number) < 60) inMask[i] = 1;
       // 膨胀 2 px（抗锯齿与光栅化边缘）
