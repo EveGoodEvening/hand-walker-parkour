@@ -137,6 +137,7 @@ export class Sim implements SimAPI {
     this.hitCount = 0;
     this.look.resetChapter();
     this.track.taken.clear();
+    this.leader.prepare(ch, this.solver);
     this.emit('chapter:start', { id: ch.def.id });
     const segId = at?.segment ?? (ch.segments[0] as CompiledSegment).def.id;
     this.gotoInternal(segId, at?.beat ?? 0, false, true);

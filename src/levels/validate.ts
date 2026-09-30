@@ -354,9 +354,26 @@ export function validateChapter(def: ChapterDef, solver: SolverAPI, opts: { seed
     // R4：可读距离（暗色氛围靠粉笔描边，非暗色按灯亮）
     const rd = readDistance(seg.def.atmosphere);
     for (const o of required) {
-      const tc = contactT(o.s0);
-      const tr = timeAtS(tl, o.s0 - rd);
-      if (tc - tr < 1.2 - 1e-6 && o.s0 - rd > seg.s0) err('R4', `${o.kind} @${o.beat} readable only ${(tc - tr).toFixed(2)} s before contact (fog clear distance ${rd.toFixed(1)} m)`, sid);
+      let tc: number, tr: number;
+      if (o.behavior.type === 'walk') {
+        // 移动的人：按名义时间轴扫描，障碍前沿 s0 + v·t 与玩家的距离
+        const v = o.behavior.speed;
+        tc = Infinity; tr = Infinity;
+        for (let i = 0; i < tl.n; i += 6) {
+          const t = tl.t[i] as number, sp = tl.s[i] as number;
+          const gap = o.s0 + v * t - sp;
+          if (tr === Infinity && gap <= rd) tr = t;
+          if (gap <= TUNING.hitbox.sFront) { tc = t; break; }
+        }
+        if (tc === Infinity) continue;                 // 名义路线上追不上它（同向更快）
+        if (tr <= (tl.t[0] as number) + 1e-9) continue;  // 段首就已经看得见
+      } else {
+        tc = contactT(o.s0);
+        tr = o.s0 - rd > seg.s0 ? timeAtS(tl, o.s0 - rd) : -Infinity;
+        // 到点才出现的（梦里摔进车道的男生）：从出现的那一刻才算可读（§8.5 fallInto「≥ 1.2 s 前可见」）
+        if (o.behavior.type === 'fallInto') tr = Math.max(tr, tAtBeat(o.behavior.atBeat));
+      }
+      if (tc - tr < 1.2 - 1e-6) err('R4', `${o.kind} @${o.beat} readable only ${(tc - tr).toFixed(2)} s before contact${o.behavior.type === 'fallInto' ? ' (appears at its fallInto beat)' : ` (fog clear distance ${rd.toFixed(1)} m)`}`, sid);
     }
 
     // R9：腿自主抬起与腿偏移

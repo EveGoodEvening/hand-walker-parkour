@@ -49,6 +49,15 @@ describe('R4：从可读到接触 ≥ 1.2 s', () => {
     const r = rules(one({ atmosphere: 'homeDark', stride: 1.5, cadence: 5, rows: [[20, '.L.']], events: [{ at: 2, type: 'hint', hint: 'jump' }] }));
     expect(r).toContain('R4');
   });
+  it('到点才摔进车道的人（fallInto）：从出现到接触 < 1.2 s 报 R4；迎面走来的人按相对速度算', () => {
+    const late = errors(one({ cadence: 4.8, items: [{ at: 30, lane: 0, kind: 'kneeler', behavior: { type: 'fallInto', atBeat: 27 } }], events: [{ at: 2, type: 'hint', hint: 'jump' }] }));
+    expect(late.filter((i) => i.rule === 'R4').map((i) => i.msg).join()).toContain('fallInto');
+    expect(rules(one({ cadence: 4.8, items: [{ at: 30, lane: 0, kind: 'kneeler', behavior: { type: 'fallInto', atBeat: 22 } }], events: [{ at: 2, type: 'hint', hint: 'jump' }] }))).not.toContain('R4');
+    const oncoming = one({ atmosphere: 'nightIndoor', stride: 1.1, cadence: 5.2, items: [{ at: 50, lane: 0, kind: 'legs', behavior: { type: 'walk', speed: -6 } }], events: [{ at: 2, type: 'hint', hint: 'lane' }] });
+    expect(rules(oncoming)).toContain('R4');
+    const sameWay = one({ atmosphere: 'nightIndoor', stride: 1.1, cadence: 5.2, items: [{ at: 50, lane: 0, kind: 'legs', behavior: { type: 'walk', speed: 1.2 } }], events: [{ at: 2, type: 'hint', hint: 'lane' }] });
+    expect(rules(sameWay)).not.toContain('R4');
+  });
   it('同样的障碍在晨雾（清晰距离约 20 m）里没问题', () => {
     expect(rules(one({ stride: 1.5, cadence: 5, rows: [[20, '.L.']], events: [{ at: 2, type: 'hint', hint: 'jump' }] }))).not.toContain('R4');
   });

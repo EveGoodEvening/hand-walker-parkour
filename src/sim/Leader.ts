@@ -3,10 +3,11 @@
 // 它按求解器路线在它所在的位置上做出正确动作：leaderLane = plan.laneAt(leaderS)（画面用 ctx.solver 的 plan.actionAt 取动作）。
 // 事件：leader appear（在雾里出现）/ recede（渐渐走远：距离每秒 +2.5 m，光圈一个个淡进雾里）。
 // ahead 模式的跑段里如果没有任何 leader 事件，进段即出现（兜底，便于测试与数据遗漏）。
+// 路线在读章时（开场卡期间）就求好（prepare），游戏过程中不再求解，避免 5-11 进段时卡一帧。
 import { AHEAD_DISTANCE, FOLLOWER_SLIDE } from '../core/constants';
 import type { Plan, SolverAPI } from '../core/contracts';
 import type { Lane } from '../core/types';
-import type { CompiledSegment } from '../levels/schema';
+import type { CompiledChapter, CompiledSegment } from '../levels/schema';
 
 /** 走远的速度（米 / 秒）。 */
 export const RECEDE_SPEED = 2.5;
@@ -29,8 +30,19 @@ export class LeaderRuntime {
   private slideT = 1;
   private plan: Plan | null = null;
   private planSeg = -1;
+  private readonly routes = new Map<number, Plan | null>();
   lane: Lane = 0;
   s: number | null = null;
+
+  /** 读章时预先求好可能出现领跑者的跑段的路线（段首 follower 是 ahead，或段里有 leader / ahead 事件）。 */
+  prepare(ch: CompiledChapter, solver: SolverAPI): void {
+    this.routes.clear();
+    for (const seg of ch.segments) {
+      if (seg.kind !== 'run') continue;
+      const ahead = seg.def.follower.mode === 'ahead' || seg.events.some((e) => e.body.type === 'leader' || (e.body.type === 'follower' && e.body.def.mode === 'ahead'));
+      if (ahead) this.routes.set(seg.index, solver.solve(seg, { noAsk: true }));
+    }
+  }
 
   reset(): void {
     this.visible = false; this.receding = false; this.extra = 0; this.slideT = 1; this.plan = null; this.planSeg = -1;
@@ -67,7 +79,8 @@ export class LeaderRuntime {
     this.dist = Math.max(LEADER_MIN, this.dist);
     this.s = s + this.dist + this.extra;
     if (this.planSeg !== seg.index) {
-      this.plan = solver.solve(seg, { noAsk: true });
+      this.plan = this.routes.has(seg.index) ? (this.routes.get(seg.index) ?? null) : solver.solve(seg, { noAsk: true });
+      this.routes.set(seg.index, this.plan);
       this.planSeg = seg.index;
     }
     const ls = Math.min(this.s, seg.s1 - 1e-6);
