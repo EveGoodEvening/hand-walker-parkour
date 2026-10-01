@@ -151,13 +151,14 @@ describe('other still compositions (U5)', () => {
     expect(w.actor.groupAlpha.toArray()).toEqual([0, 1, 1, 0]);
   });
 
-  it('5-8 after the seventh step: the camera at the hip looks up at the raised, shaking feet against the sky', async () => {
+  it('5-8 after the seventh step: he rolls onto his back and the camera at the hip looks up at the raised, shaking feet against the sky', async () => {
     const w = await scene(ch5 as ChapterDef);
     const seg = w.ch.segments.find((s) => s.def.id === '5-8')!;
     const mk = (t: number, stepT: number) => { const n = snap({ s: seg.s0 + 3, t, segKind: 'stand' }); n.segIndex = seg.index; n.segment = '5-8'; n.player.stand = { phase: 'fallen', x: 0, theta: 0.1, steps: 7, stepT, held: 3, script: 'sevenSteps' }; return n; };
     let prev = mk(10, 0);
     w.cam.setShot('trackSky', 0.35, 10);
-    for (let i = 1; i <= 120; i++) { const n = mk(10 + i / 60, i / 60); frame(w, prev, n); prev = n; }
+    // Stand 在 fallen 之后不再推进 stepT（一直是 0）：摔倒的动作由 Actor 自己按模拟时间计时
+    for (let i = 1; i <= 120; i++) { const n = mk(10 + i / 60, 0); frame(w, prev, n); prev = n; }
     const look = w.camera.getWorldDirection(new THREE.Vector3());
     expect(look.y).toBeGreaterThan(0.4);                                             // 看向天
     w.actor.rig.root.updateMatrixWorld(true);
@@ -168,6 +169,10 @@ describe('other still compositions (U5)', () => {
       if (Math.abs(q.x) < 0.9 && Math.abs(q.y) < 0.9 && q.z < 1) inFrame++;
     }
     expect(inFrame).toBe(2);
+    // 脚悬在空中（仰躺，不是停在跪姿）
+    const fy = w.ch.segments.find((q) => q.def.id === '5-8')!.floorY(seg.s0 + 3);
+    const fL = new THREE.Vector3(); w.actor.rig.root.getObjectByName('footL')!.getWorldPosition(fL);
+    expect(fL.y - fy).toBeGreaterThan(0.3);
   });
 
   it('5-9: the camera pushes in to the dent beside the pillow; at 8.6 s it is in the middle of the frame and the body is mostly out', async () => {

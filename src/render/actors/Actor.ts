@@ -60,6 +60,8 @@ export class PlayerActor implements ViewSystem {
   private clip: { id: PoseClipId; t0: number; until: number } | null = null;
   private clipWeight = 0;
   private lastFrameT = 0;
+  /** 站立段摔倒的时刻（模拟时钟；−1 = 没有摔倒）。 */
+  private fallT0 = -1;
   private chapter: CompiledChapter | null = null;
   /** 上半身淡出（readability.ts）：权重与着色器 uniform（四个分组的不透明度：腿、手、手臂、躯干与头）。 */
   private fadeW = 0;
@@ -90,7 +92,7 @@ export class PlayerActor implements ViewSystem {
   onEvent(e: GameEvent): void {
     if (e.type === 'cue' && e.data.body.type === 'atmosphere') this.factory?.setAtmosphere(e.data.body.id);
     if (e.type === 'land') this.anim.onLand();
-    if (e.type === 'segment' || e.type === 'retry') { this.clip = null; this.clipWeight = 0; }
+    if (e.type === 'segment' || e.type === 'retry') { this.clip = null; this.clipWeight = 0; this.fallT0 = -1; }
   }
 
   onReset(): void { this.anim.reset(); this.lastTick = -1; this.clip = null; this.clipWeight = 0; this.fadeW = 0; this.groupU.value.set(1, 1, 1, 1); }
@@ -147,7 +149,10 @@ export class PlayerActor implements ViewSystem {
       return;
     }
     if (next.segKind === 'stand') {
-      const pose = standPose(next, prev, a, this.b);
+      const fallen = next.player.stand?.phase === 'fallen';
+      if (fallen && this.fallT0 < 0) this.fallT0 = t;
+      if (!fallen) this.fallT0 = -1;
+      const pose = standPose(next, prev, a, this.b, fallen ? t - this.fallT0 : undefined);
       rig.apply(pose);
       rig.root.visible = true;
       copyPose(WP5.playerPose, pose);

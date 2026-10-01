@@ -14,7 +14,7 @@ import {
 import { copyPose, createPose } from '../../core/rig';
 
 /** 包内额外的姿势（静场缺省用，不属于冻结的 PoseClipId）。 */
-export type InternalClip = 'crawlIdle' | 'palmEyeHold' | 'handsInWater' | 'sitFloor' | 'kneelSit' | 'sitDesk' | 'sitEatTucked';
+export type InternalClip = 'crawlIdle' | 'palmEyeHold' | 'handsInWater' | 'sitFloor' | 'kneelSit' | 'sitDesk' | 'sitEatTucked' | 'lieBackHandsIn';
 export type AnyClip = PoseClipId | InternalClip;
 
 export const ALL_CLIPS: readonly PoseClipId[] = ['sit', 'sitEat', 'busSeat', 'busSeatNormal', 'standIdle', 'standUp', 'walkUpright', 'turnAround',
@@ -28,7 +28,7 @@ export const SET_DEFAULT_CLIP: Partial<Record<string, AnyClip | null>> = {
   // lead 集成：palmEye 的镜头在他眼睛里（4-4 的手由 WP4 的 set 画），画出身体会挡住整个画面。
   // 修复轮 U5：4-6（water）画按进水里的手臂和手，身体其余部分由 Actor 藏起来（EYE_GROUPS）
   bathroom: 'sinkLean', palmEye: null, water: 'handsInWater', 'bedroom.feet': 'lieBack', 'bedroom.ceiling': 'lieBack',
-  bedroom: 'lieBack', 'infirmary.bed': 'lieBack', 'infirmary.ceiling': 'lieBack', infirmary: 'lieBack', placeholder: 'sitDesk',
+  bedroom: 'lieBack', 'infirmary.bed': 'lieBackHandsIn', 'infirmary.ceiling': 'lieBack', infirmary: 'lieBack', placeholder: 'sitDesk',
 } satisfies Partial<Record<SetId | string, AnyClip | null>>;
 
 /** 4-6 按进水里的双手（角色空间、相对根：横向半宽、高度、前方）。water.ts 的涟漪中心与它一致。 */
@@ -130,6 +130,11 @@ function posture(id: AnyClip, t: number): Posture | null {
     case 'kneel': return kneeling({ lean: 3 });
     case 'kneelSit': return kneeling({ sitBack: 1, lean: 10 });
     case 'lieBack': return lyingBack({});
+    // 5-9：躺在医务室的床上，双手搭在肚子上（修复轮 U5：手不压在枕边的凹陷上，镜头推近时也不进画面）
+    case 'lieBackHandsIn': return lyingBack({
+      L: { t: [-0.14, 0.24, PELVIS_Z + 0.2], pole: [-1, 0.3, 0], f: [0.6, 0, 0.6], n: [0, -1, 0] },
+      R: { t: [0.14, 0.24, PELVIS_Z + 0.24], pole: [1, 0.3, 0], f: [-0.6, 0, 0.6], n: [0, -1, 0] },
+    });
     case 'feetArch': {
       // 被子里的脚自己弯起来（5-1）：膝盖慢慢拱起
       const k = smoothstep(0, 1.5, t);
@@ -215,7 +220,7 @@ function posture(id: AnyClip, t: number): Posture | null {
 
 /** 与时间无关的体态：缓存一次，避免每帧分配（§9.4「热路径不分配内存」）。 */
 const STATIC: ReadonlySet<AnyClip> = new Set<AnyClip>(['sit', 'sitDesk', 'sitEat', 'sitEatTucked', 'busSeat', 'busSeatNormal', 'kneel', 'kneelSit', 'lieBack',
-  'palmToGlass', 'pointMirror', 'pointBack', 'answerLean', 'counterStand', 'sinkLean', 'touchPillowDent', 'palmEyeHold', 'sitFloor']);
+  'palmToGlass', 'pointMirror', 'pointBack', 'answerLean', 'counterStand', 'sinkLean', 'touchPillowDent', 'palmEyeHold', 'sitFloor', 'lieBackHandsIn']);
 const STATIC_CACHE = new Map<AnyClip, Posture>();
 
 /** 行走时的手臂轻摆。 */

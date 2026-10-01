@@ -164,7 +164,7 @@ export class CameraRig implements ViewSystem {
       o.look.set(sx + sh.look[0], fy + sh.look[1], -s + sh.look[2]);
       const k = easeInOutSine(this.standBlend);
       if (k < 1) { o.pos.lerpVectors(this.fromPos, o.pos, k); o.look.lerpVectors(this.fromLook, o.look, k); }
-      o.roll = rm ? 0 : (N.stand?.theta ?? 0) * 0.6;
+      o.roll = rm || fallen ? 0 : (N.stand?.theta ?? 0) * 0.6;
       o.fov = portrait ? Math.min(80, vFromH(76, aspect)) : clamp(vFromH(70, aspect), 50, 58);
       return o;
     }

@@ -46,7 +46,7 @@ export const SET_SHOT_RETURN: Partial<Record<ShotId, SetShot>> = {
 
 /** 静场里过了某个时刻慢慢推到的近景（修复轮 U5）：5-9 推到枕边的凹陷，从床边平视枕头，主角的身体退出画面。 */
 export const SET_SHOT_LATE: Partial<Record<ShotId, { after: number; blend: number; shot: SetShot }>> = {
-  infirmaryBed: { after: 7.0, blend: 1.2, shot: { pos: [-0.8, 0.2, 0.45], look: [-0.42, -0.02, 0.66], fov: 50 } },
+  infirmaryBed: { after: 7.0, blend: 1.2, shot: { pos: [-1.0, 0.28, 0.45], look: [-0.45, 0.0, 0.7], fov: 50 } },
 };
 
 /** 每个 set 的缺省机位（`camera` cue 可以覆盖）。键 = `${set}.${variant}` 或 `${set}`。 */

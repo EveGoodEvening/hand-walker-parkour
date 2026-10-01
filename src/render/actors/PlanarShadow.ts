@@ -52,11 +52,14 @@ export function readableLight(dir: THREE.Vector3, out: THREE.Vector3): THREE.Vec
  * 以前只保证「水平 ≥ 1.2 × 竖直」，影子只伸出约 1.3 m，被身体挡住；4-3 的影子还朝后落，与「它选择了另一个方向」不符。
  * 水平 / 竖直比按姿势自己算：影子的尖（最远的关节投影）落在根的前右方 EVENT_TIP 米处，比例限制在 [RATIO_MIN, RATIO_MAX]。
  */
-export const SHADOW_EVENT = { tip: 2.5, ratioMin: 3, ratioMax: 8, longRatio: 7, blendSec: 0.5, defaultDir: [0.5, -0.866] as const } as const;
-/** 事件期间影子的水平方向（单位向量 x、z）：氛围的方向已经是前右（x > 0、z < 0）就沿用，否则用缺省的前右。 */
+export const SHADOW_EVENT = { tip: 2.5, liesDownTip: 2.7, ratioMin: 3, liesDownRatioMin: 1.2, ratioMax: 8, longRatio: 5, blendSec: 0.5, defaultDir: [0.5, -0.866] as const } as const;
+/**
+ * 事件期间影子的水平方向（单位向量 x、z）：氛围的方向在前右 25°–60° 之间就沿用，否则用缺省的前右 30°。
+ * 正前方（梦 dream 的 (0.1, −0.9)）不行：拉长的影子在追尾 / 站立机位里被压缩成主角身后的一团灰影。
+ */
 export function eventHeading(dir: THREE.Vector3, out: THREE.Vector2): THREE.Vector2 {
   const h = Math.hypot(dir.x, dir.z);
-  if (h > 1e-3 && dir.x > 0.05 * h && dir.z < -0.3 * h) return out.set(dir.x / h, dir.z / h);
+  if (h > 1e-3 && dir.x >= 0.42 * h && dir.z <= -0.5 * h) return out.set(dir.x / h, dir.z / h);
   return out.set(SHADOW_EVENT.defaultDir[0], SHADOW_EVENT.defaultDir[1]);
 }
 /** 按水平方向 (hx, hz) 与水平 / 竖直比 r 组成光线方向（单位向量，y < 0）。 */
@@ -195,7 +198,10 @@ export class PlanarShadowSystem implements ViewSystem {
       if (this.eventK > 0) {
         // 事件光线：前右方，按姿势算水平 / 竖直比，影子的尖落在根前右方约 2.5 m
         const hd = eventHeading(this.dir, _h);
-        const r = mode === 'long' ? SHADOW_EVENT.longRatio : this.tipRatio(hd, still, h - 0.004);
+        // 趴下的影子（4-3）本身就沿着光线躺在地上，只需要很小的比例
+        const r = mode === 'long' ? SHADOW_EVENT.longRatio
+          : mode === 'liesDown' ? this.tipRatio(hd, still, h - 0.004, SHADOW_EVENT.liesDownTip, SHADOW_EVENT.liesDownRatioMin)
+          : this.tipRatio(hd, still, h - 0.004, SHADOW_EVENT.tip);
         lightFrom(hd.x, hd.y, r, _E);
         L.lerp(_E, easeInOutSine(this.eventK)).normalize();
         this.state.ratio = r;
@@ -245,19 +251,21 @@ export class PlanarShadowSystem implements ViewSystem {
    * 事件光线的水平 / 竖直比：影子的尖（各关节投影里沿 hd 最远的那个）落在根前方 SHADOW_EVENT.tip 米处。
    * 姿势刚由 shadowPose 写进 this.b（关节位置在角色空间里，静场里再乘锚点）。
    */
-  private tipRatio(hd: THREE.Vector2, still: boolean, ground: number): number {
+  private tipRatio(hd: THREE.Vector2, still: boolean, ground: number, tip: number, min: number = SHADOW_EVENT.ratioMin): number {
     const b = this.b;
-    let need: number = SHADOW_EVENT.ratioMin;
-    const r0 = b.rootP;
+    // 影子的尖 = 各关节投影里最远的那个：只要有一个关节投到 tip 就够了，取各关节所需比例的最小值
+    let need = Infinity;
+    // 从主角的根量（不是影子姿势自己的根：趴下 / 反向的影子把根挪开了）
+    const rx = WP5.playerRoot.x, rz = WP5.playerRoot.z;
     for (const j of TIP_JOINTS) {
       const i = BONE_INDEX[j];
       b.toWorld(b.wp[i] as THREE.Vector3, _v);
       if (still) _v.applyMatrix4(WP5.stillAnchor);
-      const rx = still ? WP5.playerRoot.x : r0.x, rz = still ? WP5.playerRoot.z : r0.z;
-      const f = (_v.x - rx) * hd.x + (_v.z - rz) * hd.y, hgt = Math.max(0.05, _v.y - ground);
-      need = Math.max(need, (SHADOW_EVENT.tip - f) / hgt);
+      const f = (_v.x - rx) * hd.x + (_v.z - rz) * hd.y, hgt = _v.y - ground;
+      if (hgt < 0.05) continue;
+      need = Math.min(need, (tip - f) / hgt);
     }
-    return clamp(need, SHADOW_EVENT.ratioMin, SHADOW_EVENT.ratioMax);
+    return clamp(Number.isFinite(need) ? need : SHADOW_EVENT.ratioMax, min, SHADOW_EVENT.ratioMax);
   }
 
   /** 按模式生成影子的姿势。 */

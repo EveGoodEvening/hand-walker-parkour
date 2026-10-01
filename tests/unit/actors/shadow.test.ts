@@ -118,11 +118,13 @@ describe('shadow anomalies are cast long and front-right (U5)', () => {
           copyPose(WP5.playerPose, applyPosture(standing({ knee: 6, lean: 3 }), { x: 0, y: 0, s: 20, yaw: 0 }, b));
         } else copyPose(WP5.playerPose, crawlPose(crawlInput({ s: 20, beat: 20.2 }), b));
         if (mode === 'chase') s.follower = { ...s.follower, mode: 'pressure', hud: 'shadow', distance: 2 };
+        WP5.playerRoot.set(s.player.x, s.player.floorY, -s.player.s);
         m.sh.frame(s, s, 1, 1 / 60);
         m.sh.setMode(mode === 'chase' ? 'reversed' : mode, 10, 1.05);
         for (let i = 1; i <= 60; i++) { const n = { ...s, t: 1.05 + i / 60 }; m.sh.frame(n, n, 1, 1 / 60); }
         expect(m.sh.state.planar).toBe(true);
         expect(m.sh.state.eventK).toBe(1);
+        if (mode !== 'long' && mode !== 'liesDown') expect(m.sh.state.ratio).toBeGreaterThanOrEqual(3);
         const L = m.sh.light;
         expect(L.x).toBeGreaterThan(0); expect(L.z).toBeLessThan(0);
         const hx = L.x / Math.hypot(L.x, L.z), hz = L.z / Math.hypot(L.x, L.z);
@@ -131,6 +133,7 @@ describe('shadow anomalies are cast long and front-right (U5)', () => {
         let tip = -Infinity, cx = 0, cz = 0;
         for (const p of pts) { tip = Math.max(tip, (p.x - rx) * hx + (p.z - rz) * hz); cx += p.x - rx; cz += p.z - rz; }
         expect(tip).toBeGreaterThanOrEqual(2);
+        if (mode !== 'long') expect(tip).toBeLessThanOrEqual(4.0);           // 关节伸出约 2.5 m（鞋尖、发梢再远一点），不是一条拖到画面外的长带
         expect(cx / pts.length).toBeGreaterThan(0);
         expect(cz / pts.length).toBeLessThan(0);
       });
