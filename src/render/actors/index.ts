@@ -1,7 +1,7 @@
 // src/render/actors/index.ts —— 角色包入口（DESIGN.md §5.5–§5.8、§8.7、§8.8、§8.10 WP5）。WP5。
 // 注册：RigFactory（刚性蒙皮主角，1 次 draw call）、主角（order 30）、领跑者（32）、反光面（40）、替身（42）、平面影子（44）；
 // cue 处理器：double、doubleMod、doubleEnd、shadow、memory、actor（camera 在 render/camera/index.ts）。
-// 调试扩展（__game.ext）：poseTest（§8.8 的 7 种姿势）、wp5State、wp5Cam、wp5NoStencil、wp5Leader、wp5Puddle、wp5PixelCheck。
+// 调试扩展（__game.ext）：poseTest（§8.8 的 7 种姿势）、wp5State、wp5Cam、wp5NoStencil、wp5Leader、wp5Puddle、wp5PixelCheck、wp5Scene。
 import * as THREE from 'three';
 import { registerCueHandler, registerDebug, registerRigFactory, registerViewSystem } from '../../core/registry';
 import type { SimSnapshot } from '../../core/types';
@@ -135,7 +135,8 @@ registerDebug('wp5PixelCheck', (kind: unknown) => {
         if (d > 12) { changed++; if (!dil[i]) outside++; }
       }
       const stencil = ctx.stencil && !WP5.forceNoStencil;
-      const res = { kind, stencil, w, h, mask, changed, outside, ok: stencil ? changed > 20 && outside <= Math.max(2, changed * 0.005) : outside <= Math.max(2, changed * 0.005) };
+      // 有模板时：替身至少占遮罩的 8%（至少 60 像素），而且一个像素都不能漏到遮罩外（容差 0.5%）
+      const res = { kind, stencil, w, h, mask, changed, outside, ok: stencil ? changed > Math.max(60, mask * 0.08) && outside <= Math.max(2, changed * 0.005) : outside <= Math.max(2, changed * 0.005) };
       if (!res.ok) { console.error('[wp5PixelCheck] puddle failed', JSON.stringify(res)); }
       return res;
     }
@@ -167,6 +168,9 @@ function doubleBoxName(id: string): string {
   const i = doubles.slotIndexOf(id);
   return i >= 0 ? `double${i}` : '';
 }
+
+/** 场景根（只在调试模式下可用）：验收时在页面里检查 / 临时改动场景用，例如对照 CORE 占位 kit 的端墙镜框。 */
+registerDebug('wp5Scene', () => viewCtx?.scene ?? null);
 
 let viewCtx: import('../../core/contracts').ViewContext | null = null;
 registerViewSystem({ id: 'wp5.ctx', owner: 'WP5', order: 28, init(ctx) { viewCtx = ctx; }, frame() { /* */ } });

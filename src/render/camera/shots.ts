@@ -4,7 +4,7 @@
 // 站立机位（standEye / trackSky）相对站立段里的玩家。
 import type { SetId, ShotId } from '../../core/types';
 
-export interface SetShot { pos: [number, number, number]; look: [number, number, number]; fov: number; /** 镜头在主角身体里：隐藏主角 */ hideActor?: boolean }
+export interface SetShot { pos: [number, number, number]; look: [number, number, number]; fov: number }
 
 /** 静场机位（相对锚点）。 */
 export const SET_SHOTS: Partial<Record<ShotId, SetShot>> = {
@@ -23,7 +23,7 @@ export const SET_SHOTS: Partial<Record<ShotId, SetShot>> = {
   // 3-10：卫生间镜子
   bathroomMirror: { pos: [0.35, 1.25, 1.1], look: [0, 1.2, -1.4], fov: 55 },
   // 4-4：右手举到眼前（镜头在眼睛里）
-  palmEye: { pos: [0.0, 1.02, -0.02], look: [0.04, 1.0, -0.6], fov: 50, hideActor: false },
+  palmEye: { pos: [0.0, 1.02, -0.02], look: [0.04, 1.0, -0.6], fov: 50 },
   // 4-6：镜头下俯看水面
   waterDown: { pos: [0.0, 1.15, 0.2], look: [0, 0, -0.9], fov: 55 },
   // 4 章结尾 / 5-10：天花板上的裂缝（仰躺，镜头在眼睛里）

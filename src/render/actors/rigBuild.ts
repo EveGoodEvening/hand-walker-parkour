@@ -152,7 +152,7 @@ export function buildRigGeometry(d: RigDetail): THREE.BufferGeometry {
     addPrim(g, new THREE.IcosahedronGeometry(0.105, d.ico), m, C.skin);
     const mh = new THREE.Matrix4().compose(new THREE.Vector3(hd[0], hd[1] + 0.125, hd[2] + 0.028), new THREE.Quaternion(), new THREE.Vector3(1.02, 0.98, 1.0));
     addPrim(g, new THREE.IcosahedronGeometry(0.112, d.ico), mh, C.hair, hashJitter(0.01));
-    for (const sx of [-1, 1]) g.box([sx * 0.036, hd[1] + 0.1, hd[2] - 0.112], [0.014, 0.014, 0.014], C.eye);
+    for (const sx of [-1, 1]) g.box([sx * 0.036, hd[1] + 0.1, hd[2] - 0.11], [0.012, 0.012, 0.012], C.eye);   // §5.5：2 个 0.012 小方块
   }
   // —— 手臂 ——
   for (const side of ['L', 'R'] as const) {
@@ -297,7 +297,8 @@ export class ActorRigFactory implements RigFactory {
     body.name = 'rigBody';
     const shadow = ctx.mat.basic({ color: 0x0b0f12, transparent: true, opacity: 0.38 });
     shadow.name = 'rigShadow';
-    shadow.side = THREE.DoubleSide;
+    shadow.depthWrite = false;
+    shadow.side = THREE.FrontSide;   // 与 PlanarShadow 一致：压扁的闭合网格只画朝上的一层（没有模板时也不会压暗两次）
     this.mats = { body, shadow };
   }
   geometry(tier: QualityTier = this.tier): THREE.BufferGeometry {

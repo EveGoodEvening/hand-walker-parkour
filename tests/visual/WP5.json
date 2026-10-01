@@ -112,6 +112,125 @@
   ]
  },
  {
+  "out": "shots/visual/WP5/crawl-chase-1-1-a.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-1&beat=8",
+  "ops": [
+   {
+    "steps": 60
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {beat:+s.beat.toFixed(2),mode:s.mode,duck:s.duck,y:s.y}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/crawl-chase-1-1-b.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-1&beat=8",
+  "ops": [
+   {
+    "steps": 66
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {beat:+s.beat.toFixed(2),mode:s.mode,duck:s.duck,y:s.y}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/crawl-chase-1-1-c.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-1&beat=8",
+  "ops": [
+   {
+    "steps": 72
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {beat:+s.beat.toFixed(2),mode:s.mode,duck:s.duck,y:s.y}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/crawl-chase-1-1-d.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-1&beat=8",
+  "ops": [
+   {
+    "steps": 78
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {beat:+s.beat.toFixed(2),mode:s.mode,duck:s.duck,y:s.y}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/duck-1-2-68-side.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2&beat=60",
+  "ops": [
+   {
+    "steps": 191
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "__game.ext.wp5Cam([2.4,0.5,0.0],[0,0.35,-0.2],45)"
+   },
+   {
+    "eval": "__game.step(1,{render:true}).beat"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {beat:+s.beat.toFixed(2),mode:s.mode,duck:s.duck,y:s.y}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/duck-1-2-68-chase.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2&beat=60",
+  "ops": [
+   {
+    "steps": 176
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {beat:+s.beat.toFixed(2),mode:s.mode,duck:s.duck,y:s.y}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/ch1-start-no-surfaces.png",
+  "q": "low",
+  "query": "ch=ch1&autopilot=off",
+  "ops": [
+   {
+    "steps": 30
+   },
+   {
+    "eval": "(()=>{__game.step(1,{render:true});const s=__game.ext.wp5State();if(s.surfaces.length)console.error('[wp5] reflective surfaces active at chapter start',JSON.stringify(s.surfaces));return s.surfaces})()"
+   }
+  ]
+ },
+ {
   "out": "shots/visual/WP5/mirror-1-3-lane-1.png",
   "query": "ch=ch1&seg=1-3&beat=0",
   "ops": [
@@ -272,7 +391,7 @@
     "steps": 120
    },
    {
-    "eval": "__game.ext.wp5Puddle({ahead:6,lane:1})"
+    "eval": "__game.ext.wp5Puddle({ahead:4.2,lane:1})"
    },
    {
     "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
@@ -290,7 +409,7 @@
     "steps": 120
    },
    {
-    "eval": "__game.ext.wp5Puddle({ahead:6,lane:1})"
+    "eval": "__game.ext.wp5Puddle({ahead:4.2,lane:1})"
    },
    {
     "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"

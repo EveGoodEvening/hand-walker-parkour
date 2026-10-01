@@ -12,6 +12,9 @@ import type { CompiledChapter, CompiledSegment } from '../../levels/schema';
 import { crawlPose, jumpDur, PoseBuilder, type CrawlInput } from './handCycle';
 import type { ActorRigFactory, Rig } from './rigBuild';
 
+/** 中道时领跑者偏离车道中线的距离（米）。 */
+export const LEADER_CENTER_OFFSET = 0.3;
+
 export class LeaderSystem implements ViewSystem {
   readonly id = 'wp5.leader';
   readonly owner = 'WP5' as const;
@@ -69,9 +72,11 @@ export class LeaderSystem implements ViewSystem {
     if (this.planSeg !== seg.index) { this.plan = this.ctx.solver.solve(seg); this.planSeg = seg.index; }
     const plan = this.plan;
     const lane = f.leaderLane ?? (plan ? plan.laneAt(sl) : 0);
+    // 中道时偏离车道中线 0.3 m：追尾镜头在中道正后方，它正好被主角的头挡住（两侧车道本来就错开）
+    const tx = lane * LANE_WIDTH + LEADER_CENTER_OFFSET * (1 - Math.min(1, Math.abs(lane)));
     const h = Math.min(0.05, step), w = 14;
-    this.xv += (w * w * (lane * LANE_WIDTH - this.x) - 2 * w * this.xv) * h; this.x += this.xv * h;
-    if (sdt > 0.25 || Math.abs(this.x - lane * LANE_WIDTH) > 2.5) { this.x = lane * LANE_WIDTH; this.xv = 0; }
+    this.xv += (w * w * (tx - this.x) - 2 * w * this.xv) * h; this.x += this.xv * h;
+    if (sdt > 0.25 || Math.abs(this.x - tx) > 2.5) { this.x = tx; this.xv = 0; }
     // 动作：按路线里在 sl 之前最近的一步
     const cad = Math.max(0.5, N.cadence || seg.cadenceAt((sl - seg.s0) / seg.stride));
     const speed = Math.max(0.5, N.speed || cad * seg.stride);
@@ -95,7 +100,7 @@ export class LeaderSystem implements ViewSystem {
     this.duck = lerp(this.duck, duckT, clamp(step * 14, 0, 1));
     const I = this.I;
     I.s = sl; I.x = this.x; I.y = y; I.floorY = seg.floorY(sl); I.beat = (sl - seg.s0) / seg.stride; I.stride = seg.stride;
-    I.cadence = cad; I.speed = speed; I.duck = this.duck; I.air = air; I.airT = airT; I.laneTarget = lane;
+    I.cadence = cad; I.speed = speed; I.duck = this.duck; I.air = air; I.airT = airT; I.laneTarget = tx / LANE_WIDTH;   // 偏航按偏移后的目标算，不会一直歪着
     const pose = crawlPose(I, this.b);
     this.rig.apply(pose);
     this.rig.root.visible = true;

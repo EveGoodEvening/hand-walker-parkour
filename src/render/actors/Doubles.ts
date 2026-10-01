@@ -4,11 +4,13 @@
 // 放置：
 //   侧墙镜 / 窗：以墙面为对称面反射（three 检测到行列式为负会自动翻转正面，flatShading 的法线由屏幕导数算出，不会反）；
 //     替身站在镜中房间里，离玻璃的深度随玩家到墙的距离压缩（0.45–3.2 m），沿 s 放在镜头前方约半个视角处（从三条车道都看得见）。
-//   端墙镜：以镜面为对称面（scale.z = −1），替身「迎面爬来」，深度 = 0.2 × 玩家到镜面的距离（0.5–3.2 m）。
+//   端墙镜：以镜面为对称面（scale.z = −1），替身「迎面爬来」，深度 = 0.2 × 玩家到镜面的距离（0.5–3.2 m）；
+//     站在镜中房间的地面上（与开口下沿 y0 齐平，见 surfaces.endRoomFloor）。
 //   水洼：scale.y = −1 放在地面以下，模板 0x80 内显示（renderOrder −18）；没有模板时画模糊剪影贴花。
 //   世界：5-6 站着的「我」、4-3 镜中站着的「我」等，直接放在世界里；avoidPlayerLane 永远走相邻车道，不碰撞。
 //   静场：StillSet.surfaces(variant) 给出的平面，相对主角锚点反射。
-// 记忆（memory cue，1-2 窗玻璃里倒立的人）：script 'handstand'，去饱和、带一点傍晚的灰，1.2 s 闪现（减少闪烁：0.4 s 淡入淡出）。
+// 记忆（memory cue，1-2 窗玻璃里倒立的人）：script 'handstand'，去饱和、带一点傍晚的灰，1.2 s 闪现（0.12 s 淡入、0.18 s 淡出，不硬切；
+// 减少闪烁：0.4 s 淡入淡出）。
 // 第三只手只出现在反光面里（附录 A-12：搭肩只在 3-10 / 5-4 的镜子里），这里不检查剧本，只按 cue 执行。
 import * as THREE from 'three';
 import type { Plan, ViewContext, ViewSystem } from '../../core/contracts';
@@ -26,10 +28,13 @@ import type { ActorRigFactory, Rig } from './rigBuild';
 import { WP5 } from './shared';
 import { FOLLOW } from '../camera/shots';
 import { vFromH } from '../camera/CameraRig';
-import { reflectPlane, type ReflectSurfaces, type SurfaceView } from './surfaces';
+import { endRoomFloor, reflectPlane, type ReflectSurfaces, type SurfaceView } from './surfaces';
 import { applyThirdHand, gestureExtend, type ThirdHandTarget } from './ThirdHand';
 
 type Kind = 'side' | 'end' | 'floor' | 'world' | 'still' | 'memory';
+
+/** 记忆闪回的淡入、淡出（秒）：短，但不是硬切（附录 A-1「不闪白」；减少闪烁时是 0.4 s）。 */
+export const MEMORY_FADE_IN = 0.12, MEMORY_FADE_OUT = 0.18;
 
 interface Rec {
   id: string; spec: DoubleSpec; kind: Kind; t0: number;
@@ -47,7 +52,7 @@ interface Rec {
   head: THREE.Vector3;
 }
 
-interface Slot { rig: Rig; box: THREE.Group; body: THREE.MeshLambertMaterial; puddle: THREE.MeshLambertMaterial; memory: THREE.MeshLambertMaterial; pose: Pose; tmp: Pose; rec: Rec | null }
+interface Slot { rig: Rig; box: THREE.Group; body: THREE.MeshLambertMaterial; mirror: THREE.MeshLambertMaterial; puddle: THREE.MeshLambertMaterial; memory: THREE.MeshLambertMaterial; pose: Pose; tmp: Pose; rec: Rec | null }
 
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _pl = new THREE.Plane();
 const _tgt: ThirdHandTarget = {};
@@ -96,7 +101,9 @@ export class DoubleSystem implements ViewSystem {
       puddle.stencilWrite = true; puddle.stencilRef = 0x80; puddle.stencilFuncMask = 0x80; puddle.stencilWriteMask = 0;
       puddle.stencilFunc = THREE.EqualStencilFunc; puddle.stencilZPass = THREE.KeepStencilOp;
       const memory = tintLambert(ctx.mat.lambert({ vertexColors: true, flat: true, transparent: true, opacity: 1 }), 0.85, [0.8, 0.8, 0.82]);
-      for (const m of [body, puddle, memory]) { m.depthWrite = true; m.name = `wp5.double${i}`; }
+      // 镜中替身：镜中房间很暗，深蓝校服贴在暗背景上看不清（1-3）。反照率提亮约 35%、略去饱和，像隔着一层旧玻璃
+      const mirror = tintLambert(ctx.mat.lambert({ vertexColors: true, flat: true, transparent: true, opacity: 1 }), 0.15, [1.34, 1.36, 1.4]);
+      for (const m of [body, mirror, puddle, memory]) { m.depthWrite = true; m.name = `wp5.double${i}`; }
       const rig = this.factory.make('double', body);
       const box = new THREE.Group();
       box.matrixAutoUpdate = false;
@@ -104,7 +111,7 @@ export class DoubleSystem implements ViewSystem {
       box.add(rig.root);
       box.visible = false;
       ctx.scene.add(box);
-      this.slots.push({ rig, box, body, puddle, memory, pose: createPose(), tmp: createPose(), rec: null });
+      this.slots.push({ rig, box, body, mirror, puddle, memory, pose: createPose(), tmp: createPose(), rec: null });
     }
   }
 
@@ -160,7 +167,7 @@ export class DoubleSystem implements ViewSystem {
       speedFactor: 1, stopAt: null, stopped: false,
       offS: 0, worldS: snap.player.s + (spec.anchor?.sAhead ?? 8), worldX: (spec.anchor?.lane ?? 0) * 1.1, worldXv: 0, lane: spec.anchor?.lane ?? 0, walk: 0,
       sAhead: 0, sAheadInit: false,
-      alpha: 0, fadeIn: kind === 'memory' ? 0 : 0.35, fadeOut: null, until: spec.ttl && spec.ttl > 0 ? t + spec.ttl : Infinity,
+      alpha: 0, fadeIn: kind === 'memory' ? MEMORY_FADE_IN : 0.35, fadeOut: null, until: spec.ttl && spec.ttl > 0 ? t + spec.ttl : Infinity,
       memorySec: 0, head: new THREE.Vector3(),
     };
     if (rec.spec.avoidPlayerLane && rec.lane === snap.player.laneTarget) rec.lane = snap.player.laneTarget === 0 ? -1 : 0;
@@ -209,7 +216,7 @@ export class DoubleSystem implements ViewSystem {
     for (const sl of this.slots) {
       const r = sl.rec;
       if (!r) continue;
-      if (t >= r.until && !r.fadeOut) r.fadeOut = { t0: r.until, dur: r.kind === 'memory' ? (this.ctx.settings.reducedFlicker ? 0.4 : 0.001) : 0.5 };
+      if (t >= r.until && !r.fadeOut) r.fadeOut = { t0: r.until, dur: r.kind === 'memory' ? (this.ctx.settings.reducedFlicker ? 0.4 : MEMORY_FADE_OUT) : 0.5 };
       // 透明度
       let al = r.fadeIn > 0 ? clamp((t - r.t0) / r.fadeIn, 0, 1) : 1;
       if (r.kind === 'memory' && this.ctx.settings.reducedFlicker) al = clamp((t - r.t0) / 0.4, 0, 1);
@@ -223,7 +230,7 @@ export class DoubleSystem implements ViewSystem {
       if (r.surf && r.surf.kind !== 'floor' && r.surf.s1 < next.player.s - 8) { this.free(sl); continue; }
       const ok = this.place(sl, r, prev, next, a, t, step, dt);
       sl.box.visible = ok && al > 0.002;
-      const mat = r.kind === 'floor' ? sl.puddle : r.kind === 'memory' ? sl.memory : sl.body;
+      const mat = r.kind === 'floor' ? sl.puddle : r.kind === 'memory' ? sl.memory : r.kind === 'world' ? sl.body : sl.mirror;
       if (sl.rig.mesh.material !== mat) sl.rig.mesh.material = mat;
       mat.opacity = al;
       sl.rig.mesh.renderOrder = r.kind === 'floor' ? -18 : 0;
@@ -290,7 +297,9 @@ export class DoubleSystem implements ViewSystem {
         else r.sAhead += (target - r.sAhead) * (1 - Math.exp(-step / 0.5));
         if (scripted) r.offS += (r.speedFactor - 1) * N.speed * step;
         root[0] = v.planeX - v.sign * d;                  // 反射前的位置（走廊里）
-        root[2] = sNow + r.sAhead + r.offS;
+        // 沿 s 限制在镜面范围内（离两端各 0.35 m）：玩家接近镜子远端时，替身停在镜子里，不会提前滑进实墙后面
+        const sD = sNow + r.sAhead + r.offS, m = Math.min(0.35, (v.s1 - v.s0) / 2);
+        root[2] = clamp(sD, v.s0 + m, v.s1 - m);
         if (scripted) {
           // 脚本姿势的根高度（clip 的 lift）加在地面上；记忆里倒立的人以手腕为轴悬在窗台下沿附近
           root[1] = (root[1] as number) + (r.kind === 'memory' ? v.floorY + v.y0 - 0.2 : v.floorY);
@@ -313,7 +322,10 @@ export class DoubleSystem implements ViewSystem {
         const d = clamp(0.2 * D, 0.5, 3.2);
         root[0] = (scripted ? xNow : (root[0] as number)) * 0.5;
         root[2] = v.planeS - d;
-        if (scripted) { root[1] = (root[1] as number) + v.floorY; root[3] = 0; }
+        // 镜中房间的地面与开口下沿齐平（endRoomFloor），替身站在这个地面上
+        const yf = v.floorY + endRoomFloor(v);
+        if (scripted) { root[1] = (root[1] as number) + yf; root[3] = 0; }
+        else root[1] = (root[1] as number) - fyNow + yf;
         box.matrix.copy(v.reflect);
         break;
       }

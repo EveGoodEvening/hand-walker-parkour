@@ -152,6 +152,8 @@ export class PlanarShadowSystem implements ViewSystem {
     const mat = stencil ? this.matStencil : this.matPlain;
     const L = readableLight(this.dir, _L);
     if (mode === 'long') { L.y *= 0.45; L.normalize(); }
+    // 水母：光线压低一些，摊开的四肢投到身体轮廓外面（追尾镜头才看得见，不全埋在身体下面）
+    if (mode === 'jellyfish') { L.y *= 0.7; L.normalize(); }
     // —— 主影子 ——
     this.main.root.visible = planar;
     if (planar) {
@@ -207,12 +209,12 @@ export class PlanarShadowSystem implements ViewSystem {
         I.duck = 0;
         for (const side of ['L', 'R'] as const) {
           const sx = side === 'L' ? -1 : 1;
-          b.toWorld(_v.set(sx * 0.62, 0, -0.55), _w); _w.y = N.floorY + 0.03;
+          b.toWorld(_v.set(sx * 0.74, 0, -0.62), _w); _w.y = N.floorY + 0.03;
           armTo(b, side, _w, 1.4);
           setHand(b, side, sx * -35 * DEG, 0, 0, 0, 0);
-          _d.set(sx * 0.7, -0.2, 0.7).normalize();
+          _d.set(sx * 0.8, -0.15, 0.6).normalize();
           b.aim(`thigh${side}`, DOWN, FWD, _d, DOWN);
-          _d.set(sx * 0.8, 0, 0.6).normalize();
+          _d.set(sx * 0.9, 0, 0.45).normalize();
           b.aim(`shin${side}`, DOWN, FWD, _d, DOWN);
         }
         b.fkAll();

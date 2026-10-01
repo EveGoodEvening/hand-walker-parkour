@@ -20,6 +20,8 @@ const ROOM = 3.75;
 const H = 2.97;
 /** 端墙镜的半宽（与 CORE 占位 kit 的 0.95 一致；kit 在端墙上开同样宽的洞）。 */
 export const END_HALF_W = 0.95;
+/** 调试水洼的 id（__game.ext.wp5Puddle）。 */
+export const DEBUG_PUDDLE_ID = '__wp5DebugPuddle';
 
 export type SurfaceKind = 'side' | 'end' | 'floor';
 
@@ -57,6 +59,12 @@ export function reflectPlane(p: THREE.Plane, out = new THREE.Matrix4()): THREE.M
     -2 * a * c, -2 * b * c, 1 - 2 * c * c, -2 * c * d, 0, 0, 0, 1);
 }
 
+/**
+ * 端墙镜的镜中房间地面高度（相对段地面）：与开口下沿 y0 齐平。WP3 的 endWalls 也把房间地面放在 y0，
+ * 替身放在同一高度，手、膝、鞋不会埋进房间地面以下（开口下沿以下本来就被墙挡住）。
+ */
+export function endRoomFloor(v: Pick<SurfaceView, 'y0'>): number { return Math.max(0, Math.min(0.5, v.y0)); }
+
 /** 背景配色：镜子（暗）/ 各种窗外景。top、bottom 为背墙上下渐变，floor 为地面。 */
 const BACKDROPS: Record<string, { top: number; bottom: number; floor: number; ceil: number; band?: number }> = {
   darkRoom: { top: 0x1c262c, bottom: 0x121a1f, floor: 0x161f24, ceil: 0x10171b },
@@ -81,8 +89,12 @@ export class ReflectSurfaces implements ViewSystem {
   private overlayNoStencilMat!: THREE.MeshBasicMaterial;
   private blobMat!: THREE.MeshBasicMaterial;
   private readonly geos: THREE.BufferGeometry[] = [];
-  /** 调试水洼（__game.ext.wp5Puddle）：读章时预建一个，放在需要的位置。 */
+  /**
+   * 调试水洼（__game.ext.wp5Puddle）：读章时预建一个，但不进活动候选列表（不显示、不占水洼名额），
+   * 直到 wp5Puddle() 把它放到某处（placeDebugPuddle）才加入候选；换章时回到关闭状态。
+   */
   debugPuddle: SurfaceView | null = null;
+  private debugOn = false;
 
   get stencil(): boolean { return this.ctx.stencil && !WP5.forceNoStencil; }
 
@@ -112,6 +124,7 @@ export class ReflectSurfaces implements ViewSystem {
 
   async loadChapter(ch: CompiledChapter): Promise<void> {
     for (const v of this.list) { this.ctx.scene.remove(v.group); v.roomMat?.dispose(); }
+    if (this.debugPuddle) this.ctx.scene.remove(this.debugPuddle.group);   // 没放下过时它不在 list 里
     for (const g of this.geos) g.dispose();
     this.geos.length = 0;
     this.views.clear(); this.list = [];
@@ -121,16 +134,18 @@ export class ReflectSurfaces implements ViewSystem {
         if (v) { this.views.set(v.id, v); this.list.push(v); }
       }
     }
-    // 调试水洼：1.1 m × 1.6 m，中道（像素检查用；平时不显示）
-    const dbg: CompiledSurface = { id: '__wp5DebugPuddle', kind: 'puddle', side: 'floor', from: 0, to: 0, lane: 0, s0: 0, s1: 1.6, plane: [0, 1, 0, 0] };
+    // 调试水洼：约 1.1 m × 2.4 m（像素检查用）。只登记到 views（替身按 id 查得到），不进 list：平时既不显示也不占名额
+    const dbg: CompiledSurface = { id: DEBUG_PUDDLE_ID, kind: 'puddle', side: 'floor', from: 0, to: 0, lane: 0, s0: 0, s1: 2.4, plane: [0, 1, 0, 0] };
+    this.debugOn = false;
     this.debugPuddle = this.build(dbg, 0);
-    if (this.debugPuddle) { this.views.set(dbg.id, this.debugPuddle); this.list.push(this.debugPuddle); }
+    if (this.debugPuddle) this.views.set(dbg.id, this.debugPuddle);
   }
 
-  /** 把调试水洼挪到 (x, s) 处（地面 y）。 */
+  /** 把调试水洼挪到 (x, s) 处（地面 y），并让它参加活动候选。 */
   placeDebugPuddle(x: number, s: number, floorY: number): SurfaceView | null {
     const v = this.debugPuddle;
     if (!v) return null;
+    if (!this.debugOn) { this.debugOn = true; this.list.push(v); }
     const len = v.s1 - v.s0;
     v.s0 = s - len / 2; v.s1 = s + len / 2; v.cx = x; v.cs = s; v.floorY = floorY;
     v.group.position.set(x, floorY, -s);
@@ -221,7 +236,9 @@ export class ReflectSurfaces implements ViewSystem {
         g.quad([-hx, 0.02, zb + 0.005], [hx, 0.02, zb + 0.005], [hx, 1.1, zb + 0.005], [-hx, 1.1, zb + 0.005], 0x1b2a29);
         g.box([0, H - 0.02, (zi + zb) / 2], [0.12, 0.02, 1.2], 0x6d7a80, { faces: '-y' });
       }
-      g.quad([-hx, 0.004, zi], [hx, 0.004, zi], [hx, 0.004, zb], [-hx, 0.004, zb], bd.floor);
+      // 镜中房间的地面与开口下沿齐平（y0；和 WP3 的 endWalls 一致），替身也放在这个高度上（Doubles 'end'）
+      const yf = endRoomFloor(v) + 0.004;
+      g.quad([-hx, yf, zi], [hx, yf, zi], [hx, yf, zb], [-hx, yf, zb], bd.floor);
       g.quad([-hx, H, zb], [hx, H, zb], [hx, H, zi], [-hx, H, zi], bd.ceil);
       g.quad([-hx, 0, zi], [-hx, 0, zb], [-hx, H, zb], [-hx, H, zi], mixHex(bd.floor, bd.bottom, 0.5));
       g.quad([hx, 0, zb], [hx, 0, zi], [hx, H, zi], [hx, H, zb], mixHex(bd.floor, bd.bottom, 0.5));

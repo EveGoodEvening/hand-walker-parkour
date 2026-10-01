@@ -38,14 +38,22 @@ describe('rig geometry', () => {
     const col = g.getAttribute('color') as THREE.BufferAttribute;
     const skin = g.getAttribute('skinIndex') as THREE.BufferAttribute;
     const eye = new THREE.Color().setHex(RIG_COLORS.eye);
+    const pos = g.getAttribute('position') as THREE.BufferAttribute;
+    const boxes = [new THREE.Box3(), new THREE.Box3()];
     let n = 0;
     for (let i = 0; i < col.count; i++) {
       if (Math.abs(col.getX(i) - eye.r) < 1e-4 && Math.abs(col.getY(i) - eye.g) < 1e-4 && Math.abs(col.getZ(i) - eye.b) < 1e-4) {
         n++;
         expect(skin.getX(i)).toBe(BONE_INDEX.head);
+        boxes[pos.getX(i) < 0 ? 0 : 1]!.expandByPoint(new THREE.Vector3().fromBufferAttribute(pos, i));
       }
     }
     expect(n).toBe(2 * 36);       // 两个方块，每个 12 个三角形
+    // §5.5：每只眼是 0.012 m 的小方块
+    for (const bx of boxes) {
+      const sz = bx.getSize(new THREE.Vector3());
+      for (const c of [sz.x, sz.y, sz.z]) expect(c).toBeCloseTo(0.012, 4);
+    }
   });
 
   it('every character is a single SkinnedMesh (1 draw call) sharing one geometry', () => {
