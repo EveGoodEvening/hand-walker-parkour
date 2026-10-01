@@ -1,8 +1,10 @@
 // src/ui/hud/Hud.ts —— HUD（DESIGN.md §7.2 Play）。WP8。
 // 左上章名（40% 不透明度，8 s 后 20%）、右上暂停（44 px）；下方三分之一是一个自下而上的纵向栈：
-//   节拍器（实心点 / 空心点）→ 平衡线（七步）→ 数数 → 操作提示（1 行）→ 字幕（最多 2 行）→ 纸条翻看。
-// 同一个栈里依次排布，所以字幕、提示、节拍器、数数在任何分辨率下都不会互相重叠；右下角的情境按钮 / 「跳过」
+//   节拍器（实心点 / 空心点）→ 平衡线（七步）→ 操作提示（1 行）→ 字幕（最多 2 行）→ 纸条翻看。
+// 同一个栈里依次排布，所以字幕、提示、节拍器在任何分辨率下都不会互相重叠；右下角的情境按钮 / 「跳过」
 // 与左下角的纸条闪现在栈的两侧（竖屏 360 px 下也留出了间距，见 e2e-touch 的版面检查）。
+// U4：数数离开了栈（它压在主角背上），放在约 34% 高度、中线偏左，残影在它右上方；横屏时操作提示挪到右下的空地上
+// （styles.css，带半透明衬底），竖屏仍在栈里。
 // 不画进度条，不画任何数字（数数除外）。所有计时用模拟时间（snap.t）；事件只改模型，DOM 在 render() 里经 DomBatch 一次写完。
 import type { Settings } from '../../core/settings';
 import type { Device, FollowerSnap, HintId, SimSnapshot, Speaker, TextStyle } from '../../core/types';
@@ -58,6 +60,7 @@ export class Hud {
   private chName = '';
   private chT0 = 0;
   private subsVersion = -1;
+  private hintDrawn = '';
   private noteVersion = 0;
   private noteDrawn = -1;
   showFollower = true;
@@ -93,7 +96,7 @@ export class Hud {
     this.noteBack = h('div', 'hw-paper-face back', undefined, inner);
     this.subsEl = h('div', 'hw-subs', undefined, this.bottom);
     this.hintEl = h('div', 'hw-hint', undefined, this.bottom);
-    this.countEl = h('div', 'hw-count', undefined, this.bottom);
+    this.countEl = h('div', 'hw-count', undefined, this.root);
     this.countSelf = h('span', 'n', undefined, this.countEl);
     this.countGhost = h('span', 'ghost', undefined, this.countEl);
     this.balanceEl = h('div', 'hw-balance', undefined, this.bottom);
@@ -165,6 +168,8 @@ export class Hud {
 
   noteFlash(t: number, seconds = NOTE_FLASH_SEC): void { this.noteUntil = t + seconds; }
   openNote(id: string, def: NoteDef | null, t: number): void { this.noteOpen = { id, def, t0: t }; this.noteVersion++; }
+  /** 收起纸条翻看（跳过静场之后不能挂到下一段上）。 */
+  closeNote(): void { if (this.noteOpen) { this.noteOpen = null; this.noteVersion++; } }
 
   // ——————————————— 渲染（每帧一次，经 DomBatch）———————————————
   render(snap: SimSnapshot, b: DomBatch, o: { palm: 'none' | 'heat' | 'numb'; playing: boolean }): void {
@@ -186,14 +191,17 @@ export class Hud {
     if (this.hint && this.hint.until < t) this.hint = null;
     const hint = this.hint;
     const ht = hint ? hintText(hint.id, this.device, { still: hint.still, driftDir: this.driftDir }) : '';
-    b.text(this.hintEl, ht);
+    if (ht !== this.hintDrawn) { this.hintDrawn = ht; b.run(() => fillHint(this.hintEl, ht)); }
     b.cls(this.hintEl, 'on', !!ht);
-    // 数数
+    // 数数：每出一个新数，数字和残影各自重新淡入（换一个同样的动画名，CSS 动画才会重播）
     if (this.count && this.count.until < t) this.count = null;
     const [cs, cg] = this.countShown();
+    const alt = (this.count?.k ?? 0) % 2 === 1;
     b.cls(this.countEl, 'on', !!(cs || cg));
     b.text(this.countSelf, cs ?? '');
     b.text(this.countGhost, cg ?? '');
+    b.cls(this.countSelf, 'alt', alt);
+    b.cls(this.countGhost, 'alt', alt);
     // 平衡线（七步）
     const stand = snap.player.stand;
     const bal = this.forceBalance !== null || (!!stand && stand.script === 'sevenSteps' && (stand.phase === 'walking' || stand.phase === 'planted'));
@@ -212,6 +220,7 @@ export class Hud {
     b.style(this.selfDots, 'opacity', m.selfVisible ? String(m.selfOpacity) : '0');
     b.style(this.selfDots, 'transform', `translate(calc(-50% + ${m.selfDx}px), calc(-50% + ${m.selfDy}px))`);
     b.cls(this.selfDots, 'white', m.selfWhite);
+    b.cls(this.selfDots, 'tremble', m.selfTremble);
     const sd = this.selfDots.children;
     for (let i = 0; i < 3; i++) { const d = sd[i]; if (d) b.cls(d, 'lit', m.selfLit[i] as boolean); }
     b.style(this.followDots, 'opacity', String(m.followOpacity));
@@ -261,6 +270,16 @@ export class Hud {
 
   /** 当前显示的字幕文字（测试用）。 */
   currentText(): string[] { return this.subs.lines.map((l) => l.text); }
+}
+
+/** 提示文字：箭头单独包一层（更粗的字重，styles.css 的 .k），其余照常。 */
+export function fillHint(el: HTMLElement, text: string): void {
+  el.replaceChildren();
+  for (const part of text.split(/([←↑→↓]+)/u)) {
+    if (!part) continue;
+    if (/^[←↑→↓]+$/u.test(part)) { const k = document.createElement('b'); k.className = 'k'; k.textContent = part; el.appendChild(k); }
+    else el.appendChild(document.createTextNode(part));
+  }
 }
 
 /** 纸条的一面（HUD 翻看与纸条界面共用）。 */
