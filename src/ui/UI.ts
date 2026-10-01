@@ -18,7 +18,7 @@ import { Input } from '../input/Input';
 import { DomBatch, h } from './dom';
 import { Hud, type HintSource } from './hud/Hud';
 import { INK_CLASS, inkForSegment } from './hud/ink';
-import { OverlayState, SKIP_KEEP_OVERLAYS, type OverlayOp } from './hud/overlays';
+import { OverlayState, SKIP_KEEP_OVERLAYS, segmentCut, type OverlayOp } from './hud/overlays';
 import { chapterProgress } from './hud/progress';
 import { buildCredits, buildFail, buildIntro, buildPause, type FailData, type IntroData, type OutroData, type PauseData } from './screens/cards';
 import { moveFocus, ScreenEl } from './screens/menus';
@@ -318,7 +318,8 @@ export class UI implements UIAPI {
         // 只有按顺序走到下一段才算看过这段静场。读章再跳转（?seg=<静场>：load 和 goto 各发一次 segment）、
         // 从暂停里重来，都不能让一段还没看过的静场第一次就能跳过。
         if (prev && prev.kind === 'still' && this.chapter && e.data.index === prev.index + 1) this.seenStills.add(`${this.chapter}:${prev.id}`);
-        const cut = !!prev && prev.kind !== e.data.kind && (prev.kind === 'still' || e.data.kind === 'still');
+        const def = this.chapter ? getChapter(this.chapter)?.segments.find((x) => x.id === e.data.id) : undefined;
+        const cut = segmentCut(prev?.kind ?? null, e.data.kind, def?.kind === 'stand' ? def.script : undefined);
         this.overlays.segment(t, cut);
         this.prevSeg = { id: e.data.id, index: e.data.index, kind: e.data.kind };
         this.lookOpen = false;

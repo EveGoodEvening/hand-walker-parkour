@@ -946,6 +946,7 @@ export function isWallSegment(segments: ReadonlyArray<Pick<CompiledSegment, 'kin
  * 显示第 i 段的组的站立段（U6）：站立段只显示紧挨着的前一个跑段的组（§10.2），所以 4-2 → 4-3、5-7 → 5-8；没有 = −1。
  * 这一段里站着的人只在那个站立段进行时画上身（§5.4「世界突然『正常』了」、§5.7「躯干和头只在站立段……显示」）；
  * 爬行经过时只到腰带（5-7 是「排队同学的腿」）。审查 r2：以前整段都画，站立段就没有什么可「突然正常」的了。
+ * 5-8 第一帧的镜头还在追尾的位置，画面里的人在这一帧长出上身：界面在 5-7 → 5-8 用黑场切盖住（ui/hud/overlays.ts 的 segmentCut，修复轮 B3 r2）。
  */
 export function standRevealOf(segments: ReadonlyArray<Pick<CompiledSegment, 'kind'>>, i: number): number {
   return segments[i]?.kind === 'run' && segments[i + 1]?.kind === 'stand' ? i + 1 : -1;

@@ -6,10 +6,25 @@
 //   · coldFade：seconds 内渐变到冷色（减少闪烁时 ≥ 1.2 s），保持到 clear 或段落切换。
 //   · palmHeat / palmNumb：右缘冷白渐晕 1.5 s（seconds 缺省时），节拍器泛白 / 抖动。
 // 失败：摔倒后 0.8 s 内去饱和并变冷（减少闪烁时 1.2 s），不用红色、不闪白。
-// 段落在跑段与静场之间切换时：黑场 1 → 0，0.4 s（View 在同一时刻切换场景）。
+// 段落在跑段与静场之间切换时：黑场 1 → 0，0.4 s（View 在同一时刻切换场景）。跑段接七步站立段（5-7 → 5-8）也是这样切（segmentCut）。
 // 闭眼（eyesClosed，5-9）只到本段结束：下一段开始时在 EYES_OPEN_SEC 内睁开（5-10「我睁开眼。天花板上的裂缝还在。」，修复轮 B3）。
 // 跳过静场时界面先把本段还没到的叠加层按终态应用（SKIP_KEEP_OVERLAYS，UI.noteSkip），所以两种走法进下一段时一样。
 export type OverlayOp = 'palmHeat' | 'palmNumb' | 'coldFade' | 'desaturate' | 'eyesClosed' | 'black' | 'clear';
+
+/** 段落的种类（SimSnapshot.segKind）。 */
+export type SegKind = 'run' | 'still' | 'stand';
+
+/**
+ * 段落切换要不要用黑场切（1 → 0，0.4 s）。§9「段落切换」：跑段之间无缝，静场用 0.4 s 黑场切入切出。
+ * 修复轮 B3 r2：跑段接七步站立段（5-7 → 5-8）也切。5-8 从「坐在跑道边」开始，镜头还在追尾的位置（站立机位从这里升起），
+ * 同一帧里主角从爬行跳到坐姿，5-7 的同学和马老师按 §5.7 从这一帧起才画上身。不切的话，画面里的人会当着镜头从腰里长出躯干和头。
+ * 梦里的站立（4-3「在梦里，站起来很容易」）从爬行直接起身，4-2 广场上的人本来就有上身，照旧无缝。
+ */
+export function segmentCut(prev: SegKind | null, next: SegKind, script?: string): boolean {
+  if (!prev || prev === next) return false;
+  if (prev === 'still' || next === 'still') return true;
+  return prev === 'run' && next === 'stand' && script !== 'dream';
+}
 
 /** 下一段开始时睁开眼（闭眼的压暗回到 0）用的秒数。 */
 export const EYES_OPEN_SEC = 1.0;
@@ -69,7 +84,7 @@ export class OverlayState {
     }
   }
 
-  /** 段落切换：跑段 ↔ 静场时黑场切入；冷色在新段落里褪去。黑场正在淡入（1-6、3-10 结尾）时不打断。 */
+  /** 段落切换：跑段 ↔ 静场、跑段 → 七步站立段时黑场切入（segmentCut）；冷色在新段落里褪去。黑场正在淡入（1-6、3-10 结尾）时不打断。 */
   segment(t: number, cut: boolean): void {
     if (this.cold.to > 0) this.cold = { from: this.coldAt(t), to: 0, t0: t, dur: this.reducedFlicker ? 1.2 : 0.6 };
     if (cut && this.black.to < 1) this.black = { from: 1, to: 0, t0: t, dur: 0.4 };

@@ -208,7 +208,8 @@ describe('站立段与人墙：上身和没有五官的头（U6）', () => {
       expect(far, tier).toBeGreaterThan(10);
       expect(near, tier).toBeGreaterThan(0);
       expect(seen, tier).toBeGreaterThan(40);
-      // 最后一帧 5-7 → 第一帧 5-8：画面此时才给 5-7 的组加上身（镜头这时正从爬行机位升起，它们在站立机位身后）
+      // 最后一帧 5-7 → 第一帧 5-8：画面此时才给 5-7 的组加上身。镜头这一帧还在追尾的位置，马老师和近处的同学就在画面里，
+      // 所以界面在这一帧用黑场切进 5-8（ui/hud/overlays.ts 的 segmentCut，standCut.test.ts，修复轮 B3 r2）
       expect(snap.segKind, tier).toBe('stand');
       // 身边的人（5-7 的组）；前方 37 m 外 5-11 走廊里的人腿障碍是 5-11 的人，只到腰带
       const st = people(view, snap).filter((p) => standing(p) && p.s <= snap.player.s + 10);

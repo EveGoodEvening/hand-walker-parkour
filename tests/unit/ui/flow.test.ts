@@ -7,7 +7,7 @@ import { getChapter } from '../../../src/levels/chapters/index';
 import { lineText } from '../../../src/levels/lines';
 import type { EventBody } from '../../../src/levels/schema';
 import { DARK_ATMOSPHERES, INK_ATMOSPHERES, INK_CLASS, inkFor, inkForSegment } from '../../../src/ui/hud/ink';
-import { EYES_OPEN_SEC } from '../../../src/ui/hud/overlays';
+import { EYES_OPEN_SEC, segmentCut } from '../../../src/ui/hud/overlays';
 import { skippedOverlays } from '../../../src/ui/UI';
 import { metronome } from '../../../src/ui/hud/metronome';
 import { CREDITS_AFTER, FINAL_OUTRO, OUTRO_LINE_GAP } from '../../../src/ui/screens/outro';
@@ -255,5 +255,56 @@ describe('5-9 eyes closed → 5-10: watched or skipped, 5-10 opens the eyes the 
     expect(watched[2]).toBe(0);
     expect(watched[3]).toBe(0);                                                     // 以前：自然看完 5-10 整段 0.6；跳过时一开始就是 0
     for (const at of [3.0, 11.6, 12.0, 14.0]) expect(await after510(at), `skip at ${at}`).toEqual(watched);   // 11.6 / 12.0：正在闭眼
+  });
+});
+
+// 修复轮 B3 r2：5-7 → 5-8。站立段的第一帧镜头还在追尾的位置，主角从爬行跳到坐姿，5-7 的同学和马老师按 §5.7 从这一帧起才有上身
+// （tests/unit/npc/standCut.test.ts 量过：视锥里有 2 个人当着镜头长出躯干和头）。界面像进出静场一样用 0.4 s 黑场切进去；
+// 梦里的站立（4-2 → 4-3）从爬行直接起身，广场上的人一直有上身，照旧无缝；跑段之间永远无缝。
+describe('run → sevenSteps stand (5-7 → 5-8) is a black cut; the dream stand and run → run stay seamless', () => {
+  it('segmentCut: stills in and out, run → stand unless dream; nothing else', () => {
+    expect(segmentCut(null, 'still')).toBe(false);                                 // 读章的第一段
+    expect(segmentCut('run', 'run')).toBe(false);
+    expect(segmentCut('still', 'still')).toBe(false);
+    expect(segmentCut('run', 'still')).toBe(true);
+    expect(segmentCut('still', 'run')).toBe(true);
+    expect(segmentCut('stand', 'still')).toBe(true);
+    expect(segmentCut('run', 'stand', 'sevenSteps')).toBe(true);
+    expect(segmentCut('run', 'stand', 'dream')).toBe(false);
+    expect(segmentCut('stand', 'run')).toBe(false);
+  });
+
+  const enter = async (ch: 'ch4' | 'ch5', from: string, to: string): Promise<{ black: number[]; dom: string }> => {
+    const { ui, root } = await mountUI();
+    ui.show('play');
+    const segs = getChapter(ch)!.segments;
+    const i = segs.findIndex((s) => s.id === from);
+    const kind = (k: number) => segs[k]!.kind as 'run' | 'still' | 'stand';
+    expect(segs[i + 1]?.id).toBe(to);
+    const T0 = 300;
+    const sn = (t: number, k: number) => snap({ t, chapter: ch, segment: segs[k]!.id, segIndex: k, segKind: kind(k) });
+    ui.onEvent(ev('chapter:start', { id: ch }), sn(T0, i));
+    ui.onEvent(ev('segment', { id: from, index: i, kind: kind(i) }), sn(T0, i));
+    for (let k = 1; k <= 30; k++) ui.frame(sn(T0 + k / 60, i), 1 / 60);
+    const t1 = T0 + 0.5 + 1 / 120;
+    ui.onEvent(ev('segment', { id: to, index: i + 1, kind: kind(i + 1) }), sn(t1, i + 1));
+    ui.frame(sn(t1 + 1 / 120, i + 1), 1 / 60);                                         // 站立段的第一帧（1 tick 之后）
+    const dom = (root.querySelector('.hw-black') as HTMLElement).style.opacity;
+    return { black: [1 / 120, 0.2, 0.4, 2].map((dt) => ui.overlays.view(t1 + dt).black), dom };
+  };
+
+  it('5-7 → 5-8: the first stand frame is black (≥ 0.97 on screen), gone after 0.4 s', async () => {
+    const r = await enter('ch5', '5-7', '5-8');
+    expect(r.black[0]).toBeGreaterThan(0.97);
+    expect(r.black[1]).toBeCloseTo(0.5, 6);
+    expect(r.black[2]).toBe(0);
+    expect(r.black[3]).toBe(0);
+    expect(Number(r.dom)).toBeGreaterThan(0.97);                                       // 画到 DOM 的黑场层上
+  });
+
+  it('4-2 → 4-3 (dream): no black at all; the rise stays in view', async () => {
+    const r = await enter('ch4', '4-2', '4-3');
+    expect(r.black).toEqual([0, 0, 0, 0]);
+    expect(Number(r.dom)).toBe(0);
   });
 });
