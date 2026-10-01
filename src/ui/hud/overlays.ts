@@ -7,7 +7,14 @@
 //   · palmHeat / palmNumb：右缘冷白渐晕 1.5 s（seconds 缺省时），节拍器泛白 / 抖动。
 // 失败：摔倒后 0.8 s 内去饱和并变冷（减少闪烁时 1.2 s），不用红色、不闪白。
 // 段落在跑段与静场之间切换时：黑场 1 → 0，0.4 s（View 在同一时刻切换场景）。
+// 闭眼（eyesClosed，5-9）只到本段结束：下一段开始时在 EYES_OPEN_SEC 内睁开（5-10「我睁开眼。天花板上的裂缝还在。」，修复轮 B3）。
+// 跳过静场时界面先把本段还没到的叠加层按终态应用（SKIP_KEEP_OVERLAYS，UI.noteSkip），所以两种走法进下一段时一样。
 export type OverlayOp = 'palmHeat' | 'palmNumb' | 'coldFade' | 'desaturate' | 'eyesClosed' | 'black' | 'clear';
+
+/** 下一段开始时睁开眼（闭眼的压暗回到 0）用的秒数。 */
+export const EYES_OPEN_SEC = 1.0;
+/** 跳过静场时按终态带进下一段的叠加层（会留在画面上的：黑场、闭眼、清除、冷色）；一次性的掌心、去饱和丢弃。 */
+export const SKIP_KEEP_OVERLAYS: ReadonlySet<OverlayOp> = new Set<OverlayOp>(['black', 'eyesClosed', 'clear', 'coldFade']);
 
 interface Tween { from: number; to: number; t0: number; dur: number }
 const tweenAt = (w: Tween, t: number) => {
@@ -34,14 +41,17 @@ export class OverlayState {
   private palm: { op: 'heat' | 'numb'; t0: number; until: number } | null = null;
   private fallT = -1;
   private hitT = -1;
+  /** 黑场层现在是闭眼的压暗（eyesClosed 之后，还没有别的黑场操作）：下一段开始时睁开。 */
+  private eyesShut = false;
   reducedFlicker = false;
 
   apply(op: OverlayOp, seconds: number, t: number): void {
     const s = Math.max(0, seconds);
     switch (op) {
-      case 'black': this.black = { from: this.blackAt(t), to: 1, t0: t, dur: s }; break;
-      case 'eyesClosed': this.black = { from: this.blackAt(t), to: 0.6, t0: t, dur: s }; break;
+      case 'black': this.black = { from: this.blackAt(t), to: 1, t0: t, dur: s }; this.eyesShut = false; break;
+      case 'eyesClosed': this.black = { from: this.blackAt(t), to: 0.6, t0: t, dur: s }; this.eyesShut = true; break;
       case 'clear':
+        this.eyesShut = false;
         this.black = { from: this.blackAt(t), to: 0, t0: t, dur: s };
         this.cold = { from: this.coldAt(t), to: 0, t0: t, dur: Math.max(s, this.reducedFlicker ? 1.2 : 0) };
         this.desat = { t0: -1, until: -1, fade: 0.2 };
@@ -63,15 +73,20 @@ export class OverlayState {
   segment(t: number, cut: boolean): void {
     if (this.cold.to > 0) this.cold = { from: this.coldAt(t), to: 0, t0: t, dur: this.reducedFlicker ? 1.2 : 0.6 };
     if (cut && this.black.to < 1) this.black = { from: 1, to: 0, t0: t, dur: 0.4 };
+    else if (this.eyesShut) this.black = { from: this.blackAt(t), to: 0, t0: t, dur: EYES_OPEN_SEC };   // 睁开眼
+    this.eyesShut = false;
     this.palm = null;
   }
+
+  /** 跳过静场（修复轮 B3）：正在进行的黑场、冷色渐变直接走到终点（自然看完时它们早就走完了）。 */
+  settle(): void { this.black = still(this.black.to); this.cold = still(this.cold.to); }
 
   fall(t: number): void { this.fallT = t; }
   hit(t: number): void { this.hitT = t; }
   /** 重来 / 新章节：全部复位。 */
   reset(): void {
     this.black = still(0); this.cold = still(0); this.desat = { t0: -1, until: -1, fade: 0.2 };
-    this.palm = null; this.fallT = -1; this.hitT = -1;
+    this.palm = null; this.fallT = -1; this.hitT = -1; this.eyesShut = false;
   }
 
   private blackAt(t: number): number { return tweenAt(this.black, t); }

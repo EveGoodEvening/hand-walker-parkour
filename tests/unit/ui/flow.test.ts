@@ -7,6 +7,8 @@ import { getChapter } from '../../../src/levels/chapters/index';
 import { lineText } from '../../../src/levels/lines';
 import type { EventBody } from '../../../src/levels/schema';
 import { DARK_ATMOSPHERES, INK_ATMOSPHERES, INK_CLASS, inkFor, inkForSegment } from '../../../src/ui/hud/ink';
+import { EYES_OPEN_SEC } from '../../../src/ui/hud/overlays';
+import { skippedOverlays } from '../../../src/ui/UI';
 import { metronome } from '../../../src/ui/hud/metronome';
 import { CREDITS_AFTER, FINAL_OUTRO, OUTRO_LINE_GAP } from '../../../src/ui/screens/outro';
 import { ev, follower, mountUI, snap } from './helpers';
@@ -205,5 +207,53 @@ describe('数数与提示的版面', () => {
     ui.frame(snap({ t: 2.1 }), 0);
     expect(ui.hud.hintEl.textContent).toBe('↑ 撑跃');
     expect(ui.hud.hintEl.querySelector('.k')?.textContent).toBe('↑');
+  });
+});
+
+// 修复轮 B3：5-9「我闭上眼」（11.2 s eyesClosed，压暗 60%）。以前自然看完时压暗一直留到 5-10 结束，跳过 5-9 时（模拟丢掉叠加层 cue）
+// 5-10 一开始就是亮的，两种走法不一样。现在：跳过时本段还没到的闭眼按终态应用；下一段开始时都在 1 s 内睁开眼（5-10「我睁开眼。天花板上的裂缝还在。」）。
+describe('5-9 eyes closed → 5-10: watched or skipped, 5-10 opens the eyes the same way', () => {
+  const ch5 = getChapter('ch5')!;
+  const i59 = ch5.segments.findIndex((s) => s.id === '5-9');
+  const seg59 = ch5.segments[i59] as { duration: number; events: Array<{ at: number; type: string; op?: string; seconds?: number }> };
+  const close = seg59.events.find((e) => e.type === 'overlay' && e.op === 'eyesClosed')!;
+  const s = (t: number, segment: string, still: number | null) => snap({ t, chapter: 'ch5', segment, segKind: 'still',
+    still: still === null ? null : { set: 'infirmary', variant: segment === '5-9' ? 'bed' : 'ceiling', t: still, duration: 14.3, prompt: null, held: 0 } });
+  /** 进 5-10 之后各时刻的压暗（black 层的不透明度）。 */
+  const after510 = async (skipAt: number | null): Promise<number[]> => {
+    const { ui } = await mountUI();
+    ui.show('play');
+    const T0 = 500;
+    ui.onEvent(ev('chapter:start', { id: 'ch5' }), s(T0, '5-9', 0));
+    ui.onEvent(ev('segment', { id: '5-9', index: i59, kind: 'still' }), s(T0, '5-9', 0));
+    // 自然播放到 stop（含 11.2 s 的 eyesClosed cue）；skipAt 不为 null 时在那一刻跳过
+    const stop = skipAt ?? seg59.duration;
+    for (let k = 0; k * 0.1 <= stop + 1e-9; k++) {
+      const t = k * 0.1;
+      if (Math.abs(t - close.at) < 0.05) ui.cueOverlay({ type: 'overlay', op: 'eyesClosed', seconds: close.seconds ?? 0 }, s(T0 + t, '5-9', t));
+      ui.frame(s(T0 + t, '5-9', t), 0);
+    }
+    if (skipAt !== null) ui.noteSkip();
+    const tEnd = T0 + stop;
+    ui.onEvent(ev('segment', { id: '5-10', index: i59 + 1, kind: 'still' }), s(tEnd, '5-10', 0));
+    return [0, 0.5, EYES_OPEN_SEC, 3].map((dt) => ui.overlays.view(tEnd + dt).black);
+  };
+
+  it('5-9 has one eyesClosed (60 %) near its end and nothing after it that clears the screen', () => {
+    expect(close.at).toBeGreaterThan(10);
+    expect(skippedOverlays('ch5', '5-9', 3.0)).toEqual(['eyesClosed']);
+    expect(skippedOverlays('ch5', '5-9', close.at)).toEqual([]);                    // 已经闭上眼了：不再补
+    expect(skippedOverlays('ch5', '5-10', 0)).toEqual([]);
+    expect(skippedOverlays('ch2', '2-5', 0)).toEqual([]);                           // 掌心发烫是一次性的，不带走
+    expect(skippedOverlays('ch4', '4-6', 0)).toEqual(['black']);                    // onDone 里的黑场（章末）
+  });
+
+  it('watched to the end and skipped at 3 s / 12 s give the same 5-10: 60 % dark at its start, eyes open within 1 s', async () => {
+    const watched = await after510(null);
+    expect(watched[0]).toBeCloseTo(0.6, 2);
+    expect(watched[1]).toBeCloseTo(0.3, 2);
+    expect(watched[2]).toBe(0);
+    expect(watched[3]).toBe(0);                                                     // 以前：自然看完 5-10 整段 0.6；跳过时一开始就是 0
+    for (const at of [3.0, 11.6, 12.0, 14.0]) expect(await after510(at), `skip at ${at}`).toEqual(watched);   // 11.6 / 12.0：正在闭眼
   });
 });
