@@ -26,7 +26,7 @@ import { Board, BOARDS, boardMaterial } from './boards';
 import { Decals, type DecalKind } from './decals';
 import type { Rect } from './geom';
 import { floorHints, usesSchoolAtlas, type HwKitChunkContext, type HwKitExt } from './kitContext';
-import { LampField } from './lampField';
+import { LampField, patchSteadyGlow } from './lampField';
 import { ATLAS, paintSchoolAtlas } from './textures/school';
 import { makeCanvas } from './textures/common';
 import type { HwTextureBank } from './textureBank';
@@ -215,13 +215,16 @@ export class World implements ViewSystem {
       paintSchoolAtlas(this.atlasCanvas, {});
       this.atlasTex = new THREE.CanvasTexture(this.atlasCanvas);
       this.atlasTex.name = 'hw:schoolAtlas';
-      this.atlasTex.anisotropy = (ctx.tex as HwTextureBank).anisotropy ?? 1;
     } else {
       this.atlasTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
       this.atlasTex.needsUpdate = true;
     }
+    // 门牌、值日表这些字常被斜着看：贴图集至少 4 倍各向异性过滤（three 按设备上限截断；U6）
+    this.atlasTex.anisotropy = Math.max(4, (ctx.tex as HwTextureBank).anisotropy ?? 1);
     this.atlasTex.colorSpace = THREE.SRGBColorSpace;
     this.staticAtlasMat = ctx.mat.lambert({ vertexColors: true, map: this.atlasTex, flat: true });
+    // 数据里的门牌（shell.ts DATA_PLATE，aSteady = 1）自发光：在 voidDark 里也读得出（U6）
+    patchSteadyGlow(this.staticAtlasMat, 1);
     this.staticPlainMat = ctx.mat.lambert({ vertexColors: true, flat: true });
     this.staticWhiteMat = ctx.mat.lambert({ flat: true });
     this.emissiveMat = ctx.mat.basic({ color: 0xffffff, lampLit: true });

@@ -86,10 +86,20 @@ export function stepsIn(e: Env, step: number, offset = 0, pad = 0): number[] {
  * 夜里的窗、门上的玻璃不再是饱和的深青）；地面（有贴图、另调过）不补偿。
  */
 export function geos(lift = 1): { floor: KitGeo; stat: KitGeo; emi: KitGeo } {
-  const stat = new KitGeo(ATLAS_WHITE_UV), emi = new KitGeo(ATLAS_WHITE_UV);
+  const stat = new SteadyStatGeo(ATLAS_WHITE_UV), emi = new KitGeo(ATLAS_WHITE_UV);
   stat.tone = kitPropTone(lift);
   if (lift > 0) emi.tone = emissiveAlbedo;
   return { floor: new KitGeo(ATLAS_WHITE_UV), stat, emi };
+}
+
+/**
+ * static 的累积器：有 aSteady = 1 的顶点（数据里的门牌，U6）时 build() 自动带上 aSteady 属性
+ * （kit 调用的是不带参数的 stat.build()）。ChunkStreamer 的校园贴图集材质据此让这些面自发光（不跟灯走）。
+ */
+export class SteadyStatGeo extends KitGeo {
+  override build(o: { steady?: boolean; uv?: boolean } = {}): ReturnType<KitGeo['build']> {
+    return super.build({ ...o, steady: o.steady ?? this.steady.some((v) => v > 0) });
+  }
 }
 
 // ——————————————————— 地面 ———————————————————
@@ -474,16 +484,28 @@ export function sideDoor(stat: KitGeo, emi: KitGeo, e: Env, side: -1 | 1, s: num
   return hole;
 }
 
-/** 垂直于墙、从墙上伸出来的牌子：长 0.36、高 0.1，朝 +z 与 −z 两面，挂在 y 高处。 */
-export function plateSign(g: KitGeo, e: Env, side: -1 | 1, s: number, y: number, r: Rect): void {
-  const xw = side * HW, x0 = xw - side * 0.04, x1 = xw - side * 0.42;
+/** 牌子的尺寸：len = 从墙上伸出来的长度（米），h = 高（米），steady = 牌面自发光（aSteady = 1，不跟灯走）。 */
+export interface PlateSize { len: number; h: number; steady: boolean }
+/** 门上方的通用班牌（空白）。 */
+export const DOOR_PLATE: PlateSize = { len: 0.38, h: 0.12, steady: false };
+/**
+ * 关卡数据里的门牌（kind doorPlate，U6）：0.95 × 0.285 m，与贴图集里的矩形同比例（10:3），牌面自发光，
+ * 在 voidDark（5-11）里也读得出「高二（7）班」翻转后的反字。以前按通用班牌的尺寸画，1280×720 下只有约 45×14 px。
+ */
+export const DATA_PLATE: PlateSize = { len: 0.95, h: 0.285, steady: true };
+
+/** 垂直于墙、从墙上伸出来的牌子：朝 +z 与 −z 两面，挂在 y 高处（中心）。 */
+export function plateSign(g: KitGeo, e: Env, side: -1 | 1, s: number, y: number, r: Rect, size: PlateSize = DOOR_PLATE): void {
+  const xw = side * HW, x0 = xw - side * 0.04, x1 = xw - side * (0.04 + size.len);
   const [xa, xb] = side < 0 ? [x0, x1] : [x1, x0];
-  const z = e.z(s);
-  g.box([(xa + xb) / 2, y, z], [Math.abs(xb - xa), 0.12, 0.025], SCHOOL.doorFrame, { faces: '+y-y' });
-  g.box([side < 0 ? xa - 0.02 : xb + 0.02, y, z], [0.04, 0.04, 0.02], PAL.steel);
+  const z = e.z(s), hh = size.h / 2;
+  g.box([(xa + xb) / 2, y, z], [Math.abs(xb - xa), size.h, 0.025], SCHOOL.doorFrame, { faces: '+y-y' });
+  g.box([side < 0 ? xa - 0.02 : xb + 0.02, y, z], [0.04, Math.max(0.04, size.h * 0.4), 0.02], PAL.steel);
   const zf = z + 0.013, zr = z - 0.013;
-  g.quad([xa, y - 0.06, zf], [xb, y - 0.06, zf], [xb, y + 0.06, zf], [xa, y + 0.06, zf], 0xffffff, [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]);
-  g.quad([xb, y - 0.06, zr], [xa, y - 0.06, zr], [xa, y + 0.06, zr], [xb, y + 0.06, zr], 0xffffff, [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]);
+  g.withSteady(size.steady ? 1 : 0, () => {
+    g.quad([xa, y - hh, zf], [xb, y - hh, zf], [xb, y + hh, zf], [xa, y + hh, zf], 0xffffff, [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]);
+    g.quad([xb, y - hh, zr], [xa, y - hh, zr], [xa, y + hh, zr], [xb, y + hh, zr], 0xffffff, [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]);
+  });
 }
 
 /** 贴在墙面上的纸（值日表、告示、海报）：一张四边形，比墙凸出 6 mm。 */
@@ -520,7 +542,7 @@ export function hydrantBox(g: KitGeo, e: Env, side: -1 | 1, s: number): void {
   g.box([x - side * 0.022, 1.02, z], [0.004, 0.6, 0.5], 0x50606a, { faces: side < 0 ? '+x' : '-x' });
 }
 
-/** 数据里的门牌（kind doorPlate）：挂在对应一侧墙上、垂直于墙。 */
+/** 数据里的门牌（kind doorPlate）：挂在对应一侧墙上、垂直于墙，按 DATA_PLATE 放大、自发光（U6）。 */
 export function dataPlates(g: KitGeo, e: Env): void {
   for (const su of e.surfaces) {
     if (su.kind !== 'doorPlate' || (su.side !== 'L' && su.side !== 'R')) continue;
@@ -528,7 +550,7 @@ export function dataPlates(g: KitGeo, e: Env): void {
     const r = e.hw?.plateRect(su.text ?? '') ?? null;
     if (!r) continue;
     const y = su.y ? (su.y[0] + su.y[1]) / 2 : 2.0;
-    plateSign(g, e, su.side === 'L' ? -1 : 1, su.s0, y, r);
+    plateSign(g, e, su.side === 'L' ? -1 : 1, su.s0, y, r, DATA_PLATE);
   }
 }
 
