@@ -172,6 +172,11 @@ export class World implements ViewSystem {
   private preview: { s: number; x: number; seg: CompiledSegment; set: SetEntry | null; t: number | null } | null = null;
   // 每帧用到的缓存（运行时不分配）
   private standFlat: Slot[] = [];
+  /**
+   * 跑段下标 → 紧接在它所在的连续跑段链之后的站立段（没有则不在表里）。链的末尾接站立段时（4-2 → 4-3、5-7 → 5-8），
+   * 前方不画站立段之后的跑段（静场之后的另一个场景：5-7 末尾曾经看见 5-11 走廊的黑盒子），改画站立段自己的 chunk。
+   */
+  private standAfter = new Map<number, { lastRun: number; stand: number }>();
   private setList: SetEntry[] = [];
   private readonly rangeTmp: [number, number] = [0, 0];
   private boardNow = 0;
@@ -288,6 +293,13 @@ export class World implements ViewSystem {
     }
     this.slots.sort((a, b) => a.s0 - b.s0);
     this.standFlat = Array.from(this.standSlots.values()).flat();
+    this.standAfter.clear();
+    for (let i = 0; i < segs.length; i++) {
+      if ((segs[i] as CompiledSegment).kind !== 'run') continue;
+      let j = i;
+      while ((segs[j + 1] as CompiledSegment | undefined)?.kind === 'run') j++;
+      if ((segs[j + 1] as CompiledSegment | undefined)?.kind === 'stand') this.standAfter.set(i, { lastRun: j, stand: j + 1 });
+    }
     this.stats.pools = pools.size;
     for (const l of this.slots) this.lamps.addLamps(`slot:${l.s0.toFixed(3)}`, l.lamps);
   }
@@ -438,7 +450,7 @@ export class World implements ViewSystem {
     for (const sl of [...this.slots, ...Array.from(this.standSlots.values()).flat()]) this.root.remove(sl.group);
     for (const g of this.geoms) g.dispose();
     this.geoms.clear();
-    this.slots = []; this.standSlots.clear(); this.standFlat = [];
+    this.slots = []; this.standSlots.clear(); this.standFlat = []; this.standAfter.clear();
     Object.assign(this.stats, { slots: 0, generic: 0, special: 0, pools: 0, maxSlotTris: 0, maxSlotCalls: 0 });
   }
 
@@ -670,6 +682,14 @@ export class World implements ViewSystem {
       const c = this.slotAt(list, s);
       visibleFrom = Math.max(0, c - 1);
       visibleTo = Math.min(list.length - 1, c + this.ctx.quality.chunksAhead - 1);
+      const after = list === this.slots && !pv ? this.standAfter.get(next.segIndex) : undefined;
+      if (after) {
+        // 连续跑段链之后是站立段：前方换成站立段的 chunk（从站立段起点起；它的第一个 chunk 在起点之后、与跑段不重叠）
+        const ahead = (list[visibleTo] as Slot).s1;
+        while (visibleTo >= visibleFrom && (list[visibleTo] as Slot).seg.index > after.lastRun) visibleTo--;
+        const st = this.chapter?.segments[after.stand];
+        if (st) for (const sl of this.standSlots.get(after.stand) ?? []) if (sl.s0 >= st.s0 - 1e-6 && sl.s0 < ahead) sl.group.visible = true;
+      }
       for (let i = visibleFrom; i <= visibleTo; i++) (list[i] as Slot).group.visible = true;
     }
     for (const rb of this.runBoards) rb.board.mesh.visible = !stillMode && !pv && Math.abs(rb.seg - next.segIndex) <= 1;

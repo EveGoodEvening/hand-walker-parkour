@@ -351,3 +351,42 @@ describe('ChunkStreamer：静场黑板与站立段', () => {
     expect(vis.every((n) => n.startsWith('chunk:t1'))).toBe(true);
   });
 });
+
+describe('跑段链之后接站立段（lead 集成 2026-10）', () => {
+  // 5-7（跑道）→ 5-8（站立）→ 静场 → 5-11（夜里的走廊）：5-7 末尾曾经在前方看见 5-11 走廊的黑盒子。
+  const chapterWith = (stand: boolean) => ({
+    id: 'test', title: '测试', name: '测试', seed: 9, card: ['c1.card'], outro: { lines: [] }, notes: [], requiredBeats: [],
+    segments: [
+      { id: 'r1', kind: 'run', kit: 'corridor', variant: 'morning', atmosphere: 'morning', surface: 'terrazzo', beats: 40, stride: 1, cadence: 4.8, follower: { mode: 'hidden' } },
+      ...(stand ? [{ id: 't1', kind: 'stand', kit: 'corridor', variant: 'morning', script: 'seven', atmosphere: 'morning', duration: 10, follower: { mode: 'absent' }, events: [] }] : []),
+      { id: 's1', kind: 'still', set: 'deskFeet', variant: 'teacher', atmosphere: 'morning', duration: 6, follower: { mode: 'hidden' }, events: [] },
+      { id: 'r2', kind: 'run', kit: 'classroom', variant: 'morning', atmosphere: 'morning', surface: 'terrazzo', beats: 40, stride: 1, cadence: 4.8, follower: { mode: 'hidden' } },
+    ],
+  } as unknown as ChapterDef);
+  async function visibleNear(stand: boolean) {
+    const ctx = fakeCtx('low');
+    const ch = compile(chapterWith(stand));
+    (ctx.surfaces as unknown as { load(c: CompiledChapter): void }).load(ch);
+    const w = new World();
+    w.init(ctx);
+    await w.loadChapter(ch);
+    const r1 = ch.segments[0]!;
+    const sn = snap({ s: r1.s1 - 3, t: 8, segIndex: 0, segKind: 'run' });
+    w.frame(sn, sn, 1, 1 / 60);
+    const vis = w.root.children.filter((c) => c.name.startsWith('chunk:') && c.visible).map((c) => c.name);
+    return { ch, vis };
+  }
+  it('前方画站立段自己的 chunk（从站立段起点起），不画静场之后的跑段', async () => {
+    const { ch, vis } = await visibleNear(true);
+    const t1 = ch.segments[1]!;
+    expect(vis.some((n) => n.startsWith('chunk:r2'))).toBe(false);
+    const standVis = vis.filter((n) => n.startsWith('chunk:t1'));
+    expect(standVis.length).toBeGreaterThan(0);
+    for (const n of standVis) expect(Number(n.split(':')[2])).toBeGreaterThanOrEqual(t1.s0 - 0.05);
+    expect(vis.some((n) => n.startsWith('chunk:r1'))).toBe(true);
+  });
+  it('对照：没有站立段时照旧（静场之后的跑段在前方照常预先可见）', async () => {
+    const { vis } = await visibleNear(false);
+    expect(vis.some((n) => n.startsWith('chunk:r2'))).toBe(true);
+  });
+});
