@@ -41,7 +41,7 @@ describe('attachUiSounds: while a screen awaits card input, keys make no menu so
 });
 
 describe('real UI + OutroScreen (ch4 outro, ↓ ↓ ↓): the card input is silent apart from the cloth, the menu afterwards is not', () => {
-  it('before the hint: menu sounds; while waiting: no move / confirm for any key; after the third ↓: move / confirm again', async () => {
+  it('before the hint (no menu yet) and while waiting: no move / confirm for any key; after the third ↓: move / confirm again', async () => {
     vi.useFakeTimers({ toFake: [...FAKE.toFake] });
     const { ui } = await mountUI();
     const played: string[] = [];
@@ -61,8 +61,14 @@ describe('real UI + OutroScreen (ch4 outro, ↓ ↓ ↓): the card input is sile
       const press = (k: string, code = k) => { window.dispatchEvent(key(k, code)); vi.advanceTimersByTime(60); };
       const hint = document.querySelector('[data-screen="outro"] .hint') as HTMLElement;
       const hintAt = parseFloat(hint.style.animationDelay);
-      vi.advanceTimersByTime(hintAt * 1000 + 10);
+      // B3 r2：卡一出来就不是菜单（提示之前卡上没有按钮，方向键、回车什么也不做）。以前提示之前的方向键响「移动」
       expect(awaits).toEqual([true]);
+      expect(document.querySelectorAll('[data-screen="outro"] button').length).toBe(0);
+      for (const [k, code] of [['ArrowUp', 'ArrowUp'], ['ArrowRight', 'ArrowRight'], ['Enter', 'Enter'], ['ArrowDown', 'ArrowDown']] as const) press(k, code);
+      expect(played).toEqual([]);
+      expect(cloth).toBe(0);                                                      // 提示之前的 ↓ 也不算床单上的一下
+      vi.advanceTimersByTime(hintAt * 1000 + 10);
+      expect(awaits).toEqual([true]);                                            // 等输入开始时不再重复发
       for (const [k, code] of [['ArrowUp', 'ArrowUp'], ['Enter', 'Enter'], ['ArrowLeft', 'ArrowLeft'], [' ', 'Space'], ['ArrowRight', 'ArrowRight']] as const) press(k, code);
       expect(played).toEqual([]);                                                 // 以前：move, confirm, move, confirm, move
       for (let i = 0; i < 3; i++) press('ArrowDown');
@@ -79,7 +85,7 @@ describe('real UI + OutroScreen (ch4 outro, ↓ ↓ ↓): the card input is sile
     }
   });
 
-  it('leaving the outro while it waits (e.g. to the title) clears the await flag', async () => {
+  it('leaving the outro while it waits or before the hint (e.g. to the title) clears the await flag; a card without input never sets it', async () => {
     vi.useFakeTimers({ toFake: [...FAKE.toFake] });
     const { ui } = await mountUI();
     const awaits: boolean[] = [];
@@ -92,6 +98,19 @@ describe('real UI + OutroScreen (ch4 outro, ↓ ↓ ↓): the card input is sile
       expect(awaits).toEqual([true]);
       ui.show('title');
       expect(awaits).toEqual([true, false]);
+      // 提示之前就离开（B3 r2：卡一出来就发了 true）：同样收回
+      ui.show('outro', { chapter: 'ch4', stats: { timeMs: 1000, falls: 0, stumbles: 0, crashes: 0, lookBacks: 0, notes: [] }, next: 'ch5', lines, notes: null });
+      vi.advanceTimersByTime(500);
+      expect(awaits).toEqual([true, false, true]);
+      ui.show('title');
+      expect(awaits).toEqual([true, false, true, false]);
+      vi.advanceTimersByTime(10000);                                             // 已经清掉的计时器不会再发
+      expect(awaits).toEqual([true, false, true, false]);
+      // 不需要输入的结尾卡（第一章）：一直是菜单，不发
+      ui.show('outro', { chapter: 'ch1', stats: { timeMs: 1000, falls: 0, stumbles: 0, crashes: 0, lookBacks: 0, notes: [] }, next: 'ch2', lines: ['一。'], notes: null });
+      vi.advanceTimersByTime(5000);
+      ui.show('title');
+      expect(awaits).toEqual([true, false, true, false]);
     } finally { window.removeEventListener(OUTRO_AWAIT_EVENT, onAwait); }
   });
 });

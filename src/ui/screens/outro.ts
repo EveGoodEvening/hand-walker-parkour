@@ -5,6 +5,7 @@
 // 统计出现 7 s 后自动进入演职卡。
 // 结尾卡期间模拟不推进，这里用真实时间计时。
 // 等输入的开始和结束在 window 上发 OUTRO_AWAIT_EVENT（修复轮 B3）：这段时间里任何键都是结尾卡的输入，声音包不发菜单音。
+// 可交互的卡从一开始就发（B3 r2）：提示出来之前卡上还没有菜单，方向键、回车什么也不做，也就不该响「移动」「确认」。
 import type { Device } from '../../core/types';
 import { button, h } from '../dom';
 import { hintText, STR } from '../strings';
@@ -42,6 +43,8 @@ export class OutroScreen {
   private waiting: { step: OutroInputStep; taps: number; need: number; resolve: () => void } | null = null;
   private card: HTMLDivElement | null = null;
   private hintEl: HTMLDivElement | null = null;
+  /** 已经在 window 上发了「等输入」（true），还没有收回。 */
+  private quiet = false;
   /** 本卡的时间表（秒，从 build 起算；测试用）：统计出现、演职卡。 */
   timing: { statsAt: number; creditsAt: number | null } = { statsAt: 0, creditsAt: null };
   constructor(private el: HTMLElement, private a: OutroActions) {}
@@ -51,7 +54,15 @@ export class OutroScreen {
   dispose(): void {
     for (const t of this.timers) clearTimeout(t);
     this.timers = [];
-    if (this.waiting) { this.waiting = null; announceAwait(false); }
+    this.waiting = null;
+    this.setQuiet(false);
+  }
+
+  /** 卡上的按键现在不是菜单操作（可交互的卡：从出现到输入完成）。只在变化时发事件。 */
+  private setQuiet(on: boolean): void {
+    if (on === this.quiet) return;
+    this.quiet = on;
+    announceAwait(on);
   }
 
   private later(sec: number, fn: () => void): void { this.timers.push(setTimeout(fn, Math.max(0, sec * 1000))); }
@@ -97,18 +108,18 @@ export class OutroScreen {
     hint.style.animationDelay = `${hintAt.toFixed(2)}s`;
     this.hintEl = hint;
     const t0 = Date.now();
+    this.setQuiet(true);                       // 提示出来之前也没有菜单：键不响
     const done = () => {
       if (!this.waiting) return;
       if (this.waiting.taps === 0) this.a.input?.(step.id, 0);
       this.waiting = null;
-      announceAwait(false);
+      this.setQuiet(false);
       hint.classList.add('done');
       post.forEach((l, i) => addLine(l, 0.4 + i * gap));
       finish(0.4, post.length, (Date.now() - t0) / 1000);
     };
     this.later(hintAt, () => {
       this.waiting = { step, taps: 0, need: step.input.mode === 'taps3' ? 3 : 1, resolve: done };
-      announceAwait(true);
       this.later(Math.max(0.5, step.input.timeout), done);
     });
   }

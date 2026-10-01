@@ -4,6 +4,7 @@
 // 键盘在 capture 阶段监听：界面（UI.ts）的 keydown 挂在 window 的冒泡阶段，这里总是先于它看到同一次按键。
 // 修复轮 B3：第四章结尾卡等 ↓ ↓ ↓ 时，界面把每一次按键都当作结尾卡的输入（ui/screens/outro.ts 在 window 上发 'hw-ui-await'，
 // detail = true / false）。这段时间里方向键、回车、空格都不发「移动」「确认」（以前 ↓ 以外的键照样响）；↓ 只响床单声。
+// B3 r2：可交互的卡从出现起就发 true（提示出来之前卡上没有按钮），到输入完成才收回。
 
 /** 一次按键可能被当前界面当作别的输入用掉时的判断（U3）。 */
 export interface UiSoundHooks {
