@@ -31,3 +31,4 @@
 - （U4）文字对比度的量法：同一状态拍两张（第二张 `color: transparent !important`，阴影、衬底保留），两张图亮度差最大的那些像素就是字形中心，比较它们在两张图里的亮度（字形对它背后）。test 模式是确定性的，分两项截图也能逐像素对齐；章名有 2 s 的淡出过渡，wait 要 ≥ 2.5 s。
 - （U4）主角的屏幕包围框：`root = scene.getObjectByName('player')`，取它的 SkinnedMesh，`mesh.getVertexPosition(i, v)` 已经带蒙皮（局部坐标），再 `applyMatrix4(mesh.matrixWorld).project(camera)`。读之前先 `__game.render()`，骨骼的 matrixWorld 才是这一帧的。
 - （U4）自动画质切档会同步重建 chunk（SwiftShader 下 150–270 ms）。AutoQuality 只做决定，Game 在下一个静场 / 站立段开头、重来、读章时才切；手选档位立即生效（在菜单里）。
+- （U4）等后台的重命令跑完，用 `until grep -q '^exit' <后台任务的输出文件>; do sleep 5; done`（命令末尾 `echo exit $?`）。不要用 `until ! pgrep -f '<计划文件路径>'`：等待命令自己的命令行里也有这个路径，pgrep 永远能匹配到它自己，循环不会结束。
