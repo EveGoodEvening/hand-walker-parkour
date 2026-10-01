@@ -1,1 +1,1064 @@
-[]
+[
+ {
+  "out": "shots/visual/WP3/kit-classroom-morning-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"classroom\", \"variant\": \"morning\", \"atmosphere\": \"morning\", \"beat\": 8})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-classroom-morning-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"classroom\", \"variant\": \"morning\", \"atmosphere\": \"morning\", \"beat\": 8})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-classroom-night-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"classroom\", \"variant\": \"night\", \"atmosphere\": \"nightIndoor\", \"beat\": 8})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-classroom-night-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"classroom\", \"variant\": \"night\", \"atmosphere\": \"nightIndoor\", \"beat\": 8})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-morning-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"morning\", \"atmosphere\": \"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-morning-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"morning\", \"atmosphere\": \"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-wet-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"wet\", \"atmosphere\": \"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-wet-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"wet\", \"atmosphere\": \"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-mirrorEnd-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"mirrorEnd\", \"atmosphere\": \"morning\", \"beats\": 30, \"beat\": 19, \"surfaces\": [{\"id\": \"endMirror\", \"kind\": \"endMirror\", \"side\": \"end\", \"from\": 30, \"to\": 30, \"y\": [0.15, 1.9], \"chipped\": false, \"backdrop\": \"darkRoom\"}]})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-mirrorEnd-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"mirrorEnd\", \"atmosphere\": \"morning\", \"beats\": 30, \"beat\": 19, \"surfaces\": [{\"id\": \"endMirror\", \"kind\": \"endMirror\", \"side\": \"end\", \"from\": 30, \"to\": 30, \"y\": [0.15, 1.9], \"chipped\": false, \"backdrop\": \"darkRoom\"}]})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-labNorth-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"labNorth\", \"atmosphere\": \"labNorth\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-labNorth-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"labNorth\", \"atmosphere\": \"labNorth\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-night-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"night\", \"atmosphere\": \"nightIndoor\", \"lights\": {\"op\": \"flicker\", \"from\": 0, \"to\": 96, \"every\": 3}})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-night-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"night\", \"atmosphere\": \"nightIndoor\", \"lights\": {\"op\": \"flicker\", \"from\": 0, \"to\": 96, \"every\": 3}})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-recess-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"recess\", \"atmosphere\": \"overcast\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-recess-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"recess\", \"atmosphere\": \"overcast\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-void-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"void\", \"atmosphere\": \"voidDark\", \"stride\": 1.1, \"rings\": [[7.5, 0, 0.9], [8.2, 0, 0.8], [12, 0, 0.9], [12.6, 0, 0.7]], \"surfaces\": [{\"id\": \"plate7\", \"kind\": \"doorPlate\", \"side\": \"L\", \"from\": 14, \"to\": 14, \"y\": [1.9, 2.1], \"text\": \"高二（7）班\"}]})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-void-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"void\", \"atmosphere\": \"voidDark\", \"stride\": 1.1, \"rings\": [[7.5, 0, 0.9], [8.2, 0, 0.8], [12, 0, 0.9], [12.6, 0, 0.7]], \"surfaces\": [{\"id\": \"plate7\", \"kind\": \"doorPlate\", \"side\": \"L\", \"from\": 14, \"to\": 14, \"y\": [1.9, 2.1], \"text\": \"高二（7）班\"}]})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-washroom-morning-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"washroom\", \"variant\": \"morning\", \"atmosphere\": \"morning\", \"surfaces\": [{\"id\": \"wcMirror\", \"kind\": \"mirror\", \"side\": \"L\", \"from\": 4, \"to\": 60, \"y\": [0.25, 1.6], \"backdrop\": \"darkRoom\"}]})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-washroom-morning-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"washroom\", \"variant\": \"morning\", \"atmosphere\": \"morning\", \"surfaces\": [{\"id\": \"wcMirror\", \"kind\": \"mirror\", \"side\": \"L\", \"from\": 4, \"to\": 60, \"y\": [0.25, 1.6], \"backdrop\": \"darkRoom\"}]})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-washroom-overcast-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"washroom\", \"variant\": \"morning\", \"atmosphere\": \"overcast\", \"surfaces\": [{\"id\": \"wcMirror\", \"kind\": \"mirror\", \"side\": \"L\", \"from\": 4, \"to\": 60, \"y\": [0.25, 1.6], \"backdrop\": \"darkRoom\"}]})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-stairs-dayDown-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"stairs\", \"variant\": \"dayDown\", \"atmosphere\": \"noon\", \"stairs\": {\"dir\": \"down\", \"risePerBeat\": 0.15}})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-stairs-dayDown-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"stairs\", \"variant\": \"dayDown\", \"atmosphere\": \"noon\", \"stairs\": {\"dir\": \"down\", \"risePerBeat\": 0.15}})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-stairs-nightDown-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"stairs\", \"variant\": \"nightDown\", \"atmosphere\": \"nightIndoor\", \"stairs\": {\"dir\": \"down\", \"risePerBeat\": 0.15}})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-stairs-nightDown-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"stairs\", \"variant\": \"nightDown\", \"atmosphere\": \"nightIndoor\", \"stairs\": {\"dir\": \"down\", \"risePerBeat\": 0.15}})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-stairs-stairwellUp-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"stairs\", \"variant\": \"stairwellUp\", \"atmosphere\": \"nightIndoor\", \"stairs\": {\"dir\": \"up\", \"risePerBeat\": 0.15}, \"lights\": {\"op\": \"sound\", \"from\": 0, \"to\": 96}, \"soundAt\": 6})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-stairs-stairwellUp-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"stairs\", \"variant\": \"stairwellUp\", \"atmosphere\": \"nightIndoor\", \"stairs\": {\"dir\": \"up\", \"risePerBeat\": 0.15}, \"lights\": {\"op\": \"sound\", \"from\": 0, \"to\": 96}, \"soundAt\": 6})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-stairs-dawnDown-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"stairs\", \"variant\": \"dawnDown\", \"atmosphere\": \"dawn\", \"stairs\": {\"dir\": \"down\", \"risePerBeat\": 0.15}, \"lights\": {\"op\": \"sound\", \"from\": 0, \"to\": 96}, \"soundAt\": 6})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-stairs-dawnDown-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"stairs\", \"variant\": \"dawnDown\", \"atmosphere\": \"dawn\", \"stairs\": {\"dir\": \"down\", \"risePerBeat\": 0.15}, \"lights\": {\"op\": \"sound\", \"from\": 0, \"to\": 96}, \"soundAt\": 6})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-canteen-forest-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"canteen\", \"variant\": \"forest\", \"atmosphere\": \"noon\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-canteen-forest-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"canteen\", \"variant\": \"forest\", \"atmosphere\": \"noon\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-canteen-tray-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"canteen\", \"variant\": \"tray\", \"atmosphere\": \"noon\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-canteen-tray-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"canteen\", \"variant\": \"tray\", \"atmosphere\": \"noon\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-canteen-windowWall-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"canteen\", \"variant\": \"windowWall\", \"atmosphere\": \"noon\", \"surfaces\": [{\"id\": \"glassWall\", \"kind\": \"window\", \"side\": \"L\", \"from\": 14, \"to\": 44, \"y\": [0.8, 3.2], \"backdrop\": \"playground\"}]})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-canteen-windowWall-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"canteen\", \"variant\": \"windowWall\", \"atmosphere\": \"noon\", \"surfaces\": [{\"id\": \"glassWall\", \"kind\": \"window\", \"side\": \"L\", \"from\": 14, \"to\": 44, \"y\": [0.8, 3.2], \"backdrop\": \"playground\"}]})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-labRoom-default-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"labRoom\", \"variant\": \"default\", \"atmosphere\": \"labNorth\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-labRoom-default-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"labRoom\", \"variant\": \"default\", \"atmosphere\": \"labNorth\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-deskFeet-teacher-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\": \"deskFeet\", \"variant\": \"teacher\", \"t\": 3.4, \"atmosphere\": \"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-deskFeet-teacher-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\": \"deskFeet\", \"variant\": \"teacher\", \"t\": 3.4, \"atmosphere\": \"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-deskFeet-math-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\": \"deskFeet\", \"variant\": \"math\", \"t\": 1, \"atmosphere\": \"overcast\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-deskFeet-math-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\": \"deskFeet\", \"variant\": \"math\", \"t\": 1, \"atmosphere\": \"overcast\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-counter-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\": \"counter\", \"t\": 2.9, \"atmosphere\": \"noon\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-counter-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\": \"counter\", \"t\": 2.9, \"atmosphere\": \"noon\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-canteenWindow-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\": \"canteenWindow\", \"t\": 8.5, \"atmosphere\": \"noon\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-canteenWindow-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\": \"canteenWindow\", \"t\": 8.5, \"atmosphere\": \"noon\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-labBoard-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\": \"labBoard\", \"atmosphere\": \"labNorth\"})"
+   },
+   {
+    "eval": "__game.ext.wp3BoardText('labBoard','你为什么不站起来？',true)"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-labBoard-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\": \"labBoard\", \"atmosphere\": \"labNorth\"})"
+   },
+   {
+    "eval": "__game.ext.wp3BoardText('labBoard','你为什么不站起来？',true)"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/play-1-1-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-1&beat=2",
+  "ops": [
+   {
+    "steps": 60
+   },
+   {
+    "eval": "__game.ext.wp3Mem()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/play-1-1-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-1&beat=2",
+  "ops": [
+   {
+    "steps": 60
+   },
+   {
+    "eval": "__game.ext.wp3Mem()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/play-1-2-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2&beat=36",
+  "ops": [
+   {
+    "steps": 120
+   },
+   {
+    "eval": "__game.ext.wp3Mem()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/play-1-2-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2&beat=36",
+  "ops": [
+   {
+    "steps": 120
+   },
+   {
+    "eval": "__game.ext.wp3Mem()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/play-1-3-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-3&beat=12",
+  "ops": [
+   {
+    "steps": 120
+   },
+   {
+    "eval": "__game.ext.wp3Mem()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/play-1-3-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-3&beat=12",
+  "ops": [
+   {
+    "steps": 120
+   },
+   {
+    "eval": "__game.ext.wp3Mem()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/play-1-4-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-4&beat=0",
+  "ops": [
+   {
+    "steps": 360
+   },
+   {
+    "eval": "__game.ext.wp3Mem()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/play-1-4-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-4&beat=0",
+  "ops": [
+   {
+    "steps": 360
+   },
+   {
+    "eval": "__game.ext.wp3Mem()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/play-1-5-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-5&beat=40",
+  "ops": [
+   {
+    "steps": 120
+   },
+   {
+    "eval": "__game.ext.wp3Mem()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/play-1-5-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-5&beat=40",
+  "ops": [
+   {
+    "steps": 120
+   },
+   {
+    "eval": "__game.ext.wp3Mem()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/play-1-6-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-6&beat=8",
+  "ops": [
+   {
+    "steps": 120
+   },
+   {
+    "eval": "__game.ext.wp3Mem()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/play-1-6-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-6&beat=8",
+  "ops": [
+   {
+    "steps": 120
+   },
+   {
+    "eval": "__game.ext.wp3Mem()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/lamp-on.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2&beat=58",
+  "ops": [
+   {
+    "steps": 40
+   },
+   {
+    "eval": "__game.ext.wp3Luma(0.3,0.45,0.7,0.8)"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/lamp-off.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2&beat=58",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Lights('out',0,176)"
+   },
+   {
+    "steps": 40
+   },
+   {
+    "eval": "__game.ext.wp3Luma(0.3,0.45,0.7,0.8)"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/lamp-dark-on.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2&beat=58",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Atmo('nightIndoor')"
+   },
+   {
+    "steps": 40
+   },
+   {
+    "eval": "__game.ext.wp3Atmo('nightIndoor')"
+   },
+   {
+    "eval": "__game.ext.wp3Luma(0.3,0.45,0.7,0.8)"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/lamp-dark-off.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2&beat=58",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Atmo('nightIndoor')"
+   },
+   {
+    "steps": 40
+   },
+   {
+    "eval": "(() => { const g = __game, x = g.ext; x.wp3Atmo('nightIndoor'); const on = x.wp3Luma(0.3,0.45,0.7,0.8); x.wp3Lights('out', 0, 176); g.step(40); x.wp3Atmo('nightIndoor'); const off = x.wp3Luma(0.3,0.45,0.7,0.8); const drop = (on.mean - off.mean) / on.mean; if (!(drop >= 0.3)) throw new Error('LampField: lights on/off differ only ' + drop.toFixed(3) + ' ' + JSON.stringify({ on, off })); return { on, off, drop: +drop.toFixed(3) }; })()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/chalk-dark-off.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2&beat=71",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Atmo('nightIndoor')"
+   },
+   {
+    "eval": "__game.ext.wp3Lights('out',0,176)"
+   },
+   {
+    "steps": 40
+   },
+   {
+    "eval": "__game.obstaclesAhead(8)"
+   },
+   {
+    "eval": "(() => { const x = __game.ext; x.wp3Atmo('nightIndoor'); x.wp3Chalk(null); const chalk = x.wp3Luma(0.18,0.5,0.46,0.72); x.wp3Chalk(0); const none = x.wp3Luma(0.18,0.5,0.46,0.72); x.wp3Chalk(null); if (!(chalk.p99 >= 0.35 && chalk.p99 >= none.p99 + 0.1)) throw new Error('chalk outline too dim ' + JSON.stringify({ chalk, none })); return { chalk, none }; })()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/chalk-dark-nochalk.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2&beat=71",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Atmo('nightIndoor')"
+   },
+   {
+    "eval": "__game.ext.wp3Lights('out',0,176)"
+   },
+   {
+    "steps": 40
+   },
+   {
+    "eval": "__game.ext.wp3Atmo('nightIndoor')"
+   },
+   {
+    "eval": "__game.ext.wp3Chalk(0)"
+   },
+   {
+    "eval": "__game.ext.wp3Luma(0.18,0.5,0.46,0.72)"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/mem-5min.png",
+  "q": "low",
+  "query": "ch=ch1",
+  "ops": [
+   {
+    "eval": "(async () => { const g = __game; g.render(); const m0 = g.ext.wp3Mem(); const samples = []; let restarts = 0; for (let i = 0; i < 60; i++) { g.step(600, { render: true }); if (g.screen() !== 'play') { restarts++; await g.start('ch1', { skipCards: true }); g.setAutopilot('perfect'); g.render(); } if (i % 10 === 9) { const m = g.ext.wp3Mem(); samples.push([g.getState().segment, m.geometries, m.textures]); } } const m1 = g.ext.wp3Mem(); const same = m0.geometries === m1.geometries && m0.textures === m1.textures; if (!same) throw new Error(\"memory grew over 36000 ticks: \" + JSON.stringify({ m0, m1, samples, restarts })); return { same, m0, m1, samples, restarts }; })()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/palette-corridor-morning-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"morning\", \"atmosphere\": \"morning\"})"
+   },
+   {
+    "steps": 2
+   },
+   {
+    "eval": "(() => { const x = __game.ext; const t = { s: 0.144, l: 0.435 }; const regions = { wainscotL: [0.05, 0.68, 0.075, 0.71], wainscotR: [0.86, 0.68, 0.89, 0.71], wallR: [0.93, 0.2, 0.97, 0.26] }; const out = {}; for (const [k, r] of Object.entries(regions)) out[k] = x.wp3Color(...r); const bad = []; for (const k of ['wainscotL', 'wainscotR']) { const c = out[k]; if (Math.abs(c.s - t.s) > 0.05 || Math.abs(c.l - t.l) > 0.1) bad.push(k + ' ' + c.hex + ' s' + c.s + ' l' + c.l); } if (Math.abs(out.wallR.l - 0.8) > 0.1 || Math.abs(out.wallR.s - 0.059) > 0.05) bad.push('wallR ' + out.wallR.hex + ' s' + out.wallR.s + ' l' + out.wallR.l); if (bad.length) throw new Error('palette check (#5F7F7A s0.144 l0.435 / #C9CFCF l0.80): ' + bad.join('; ')); return out; })()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-windowOpening-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"morning\", \"atmosphere\": \"morning\", \"beat\": 4, \"surfaces\": [{\"id\": \"win3f\", \"kind\": \"window\", \"side\": \"L\", \"from\": 12, \"to\": 24, \"y\": [1.0, 2.2], \"backdrop\": \"evening\"}]})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/kit-corridor-windowOpening-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\": \"corridor\", \"variant\": \"morning\", \"atmosphere\": \"morning\", \"beat\": 4, \"surfaces\": [{\"id\": \"win3f\", \"kind\": \"window\", \"side\": \"L\", \"from\": 12, \"to\": 24, \"y\": [1.0, 2.2], \"backdrop\": \"evening\"}]})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/ring-void-top-low.png",
+  "q": "low",
+  "size": "960x540",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\":\"corridor\",\"variant\":\"void\",\"atmosphere\":\"voidDark\",\"stride\":1.1,\"rings\":[[7.5,0,0.9]],\"cam\":{\"pos\":[0,2.2,0.6],\"look\":[0,0,-1.8],\"fov\":60}})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/ring-void-top-high.png",
+  "q": "high",
+  "size": "960x540",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\":\"corridor\",\"variant\":\"void\",\"atmosphere\":\"voidDark\",\"stride\":1.1,\"rings\":[[7.5,0,0.9]],\"cam\":{\"pos\":[0,2.2,0.6],\"look\":[0,0,-1.8],\"fov\":60}})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/ring-night-top-high.png",
+  "q": "high",
+  "size": "960x540",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\":\"corridor\",\"variant\":\"night\",\"atmosphere\":\"nightIndoor\",\"lights\":{\"op\":\"out\",\"from\":0,\"to\":96},\"rings\":[[7.5,0.8,0.9]],\"cam\":{\"pos\":[0,2.2,0.6],\"look\":[0,0,-1.8],\"fov\":60}})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-deskFeet-teacher-t1.5-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\":\"deskFeet\",\"variant\":\"teacher\",\"t\":1.5,\"atmosphere\":\"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-deskFeet-teacher-t2.3-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\":\"deskFeet\",\"variant\":\"teacher\",\"t\":2.3,\"atmosphere\":\"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-deskFeet-teacher-t5.2-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\":\"deskFeet\",\"variant\":\"teacher\",\"t\":5.2,\"atmosphere\":\"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-deskFeet-teacher-t6.5-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\":\"deskFeet\",\"variant\":\"teacher\",\"t\":6.5,\"atmosphere\":\"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/palette-deskFeet-trousers-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\":\"deskFeet\",\"variant\":\"math\",\"t\":1,\"atmosphere\":\"overcast\"})"
+   },
+   {
+    "steps": 2
+   },
+   {
+    "eval": "(() => { const x = __game.ext; const t = { s: 0.32, l: 0.24 }; const regions = { near: [0.475, 0.47, 0.495, 0.53], right: [0.94, 0.47, 0.965, 0.53] }; const out = {}; const bad = []; for (const [k, r] of Object.entries(regions)) { const c = x.wp3Color(...r); out[k] = c; if (Math.abs(c.s - t.s) > 0.1 || Math.abs(c.l - t.l) > 0.08 || c.h < 0.55 || c.h > 0.66) bad.push(k + \" \" + c.hex + \" h\" + c.h + \" s\" + c.s + \" l\" + c.l); } if (bad.length) throw new Error(\"palette check trousers (#2A3A52 s0.32 l0.24): \" + bad.join(\"; \")); return out; })()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/palette-deskFeet-trousers-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\":\"deskFeet\",\"variant\":\"math\",\"t\":1,\"atmosphere\":\"overcast\"})"
+   },
+   {
+    "steps": 2
+   },
+   {
+    "eval": "(() => { const x = __game.ext; const t = { s: 0.32, l: 0.24 }; const regions = { near: [0.475, 0.47, 0.495, 0.53], right: [0.94, 0.47, 0.965, 0.53] }; const out = {}; const bad = []; for (const [k, r] of Object.entries(regions)) { const c = x.wp3Color(...r); out[k] = c; if (Math.abs(c.s - t.s) > 0.1 || Math.abs(c.l - t.l) > 0.08 || c.h < 0.55 || c.h > 0.66) bad.push(k + \" \" + c.hex + \" h\" + c.h + \" s\" + c.s + \" l\" + c.l); } if (bad.length) throw new Error(\"palette check trousers (#2A3A52 s0.32 l0.24): \" + bad.join(\"; \")); return out; })()"
+   }
+  ]
+ }
+]

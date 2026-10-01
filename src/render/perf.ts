@@ -1,4 +1,4 @@
-// src/render/perf.ts —— 性能统计与 `?debug=perf` 叠加层（DESIGN.md §8.8、§9.4）。CORE 写初版，之后归 WP3。
+// src/render/perf.ts —— 性能统计与 `?debug=perf` 叠加层（DESIGN.md §8.8、§9.4，WP3）。
 // renderer.info.autoReset = false，每帧 render 前手动 reset，render 后读 calls / triangles。
 import type * as THREE from 'three';
 import type { PerfStats } from '../core/contracts';
