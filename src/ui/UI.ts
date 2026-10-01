@@ -114,7 +114,10 @@ export class UI implements UIAPI {
   private skipping = false;
   /** atmosphere cue 改过的本段氛围（墨色模式按它判断）；换段时清掉。 */
   private atmo: { segment: string; id: AtmosphereId } | null = null;
-  private inkKey = '';
+  /** inkWanted 的缓存键（逐字段比较，每帧不拼字符串）。 */
+  private inkCh: string | null = null;
+  private inkSeg: string | null = null;
+  private inkOv: string | null = null;
   private inkOn = false;
   /** Game 的实际画质档位（setQualityTier；颗粒层按它开关，§9.4）。 */
   private tier: QualityTier | null = null;
@@ -477,8 +480,10 @@ export class UI implements UIAPI {
   private inkWanted(snap: SimSnapshot): boolean {
     if (this.current !== 'play') return false;
     const ov = this.atmo && this.atmo.segment === snap.segment ? this.atmo.id : null;
-    const key = `${snap.chapter}|${snap.segment}|${ov ?? ''}`;
-    if (key !== this.inkKey) { this.inkKey = key; this.inkOn = inkForSegment(snap.chapter, snap.segment, ov); }
+    if (snap.chapter !== this.inkCh || snap.segment !== this.inkSeg || ov !== this.inkOv) {
+      this.inkCh = snap.chapter; this.inkSeg = snap.segment; this.inkOv = ov;
+      this.inkOn = inkForSegment(snap.chapter, snap.segment, ov);
+    }
     return this.inkOn;
   }
 

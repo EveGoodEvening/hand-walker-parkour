@@ -33,20 +33,24 @@ export function paletteOf(hex: number): number { return ORIG.get(hex) ?? hex; }
 export function toneMode(id: AtmosphereId): AtmosphereId { return TONED_ATMOS.has(id) ? id : 'morning'; }
 
 const _c = new THREE.Color();
-const cache = new Map<string, Lin>();
+/** 补偿模式 → (hex | 户外位) → 反照率。键都是数字或已有的字符串，取色时不分配（§9.4 热路径不分配内存）。 */
+const cache = new Map<AtmosphereId, Map<number, Lin>>();
+const OUTDOOR_BIT = 1 << 24;
 /**
  * 衣服颜色（写进 Look 的十六进制）在某个补偿模式下的反照率（线性，可以 > 1）。
  * morning：与以前完全一样（setHex）。户外氛围：propAlbedo(色板原值, { atmo, lamp: 户外 0 / 室内缺省 0.9 })。
  */
 export function npcAlbedo(hex: number, mode: AtmosphereId, outdoor: boolean): Lin {
   const m = toneMode(mode);
-  const key = `${m}|${outdoor ? 1 : 0}|${hex}`;
-  const hit = cache.get(key);
+  let byHex = cache.get(m);
+  if (!byHex) { byHex = new Map(); cache.set(m, byHex); }
+  const key = (hex & 0xffffff) + (outdoor ? OUTDOOR_BIT : 0);
+  const hit = byHex.get(key);
   if (hit) return hit;
   let out: Lin;
   if (m === 'morning') { _c.setHex(hex); out = [_c.r, _c.g, _c.b]; }
   else out = propAlbedo(paletteOf(hex), outdoor ? { atmo: m, lamp: 0 } : { atmo: m });
-  cache.set(key, out);
+  byHex.set(key, out);
   return out;
 }
 

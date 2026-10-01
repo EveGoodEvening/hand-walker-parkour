@@ -32,7 +32,7 @@
 .hw-chname { position: absolute; left: calc(14px + var(--sal)); top: calc(12px + var(--sat)); font-size: 13px; letter-spacing: .15em; opacity: .4; transition: opacity 2s; white-space: nowrap; }
 .hw-chname.faded { opacity: .2; }
 .hw-pausebtn { position: absolute; right: calc(8px + var(--sar)); top: calc(4px + var(--sat)); width: 44px; height: 44px; padding: 0; border: 0; background: transparent; color: var(--chalk); opacity: .55; font: 18px/44px var(--sans); cursor: pointer; }
-.hw-hud.paused .hw-bottom, .hw-hud.paused .hw-notefl, .hw-hud.paused .hw-skipbtn { visibility: hidden; }
+.hw-hud.paused .hw-bottom, .hw-hud.paused .hw-notefl, .hw-hud.paused .hw-skipbtn, .hw-hud.paused .hw-count { visibility: hidden; }
 .hw-bottom { position: absolute; left: 0; right: 0; bottom: calc(var(--gut) + var(--sab)); display: flex; flex-direction: column; align-items: center; }
 .hw-subs { width: min(92vw, 36em); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; font-size: 18px; }
 .hw-line { box-sizing: border-box; max-width: 100%; padding: 0 .6em; border-radius: .9em; font-family: var(--serif); font-size: 18px; line-height: 1.5; text-align: center; color: rgba(223,230,234,.9);
@@ -58,9 +58,12 @@
 .hw-hint { height: 22px; line-height: 22px; margin-top: 6px; max-width: 92vw; font-size: 13px; color: #aeb9bf; letter-spacing: .08em; text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 8px rgba(13,18,22,.75); opacity: 0; transition: opacity .3s; white-space: nowrap; overflow: hidden; text-overflow: clip; }
 .hw-hint.on { opacity: 1; }
 .hw-hint .k { font-weight: 700; font-size: 1.15em; letter-spacing: .04em; }
-/* 横屏：提示离开栈，放到右下三分之一的空地上（让开情境按钮 / 「跳过」），垫半透明衬底；字幕仍留在原来的高度 */
+/* 教学提示第一次出现（Hud.FIRST_HINT_SEC）：放大一档、提亮，之后缩回；亮底墨色模式照旧用墨色 */
+.hw-hint { transition: opacity .3s, font-size .4s, color .4s; }
+.hw-hint.first { font-size: 16px; height: 26px; line-height: 26px; color: #e4eaed; }
+/* 横屏：提示离开栈，放到右下三分之一的空地上（让开情境按钮 / 「跳过」），垫半透明衬底。
+   字幕直接落到节拍器上面（最终 QA：以前留着提示原来的 28 px，追尾机位下字幕压在主角的头和胸口上，见 ui/lift.test.ts） */
 @media (min-aspect-ratio: 1/1) {
-  .hw-subs { margin-bottom: 28px; }
   .hw-hint { position: absolute; right: calc(3% + var(--sar)); bottom: 76px; margin: 0; padding: 0 10px; border-radius: 4px; background: rgba(13,18,22,.55); color: #c9d2d7; }
   .hw-hud.hw-lift .hw-hint { transform: translateY(calc(56vh - var(--gut) - var(--sab) - 26px)); }
 }
@@ -158,6 +161,8 @@
 .hw-title { right: 14%; top: 12%; font: var(--tsz)/1.15 var(--serif); gap: .4em; }
 .hw-sub { right: calc(14% + var(--tsz) * 1.4); top: 14%; font: clamp(14px, 1.6vh, 20px)/1.3 var(--serif); gap: .3em; color: #aab6bc; }
 .hw-title span, .hw-sub span { display: block; }
+/* 逐字竖排的标点（，。、）：横排字形在字格左下，竖排应在右上 */
+.hw-title span.vp, .hw-sub span.vp { transform: translate(.5em, -.55em); }
 .hw-title-menu { position: absolute; left: calc(9% + var(--sal)); top: 50%; transform: translateY(-50%); min-width: 8em; }
 .hw-title-menu button { text-align: left; }
 .hw-corner { position: absolute; left: calc(14px + var(--sal)); bottom: calc(10px + var(--sab)); font-size: 11px; color: #aab6bc; opacity: .8; white-space: nowrap; }

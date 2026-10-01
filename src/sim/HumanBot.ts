@@ -8,6 +8,7 @@
 //   · 不开口（「让一下」）；回头窗口里 70% 的概率在随机时刻回头。静场、站立段按提示在反应时间之后照做。
 // 评审 U2（以前的机器人照求解器的「最后一刻闪避」执行，再叠上 ±60 ms 的抖动就撞上，4-5 @144、5-3 @110 的超标是假阳性）：
 //   · 规划先按 0.25 m 的碰撞余量求解（人不会贴着障碍过），无解再退回求解器缺省的 0.05 m。
+//     竖直方向只留 0.05 m（最终 QA）：0.25 m 加在盒顶上会让伏低钻不过任何横档。只越过横档的撑跃加求解代价，人看见横档就伏低。
 //   · 换道：求解时加 laneLead 代价（Solver.ts），躲障碍的换道在接触前 ~ N(0.3, 0.1) s 完成，做不到时尽早（每次规划抽一次）。
 //   · 横档：提前 ~ N(0.3, 0.08) s 按下 ↓ 并一直按住，过了横档再松手（不再只按最短的 2 拍）；不早于上一次撑跃落地（空中按 ↓ 是速降）。
 //     相邻的横档合并成一次按住。腿自主抬起的那一下 ↓ 仍要等预警之后一个反应时间。
@@ -32,6 +33,13 @@ export const HUMAN = {
   reactMean: 0.25, reactSd: 0.06, jitterSd: 0.06, errorRate: 0.05, lateSec: 0.15, horizon: 45, lookChance: 0.7,
   /** 规划用的碰撞余量（米）：先按它求解，无解再退回求解器缺省的 0.05。 */
   margin: 0.25,
+  /**
+   * 竖直方向的余量（米，最终 QA 修 §10.4 的「细横档规划偏差」）：只取求解器缺省的 0.05。0.25 m 的余量加在盒顶上时，
+   * 伏低盒顶被抬到 0.425 m，高过所有横档的下沿，机器人只能撑跃细横档。
+   */
+  marginY: 0.05,
+  /** 只越过横档的撑跃加的求解代价：输入次数相同时伏低钻过去（人看见横档就伏低，不会去跳 0.44–0.50 m 的细杆）。 */
+  barJumpCost: 5,
   /** 躲障碍的换道提前量 ~ N(0.3, 0.1) s，夹在 [0.1, 0.6]（每次规划抽一次，交给求解器的 laneLead）。 */
   laneLeadMean: 0.3, laneLeadSd: 0.1,
   /** 横档：提前 ~ N(0.3, 0.08) s 按下 ↓，夹在 [0.15, 0.5]；过了横档后沿再多按住 0.1 m。 */
@@ -275,9 +283,9 @@ export class HumanBot {
     const segUse = this.notesFor(seg, s);
     const opts: SolveOptions = {
       start: { p: v.player(), pace: v.pace(), asked: v.ask().asked, parts: v.ask().parts, asksUsed: v.ask().used },
-      cadenceMul: v.cadenceMul(), noAsk: true, untilS: s + HUMAN.horizon, laneLead,
+      cadenceMul: v.cadenceMul(), noAsk: true, untilS: s + HUMAN.horizon, laneLead, barJumpCost: HUMAN.barJumpCost,
     };
-    const withMargin: SolveOptions = { ...opts, margin: HUMAN.margin };
+    const withMargin: SolveOptions = { ...opts, margin: HUMAN.margin, marginY: HUMAN.marginY };
     this.plan = this.solver.solve(segUse, withMargin) ?? this.solver.solve(segUse, opts);
     this.planSeg = seg.index;
     this.planUntil = s + HUMAN.horizon;

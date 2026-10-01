@@ -9,11 +9,18 @@ import { availableChapters, CHAPTER_ORDER, getChapter, nextChapterOf } from '../
 import { button, h } from '../dom';
 import { CHAPTER_NAMES, notesLine, STR } from '../strings';
 
+/** 竖排时要挪到字格右上角的标点。 */
+export const VERT_PUNCT: ReadonlySet<string> = new Set(['，', '。', '、']);
+
 export interface TitleActions { onContinue(): void; onStart(): void; onChapters(): void; onSettings(): void; onNotes(): void }
 
 export function buildTitle(el: HTMLElement, save: SaveAPI, a: TitleActions): void {
   el.replaceChildren();
-  const vert = (cls: string, text: string) => { const box = h('div', cls, undefined, el); for (const ch of Array.from(text)) h('span', '', ch, box); };
+  // 逐字堆叠时，横排字形里的逗号、句号在字格左下角；竖排应在右上角。标点单独标 .vp，由 styles.css 挪到右上（不依赖竖排字形）
+  const vert = (cls: string, text: string) => {
+    const box = h('div', cls, undefined, el);
+    for (const ch of Array.from(text)) h('span', VERT_PUNCT.has(ch) ? 'vp' : '', ch, box);
+  };
   vert('hw-title', STR.title);
   vert('hw-sub', STR.subtitle);
   const menu = h('div', 'hw-menu hw-title-menu', undefined, el);

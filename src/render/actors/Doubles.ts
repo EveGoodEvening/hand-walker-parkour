@@ -81,6 +81,12 @@ interface Rec {
   third: { g: ThirdHandGesture; t0: number; hold: number; side: number } | null;
   clip: PoseClipId | null; clipT0: number; clipBlend: number;
   speedFactor: number; stopAt: number | null; stopped: boolean;
+  /**
+   * offS 是模拟时间 / 里程的纯函数（最终 QA：以前按渲染间隔积分，test 模式只画最后一帧时，doubleMod 那一帧把整段间隔
+   * 都乘上新的倍率，替身瞬移出窗）：offS = offBase + 倍率项 × (此刻 − 起点)。起点 spdT0 / spdS0 是当前倍率生效时的
+   * 模拟时间与玩家里程，offBase 是那一刻的 offS。
+   */
+  offBase: number; spdT0: number; spdS0: number;
   offS: number; worldS: number; worldX: number; worldXv: number; lane: number; walk: number;
   sAhead: number; sAheadInit: boolean;
   alpha: number; fadeIn: number; fadeOut: { t0: number; dur: number } | null; until: number;
@@ -392,6 +398,7 @@ export class DoubleSystem implements ViewSystem {
       third: spec.thirdHand ? { g: spec.thirdHand.gesture, t0: t + spec.thirdHand.at, hold: spec.thirdHand.hold, side: 0 } : null,
       clip: null, clipT0: t, clipBlend: 0,
       speedFactor: 1, stopAt: null, stopped: false,
+      offBase: 0, spdT0: t, spdS0: snap.player.s,
       offS: 0, worldS: snap.player.s + (spec.anchor?.sAhead ?? 8), worldX: (spec.anchor?.lane ?? 0) * 1.1, worldXv: 0, lane: spec.anchor?.lane ?? 0, walk: 0,
       sAhead: 0, sAheadInit: false,
       alpha: 0, fadeIn: kind === 'memory' ? MEMORY_FADE_IN : kind === 'world' ? WORLD_FADE_IN : SURFACE_FADE_IN, fadeOut: null, until: spec.ttl && spec.ttl > 0 ? t + spec.ttl : Infinity,
@@ -404,8 +411,8 @@ export class DoubleSystem implements ViewSystem {
     return rec;
   }
 
-  /** doubleMod cue。 */
-  modify(target: string, mod: DoubleMod, t: number): void {
+  /** doubleMod cue。s = cue 到达时玩家的里程（速度倍率从这一刻、这个位置起算）。 */
+  modify(target: string, mod: DoubleMod, t: number, s?: number): void {
     const r = this.slots.find((s) => s.rec?.id === target)?.rec;
     if (!r) return;
     if (mod.delay !== undefined) r.delay = mod.delay;
@@ -417,7 +424,15 @@ export class DoubleSystem implements ViewSystem {
       if (r.third.g === 'forehead' && (r.kind === 'end' || r.kind === 'side')) WP5.foreheadReach = true;
     }
     if (mod.clip) { r.clip = mod.clip; r.clipT0 = t; }
-    if (mod.speedFactor !== undefined) { r.speedFactor = mod.speedFactor; if (r.stopped) { r.stopped = false; r.stopAt = null; } }
+    if (mod.speedFactor !== undefined) {
+      // 先把旧倍率积到这一刻，之后按新倍率从这里算
+      const sNow = s ?? r.spdS0;
+      if (r.kind === 'world') r.offBase = r.stopped ? r.offS : r.offBase + (r.spec.anchor?.speed ?? 0) * r.speedFactor * Math.max(0, t - r.spdT0);
+      else r.offBase += (r.speedFactor - 1) * (sNow - r.spdS0);
+      r.spdT0 = t; r.spdS0 = sNow;
+      r.speedFactor = mod.speedFactor;
+      if (r.stopped) { r.stopped = false; r.stopAt = null; }
+    }
     if (mod.stopAtDistance !== undefined) r.stopAt = mod.stopAtDistance;
   }
 
@@ -569,7 +584,7 @@ export class DoubleSystem implements ViewSystem {
         const target = this.aheadFor(xd, sNow, xNow);
         if (!r.sAheadInit) { r.sAhead = target; r.sAheadInit = true; }
         else r.sAhead += (target - r.sAhead) * (1 - Math.exp(-step / 0.5));
-        if (scripted) r.offS += (r.speedFactor - 1) * N.speed * step;
+        if (scripted) r.offS = r.offBase + (r.speedFactor - 1) * (sNow - r.spdS0);
         root[0] = v.planeX - v.sign * d;                  // 反射前的位置（走廊里）
         // 沿 s 限制在镜面范围内（离两端各 0.35 m）：玩家接近镜子远端时，替身停在镜子里，不会提前滑进实墙后面
         const sD = sNow + r.sAhead + r.offS, m = Math.min(0.35, (v.s1 - v.s0) / 2);
@@ -632,7 +647,7 @@ export class DoubleSystem implements ViewSystem {
         const an = r.spec.anchor ?? {};
         // 相对玩家的速度（负 = 迎面）；stopAtDistance 到了就在世界里停住
         if (!r.stopped) {
-          r.offS += (an.speed ?? 0) * r.speedFactor * step;
+          r.offS = r.offBase + (an.speed ?? 0) * r.speedFactor * Math.max(0, t - r.spdT0);
           r.worldS = sNow + (an.sAhead ?? 8) + r.offS;
           if (r.stopAt !== null && r.worldS - sNow <= r.stopAt) { r.stopped = true; r.worldS = sNow + r.stopAt; }
         } else r.offS = r.worldS - sNow - (an.sAhead ?? 8);

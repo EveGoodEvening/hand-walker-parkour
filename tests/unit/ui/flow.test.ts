@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 // tests/unit/ui/flow.test.ts —— 修复单元 U4 的界面部分：4-6 不借用失败卡文字、亮底墨色模式、结尾卡节奏、颗粒层按实际档位、
 // 跳过静场后清掉上一段的字幕与纸条、稳度低时节拍点轻颤、数数离开底部栈、提示的箭头加粗。
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AtmosphereId, ChapterId } from '../../../src/core/types';
 import { getChapter } from '../../../src/levels/chapters/index';
@@ -9,6 +11,7 @@ import type { EventBody } from '../../../src/levels/schema';
 import { DARK_ATMOSPHERES, INK_ATMOSPHERES, INK_CLASS, inkFor, inkForSegment } from '../../../src/ui/hud/ink';
 import { EYES_OPEN_SEC, segmentCut } from '../../../src/ui/hud/overlays';
 import { skippedOverlays } from '../../../src/ui/UI';
+import { FIRST_HINT_SEC } from '../../../src/ui/hud/Hud';
 import { metronome } from '../../../src/ui/hud/metronome';
 import { CREDITS_AFTER, FINAL_OUTRO, OUTRO_LINE_GAP } from '../../../src/ui/screens/outro';
 import { ev, follower, mountUI, snap } from './helpers';
@@ -195,6 +198,43 @@ describe('数数与提示的版面', () => {
     expect(n.textContent).toBe('二'); expect(g.textContent).toBe('一');
     expect(n.classList.contains('alt')).toBe(!a0);
     expect(g.classList.contains('alt')).toBe(!a0);
+  });
+  it('暂停时数数和残影也藏起来（它不在底部栈里，以前会从压暗的菜单后面透出来）', async () => {
+    const { ui } = await mountUI();
+    const style = document.createElement('style');
+    style.textContent = readFileSync(resolve(process.cwd(), 'src/ui/styles.css'), 'utf8');
+    document.head.appendChild(style);
+    try {
+      ui.show('play');
+      ui.cueCount({ type: 'count', from: 1, to: 4, ghostLag: 1 }, snap({ t: 0 }));
+      ui.frame(snap({ t: 0.3 }), 0);
+      const vis = () => getComputedStyle(ui.hud.countEl).visibility;
+      expect(vis()).not.toBe('hidden');
+      ui.show('pause');
+      expect(ui.hud.root.classList.contains('paused')).toBe(true);
+      expect(vis()).toBe('hidden');
+      // 对照：底部栈本来就藏
+      expect(getComputedStyle(ui.hud.bottom).visibility).toBe('hidden');
+      ui.show('play');
+      expect(vis()).not.toBe('hidden');
+    } finally { style.remove(); }
+  });
+  it('教学提示第一次出现的头 2 s 放大一档（.first），之后缩回；静场里的提示不放大', async () => {
+    const { ui } = await mountUI();
+    ui.show('play');
+    ui.cueHint({ type: 'hint', hint: 'jump' }, { snap: snap({ t: 2 }), segment: { events: [] } as never });
+    ui.frame(snap({ t: 2.1 }), 0);
+    expect(ui.hud.hintEl.classList.contains('on')).toBe(true);
+    expect(ui.hud.hintEl.classList.contains('first')).toBe(true);
+    ui.frame(snap({ t: 2 + FIRST_HINT_SEC + 0.05 }), 0);
+    expect(ui.hud.hintEl.classList.contains('on')).toBe(true);
+    expect(ui.hud.hintEl.classList.contains('first')).toBe(false);
+    // 静场里按提示等输入（每次都显示）：不放大
+    ui.onEvent(ev('segment', { id: '1-4', index: 3, kind: 'still' }), snap({ t: 10, segment: '1-4', segKind: 'still' }));
+    ui.onEvent(ev('prompt', { hint: 'hold', context: { look: false, ask: false } }), snap({ t: 11, segment: '1-4', segKind: 'still' }));
+    ui.frame(snap({ t: 11.1, segment: '1-4', segKind: 'still' }), 0);
+    expect(ui.hud.hintEl.classList.contains('on')).toBe(true);
+    expect(ui.hud.hintEl.classList.contains('first')).toBe(false);
   });
   it('提示的箭头单独一层（加粗）；文字不变', async () => {
     const { ui } = await mountUI();

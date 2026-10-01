@@ -292,7 +292,8 @@ export class Sim implements SimAPI {
    *   · 节拍：所有带 id 的事件照常记为已触发（必备节拍不丢）。
    *   · 模拟状态：follower、flip、leader 按顺序应用（终态与看完时相同）；noteGet 记进纸条（已有的不重复发 note）；
    *     hush 只把「看完时还剩下的」部分带进下一段。
-   *   · 状态类 cue：ambience、atmosphere、fog、rain、hud 各只发最后一个，crowd 每组只发最后一个，lights（除 flicker）按顺序全发。
+   *   · 状态类 cue：ambience、atmosphere、fog、rain 各只发最后一个；hud 按它管的状态分两组（显示 / 身后淡出）各发最后一个；
+   *     crowd 每组只发最后一个，lights（除 flicker）按顺序全发。
    *   · 其余（表现类 cue；一次性的模拟事件 twitch、drift、autoCrawl、slow、stop、cadence、end、beat）丢弃。
    */
   private skipState(rest: readonly StillFire[], end: number): void {
@@ -311,7 +312,9 @@ export class Sim implements SimAPI {
           if (left > 0) this.hushUntil = Math.max(this.hushUntil, this.t + left);
           break;
         }
-        case 'ambience': case 'atmosphere': case 'fog': case 'rain': case 'hud': key = b.type; break;
+        case 'ambience': case 'atmosphere': case 'fog': case 'rain': key = b.type; break;
+        // hud 的两组操作管两个互不相干的状态：show / hide / followerFadeInAhead 管空心点显不显示，followerFadeOutBehind 管身后的点淡出
+        case 'hud': key = b.op === 'followerFadeOutBehind' ? 'hud:behind' : 'hud:show'; break;
         case 'crowd': key = `crowd:${b.group}`; break;
         case 'lights': if (b.op !== 'flicker') key = `lights:${lights++}`; break;
         default: break;
@@ -609,7 +612,8 @@ export class Sim implements SimAPI {
     if (P.updateAir(TICK_DT)) {
       this.emit('land', { surface: this.surfaceNow(), heavy: true });
       this.gait.landing(this.t, this.cadenceNow(), (hand, t) => this.emitContact(hand, 'heel', t, true));
-      if (P.duckAfterLandBeats > 0) { P.startDuck(beat, P.duckAfterLandBeats); P.duckHeld = false; P.duckAfterLandBeats = 0; }
+      // 速降落地后的自动伏低：2 拍是最短时长；↓ 还按着就和地面上的伏低一样，按住可以延长（§2.2）
+      if (P.duckAfterLandBeats > 0) { P.startDuck(beat, P.duckAfterLandBeats); P.duckHeld = held.has('down'); P.duckAfterLandBeats = 0; }
     }
     // 5. 横向、伏低
     P.updateLane(TICK_DT, P.onSoft);

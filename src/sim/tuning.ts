@@ -10,8 +10,9 @@ export const TUNING = {
   hitbox: { halfW: 0.22, height: 0.55, sFront: 0.25, sBack: 0.25,   // 只算从手到胸，拖在后面的腿不碰撞
             duckS: 0.35, twitchHeight: 0.85, lethalShrink: 0.85, grazeY: 0.12 },
   hit: { stumbleSpeedMul: 0.7, stumbleRecover: 0.8, crashStop: 0.3, crashRecover: 0.8, grace: 1.2 },
-  steady: { max: 3, pressureMax: 2, regenBeats: 16, pressureRegenBeats: 24,
-            crispBonusBeats: 4, crispWindow: 0.06, touchIntentOffset: 0.04 },
+  steady: { max: 3, pressureMax: 2, regenBeats: 16, pressureRegenBeats: 24, syncedRegenBeats: 24,
+            crispBonusBeats: 4, crispWindow: 0.06, touchIntentOffset: 0.04,
+            pressureCrispBonusBeats: 0 },   // 施压段、同拍段（技巧高潮）干脆不加回稳计数（最终 QA，DESIGN §10.5）
   gait: { supportLen: 0.6, knuckleMs: 26, padMs: 52, subScaleRef: 4.8, subScaleClamp: [0.8, 1.2] },
   twitch: { warn: 0.6, rise: 1.2, holdDefault: 0.25, speedMul: 0.85 },
   drift: { warn: 0.6 },

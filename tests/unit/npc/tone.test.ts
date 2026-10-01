@@ -113,3 +113,21 @@ describe('NPC 衣服颜色随氛围补偿（U6）', () => {
     }
   });
 });
+
+describe('npcAlbedo 的缓存（§9.4 热路径不分配：数字键，不拼字符串）', () => {
+  it('同一组参数返回同一个数组；户外 / 室内、不同模式各自缓存，互不串号', () => {
+    const hex = C.trousers;
+    const a = npcAlbedo(hex, 'overcast', true);
+    expect(npcAlbedo(hex, 'overcast', true)).toBe(a);
+    expect(npcAlbedo(hex, 'dawn', true)).toBe(npcAlbedo(hex, 'dawn', true));
+    const indoor = npcAlbedo(hex, 'overcast', false);
+    expect(indoor).not.toBe(a);
+    expect(indoor).not.toEqual(a);                                  // 室内算灯 0.9，户外不算
+    // 非户外氛围一律按早晨补偿：rainNight 与 morning 是同一个缓存项
+    expect(npcAlbedo(hex, 'rainNight', true)).toBe(npcAlbedo(hex, 'morning', true));
+    // 户外位不会和某个更大的 hex 撞键
+    const m1 = npcAlbedo(0x000001, 'morning', true), m2 = npcAlbedo(0x000001, 'morning', false);
+    expect(m1).toEqual(m2);
+    expect(npcAlbedo(0x1000001 & 0xffffff, 'morning', false)).toBe(m2);
+  });
+});

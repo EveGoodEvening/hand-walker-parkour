@@ -167,6 +167,22 @@ describe('自动画质（U4）', () => {
     g.retry();
     expect(g.quality).toBe('high');
   });
+  it('梦里的站立（4-2 → 4-3）没有黑场切，不在那里切档；留到 4-4 的静场', async () => {
+    const g = await booted();
+    const beats = segBeats(g, '4-2');
+    await g.startWith('ch4', { segment: '4-2', beat: Math.max(0, beats - 10), skipCards: true });
+    g.autopilot = 'perfect'; g.sim.setAutopilot('perfect');
+    inner(g).pendingQ = 'low';
+    expect(until(g, () => g.next.segment === '4-3', 120 * 30)).toBe(true);
+    steps(g, 2);
+    expect(g.next.segKind).toBe('stand');
+    expect(g.quality).toBe('medium');
+    expect(rec.viewQ).toEqual([]);
+    expect(until(g, () => g.next.segment === '4-4', 120 * 60)).toBe(true);
+    steps(g, 2);
+    expect(g.quality).toBe('low');
+    expect(rec.viewQ).toEqual(['low']);
+  });
   it('设置里选「自动」：重新开始统计（autoQ 不为空）；手选档位：立即生效、不再自动', async () => {
     const g = await booted();
     g.setSetting('quality', 'low');

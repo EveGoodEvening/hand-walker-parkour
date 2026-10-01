@@ -5,8 +5,11 @@
 // 失败率 = 这个区间里摔倒的比例。§2.8 的目标是「每个检查点区间」的：第一章 ≤ 5%……第五章 ≤ 20%（上限）。
 // 判定按区间：「可能失败」的区间（追随者不是 hidden）里，失败率 > 目标 + 3 个百分点的区间记 over（区间的 status），
 // 有任何一个 over，这一章的 status 就是 harder。章的平均值、最大值只作参考。
-// 比目标低 3 个百分点以上（WP1 验收 6「目标 ±3 个百分点」的下沿）：区间与章的 band 记 below、章另注 note 'well below target'，
-// status 仍是 ok——§2.8 的目标是上限，偏易不算不合格（这一解释写在 docs/contract-requests/WP1.md，待 lead 确认）。
+// 比目标低 3 个百分点以上：区间与章的 band 记 below、章另注 note 'well below target'，status 仍是 ok——§2.8 的目标是上限，
+// 偏易不算不合格（DESIGN §10.4「Lead 裁定」）。
+// 高潮下沿（§10.4「Lead 裁定」）：施压段和同拍段的高潮区间（3-6、4-5、5-3 的全部检查点区间，CLIMAX）另有下沿 = 目标的 50%。
+// 低于下沿的区间记 belowFloor（band 'belowFloor'），章的 belowFloor 列出它们；--strict 或 --strict-floor 时退出码 1。
+// 60 次的噪声能超过 15 个百分点（§10.4），交付时把 200 次和 --trials 60 两个数一起报。
 // 评审 U2：
 //   · 机器人报告「从换道输入到接触的平均提前量」（laneLead）：每个区间、每章和全部（秒），只算躲开障碍的换道，见 HumanBot.ts。
 //     另报分布：laneLeadMedian、laneLeadP25（秒）和 laneLeadUnder（提前量 < 0.25 s 的比例）。回中道时原车道远处还有障碍也算躲避，
@@ -16,8 +19,9 @@
 //     时记 warning（status 仍是 ok），缺省只打印、不改变退出码（--strict 或 --strict-density 时才算失败）。
 //   --trials N    每个区间的次数（缺省 40）      --ch ch3    只跑一章          --out FILE   另把 JSON 写进文件
 //   --only 4-5@144  只跑这些区间（逗号分隔；只写段名则跑这一段的全部区间）
-//   --strict      有任何区间 over（章 status 为 harder），或有任何密度 warning 时，退出码 1（缺省只报告）
+//   --strict      有任何区间 over（章 status 为 harder）、任何高潮区间低于下沿，或有任何密度 warning 时，退出码 1（缺省只报告）
 //   --strict-density  只在有密度 warning 时退出码 1（不看失败率）
+//   --strict-floor    只在有高潮区间低于下沿时退出码 1
 // 还没实现的章（WP2 合并前返回 null 的桩）打印 skipped。
 import { writeFileSync } from 'node:fs';
 import { MIN_ACTION_GAP } from '../src/core/constants.ts';
@@ -34,11 +38,15 @@ const only = arg('--ch', null);
 const out = arg('--out', null);
 const strict = args.includes('--strict');
 const strictDensity = args.includes('--strict-density');
+const strictFloor = args.includes('--strict-floor');
 const onlyIntervals = arg('--only', null)?.split(',').map((x) => x.trim()).filter(Boolean) ?? null;
 const wanted = (segId, from) => !onlyIntervals || onlyIntervals.some((w) => w === segId || w === `${segId}@${from}`);
 /** §2.8 human 机器人目标失败率（每个检查点区间）。 */
 const TARGET = { ch1: 0.05, ch2: 0.10, ch3: 0.18, ch4: 0.12, ch5: 0.20 };
 const TOL = 0.03;
+/** §10.4 高潮下沿：这些段的全部检查点区间，失败率不低于目标 × CLIMAX_FLOOR。 */
+const CLIMAX = new Set(['3-6', '4-5', '5-3']);
+const CLIMAX_FLOOR = 0.5;
 const MAX_SEC = 120;
 /** 「最后一刻闪避」的界线（秒）：评审 U2 的验收要求平均提前量 ≥ 这个值，报告另给低于它的比例。 */
 const LAST_MOMENT = 0.25;
@@ -64,8 +72,8 @@ function runInterval(compiled, seg, cp, nextCp, trial) {
 }
 
 const t0 = Date.now();
-const report = { trials, target: TARGET, tolerance: TOL, chapters: [] };
-let outOfRange = 0, densityWarnings = 0;
+const report = { trials, target: TARGET, tolerance: TOL, climax: [...CLIMAX], climaxFloor: CLIMAX_FLOOR, chapters: [] };
+let outOfRange = 0, densityWarnings = 0, belowFloorCount = 0;
 let allLeadSum = 0, allLeadN = 0;
 const allLeads = [];
 const r3 = (x) => +x.toFixed(3);
@@ -106,9 +114,13 @@ for (const id of only ? [only] : CHAPTER_ORDER) {
       for (const x of leads) chLeads.push(x);
       const failRate = falls / trials;
       const target = TARGET[id];
-      const band = !canFail ? 'cannotFail' : failRate > target + TOL ? 'over' : failRate < target - TOL ? 'below' : 'in';
+      const floor = CLIMAX.has(seg.def.id) ? target * CLIMAX_FLOOR : null;
+      // 浮点：60 次里 6 次摔倒 = 0.1，下沿 0.2 × 0.5 = 0.1，按「不低于」判定，带 1e-9 容差
+      const belowFloor = canFail && floor !== null && failRate < floor - 1e-9;
+      const band = !canFail ? 'cannotFail' : failRate > target + TOL ? 'over' : belowFloor ? 'belowFloor' : failRate < target - TOL ? 'below' : 'in';
       intervals.push({
         segment: seg.def.id, from: cp, to: next, canFail, failRate, meanHits: +(hits / trials).toFixed(3), timeouts, band, status: band === 'over' ? 'over' : 'ok',
+        ...(floor !== null ? { floor, belowFloor } : {}),
         laneLead: leadN ? r3(leadSum / leadN) : null, laneLeadCount: leadN, ...leadDist(leads),
       });
     }
@@ -136,22 +148,25 @@ for (const id of only ? [only] : CHAPTER_ORDER) {
   const target = TARGET[id];
   // §2.8：目标按每个检查点区间判定，任何一个区间超过目标 + 3 个百分点，这一章就不合格
   const hot = live.filter((x) => x.band === 'over').map((x) => `${x.segment}@${x.from}`);
+  const lowClimax = live.filter((x) => x.belowFloor).map((x) => `${x.segment}@${x.from}`);
+  belowFloorCount += lowClimax.length;
   const status = hot.length ? 'harder' : 'ok';
-  const band = hot.length ? 'over' : live.length && live.every((x) => x.band === 'below') ? 'below' : 'in';
+  const band = hot.length ? 'over' : live.length && live.every((x) => x.band === 'below' || x.band === 'belowFloor') ? 'below' : 'in';
   const note = band === 'below' ? 'well below target' : undefined;
   if (status !== 'ok') outOfRange++;
   const laneLead = chLeadN ? r3(chLeadSum / chLeadN) : null;
   const chDist = leadDist(chLeads);
-  report.chapters.push({ chapter: id, target, status, band, ...(note ? { note } : {}), over: hot, failRate: +mean.toFixed(4), maxInterval: +max.toFixed(4), laneLead, laneLeadCount: chLeadN, ...chDist, intervals, segments });
-  console.error(`${id}: ${live.length} interval(s) that can fail, fail rate per interval ${live.map((x) => `${x.segment}@${x.from} ${(x.failRate * 100).toFixed(1)}%`).join(', ') || '-'} (mean ${(mean * 100).toFixed(1)}%, max ${(max * 100).toFixed(1)}%), target ≤ ${(target * 100).toFixed(0)}% (+3) per interval → ${status}${note ? ` (${note})` : ''}${hot.length ? `; over target: ${hot.join(', ')}` : ''}; lane-change lead mean ${laneLead ?? '-'} s (${chLeadN}; ${fmtDist(chDist)})`);
+  report.chapters.push({ chapter: id, target, status, band, ...(note ? { note } : {}), over: hot, belowFloor: lowClimax, failRate: +mean.toFixed(4), maxInterval: +max.toFixed(4), laneLead, laneLeadCount: chLeadN, ...chDist, intervals, segments });
+  console.error(`${id}: ${live.length} interval(s) that can fail, fail rate per interval ${live.map((x) => `${x.segment}@${x.from} ${(x.failRate * 100).toFixed(1)}%`).join(', ') || '-'} (mean ${(mean * 100).toFixed(1)}%, max ${(max * 100).toFixed(1)}%), target ≤ ${(target * 100).toFixed(0)}% (+3) per interval → ${status}${note ? ` (${note})` : ''}${hot.length ? `; over target: ${hot.join(', ')}` : ''}${lowClimax.length ? `; climax below floor (${(target * CLIMAX_FLOOR * 100).toFixed(0)}%): ${lowClimax.join(', ')}` : ''}; lane-change lead mean ${laneLead ?? '-'} s (${chLeadN}; ${fmtDist(chDist)})`);
 }
 report.laneLead = allLeadN ? r3(allLeadSum / allLeadN) : null;
 report.laneLeadCount = allLeadN;
 Object.assign(report, leadDist(allLeads));
 report.densityWarnings = densityWarnings;
+report.belowFloor = belowFloorCount;
 report.wallSec = +((Date.now() - t0) / 1000).toFixed(1);
-console.error(`all: mean lane-change lead before contact ${report.laneLead ?? '-'} s over ${allLeadN} dodges (${fmtDist(report)}); ${densityWarnings} density warning(s)`);
+console.error(`all: mean lane-change lead before contact ${report.laneLead ?? '-'} s over ${allLeadN} dodges (${fmtDist(report)}); ${densityWarnings} density warning(s); ${belowFloorCount} climax interval(s) below floor`);
 const text = JSON.stringify(report, null, 2);
 if (out) writeFileSync(out, text);
 console.log(text);
-process.exit((strict && outOfRange) || ((strict || strictDensity) && densityWarnings) ? 1 : 0);
+process.exit((strict && outOfRange) || ((strict || strictDensity) && densityWarnings) || ((strict || strictFloor) && belowFloorCount) ? 1 : 0);

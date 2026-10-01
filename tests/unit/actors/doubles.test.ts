@@ -5,6 +5,7 @@ import type { ViewContext } from '../../../src/core/contracts';
 import type { SimSnapshot } from '../../../src/core/types';
 import { compile } from '../../../src/levels/compile';
 import ch1 from '../../../src/levels/chapters/ch1';
+import ch2 from '../../../src/levels/chapters/ch2';
 import testChapter from '../../../src/levels/chapters/test';
 import type { ChapterDef, CompiledChapter } from '../../../src/levels/schema';
 import { DoubleSystem, MEMORY_FADE_IN, MEMORY_FADE_OUT } from '../../../src/render/actors/Doubles';
@@ -145,6 +146,34 @@ describe('doubles placement (§5.8)', () => {
     expect(Math.abs(z2 - z1)).toBeLessThan(0.05);    // 停在世界里，不再跟着走
     w.dbl.onSegment(w.ch.segments[seg.index + 1]!);
     expect(w.dbl.active().length).toBe(0);
+  });
+
+  it('2-6 speedFactor (doubleMod): the offset is a function of sim time / distance, not of how often frames are drawn', async () => {
+    // test 模式只画最后一帧（shot.mjs）：以前 doubleMod 那一帧把「上一次渲染到现在」的整段间隔都乘上 1.3，替身被推出窗外
+    const place = async (renderBetween: boolean) => {
+      const w = await world(ch2 as ChapterDef);
+      const seg = w.ch.segments.find((x) => x.def.id === '2-6')!;
+      let sn = snap({ s: seg.s0 + 52, lane: 0, t: 100 }); sn.segIndex = seg.index;
+      w.dbl.spawn({ id: 'winWalk', surface: 'winWall', source: 'script', clip: 'walkUpright' }, sn);
+      sn = run(w, sn, seg.s0 + 56, 0, seg.index, 40);
+      const sMod = seg.s0 + 66, tMod = sn.t + (sMod - sn.player.s) / 5;
+      if (renderBetween) sn = run(w, sn, sMod, 0, seg.index, 100);
+      else { sn = snap({ s: sMod, lane: 0, beat: sMod, t: tMod }); sn.segIndex = seg.index; }   // 中间不画
+      w.dbl.modify('winWalk', { speedFactor: 1.3 }, sn.t, sn.player.s);
+      sn = run(w, sn, sMod + 0.05, 0, seg.index, 1);
+      const d0 = w.dbl.active().find((d) => d.id === 'winWalk')!;
+      const z0 = d0.head[2]!, vis0 = d0.visible;
+      sn = run(w, sn, sMod + 6, 0, seg.index, 60);                    // 之后 1.2 s：替身比你快 30%，往前多走约 1.8 m
+      const d1 = w.dbl.active().find((d) => d.id === 'winWalk')!;
+      return { z0, vis0, z1: d1.head[2]!, vis1: d1.visible, s1: sn.player.s };
+    };
+    const every = await place(true), skipped = await place(false);
+    expect(skipped.vis0).toBe(true);
+    expect(skipped.vis1).toBe(true);
+    expect(Math.abs(skipped.z0 - every.z0)).toBeLessThan(0.05);
+    expect(Math.abs(skipped.z1 - every.z1)).toBeLessThan(0.05);
+    // 倍率确实生效：替身离玩家越来越远（世界 z = −s）
+    expect((-every.z1 - every.s1) - (-every.z0 - (every.s1 - 5.95))).toBeGreaterThan(1.0);
   });
 
   it('attachBehind: the standing figure stands behind the crawler in the same mirror; doubleEnd fades out', async () => {

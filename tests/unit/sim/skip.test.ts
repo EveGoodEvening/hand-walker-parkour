@@ -130,3 +130,18 @@ describe('跳过静场：状态类事件按终态带进下一段（合成段）'
     expect(types).toContain('sfx');
   });
 });
+
+describe('跳过 5-9：hud 的两组操作各留最后一个（显示 / 身后淡出管的是两个状态）', () => {
+  it('7.2 s 之前跳过：followerFadeOutBehind 和 followerFadeInAhead 都发出，和看完时 hud 的终态一样', () => {
+    const def = getChapter('ch5' as ChapterId);
+    if (!def) return;
+    const hudOps = (evs: readonly GameEvent[]) => evs.flatMap((e) => (e.type === 'cue' && e.data.body.type === 'hud' ? [e.data.body.op] : []));
+    const a = toNext(def, '5-9', true);
+    const b = toNext(def, '5-9', false);
+    expect(hudOps(a.atSkip).sort()).toEqual(['followerFadeInAhead', 'followerFadeOutBehind']);
+    // 看完时按顺序发出的每组最后一个
+    const watched = hudOps(b.d.events);
+    expect(watched).toContain('followerFadeOutBehind');
+    expect(watched.at(-1)).toBe('followerFadeInAhead');
+  });
+});

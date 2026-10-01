@@ -100,6 +100,27 @@ describe('human 机器人（验收 6 的工具）', () => {
     expect(Math.min(...leads)).toBeGreaterThan(0.1);
     expect(leads.reduce((a, b) => a + b, 0) / leads.length).toBeGreaterThanOrEqual(0.25);
   });
+  it('细横档（拖把、栏架、伸出的手臂，顶 ≤ 0.50 m）：伏低钻过去，不撑跃（§10.4「规划偏差」：以前 20 个种子撑跃 67 次、撞 14 次）', () => {
+    const M = 'mopAcross' as const, Hd = 'hurdle' as const, R = 'reach' as const;
+    const THIN = chapter([runSeg({
+      id: 'thin', beats: 80, cadence: 5.0, rows: [[16, [M, M, M]], [30, [Hd, Hd, Hd]], [44, [M, M, M]], [58, [R, R, R]]],
+      events: [{ at: 2, type: 'hint', hint: 'duck' }],
+    })]);
+    // 竖直余量：0.25 m 的规划余量不加在盒顶上，伏低盒顶（0.30 m + 余量的一半）低于最低的横档下沿 0.36 m
+    expect(TUNING.duck.height + HUMAN.marginY * 0.5).toBeLessThan(0.36);
+    let jumps = 0, ducks = 0, crashes = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const d = new Driver(THIN, undefined, 1);
+      d.sim.setAutopilot('human'); d.sim.setBotSeed(seed);
+      for (let i = 0; i < 120 * 30 && !d.sim.isEnded; i++) d.stepOne();
+      jumps += d.of('action').filter((a) => a.data.kind === 'jump').length;
+      ducks += d.of('action').filter((a) => a.data.kind === 'duck').length;
+      crashes += d.of('hit').filter((h) => h.data.severity === 'crash').length;
+    }
+    expect(jumps).toBe(0);
+    expect(ducks).toBe(80);
+    expect(crashes).toBe(0);
+  });
   it('纸条：每张约 50% 决定去捡（求解器自己每张都捡），捡到的比 perfect 少', () => {
     // 每张纸条都在右道、紧跟着一个挡道：要专门换进去再换出来
     const notes = Array.from({ length: 8 }, (_, i) => ({ id: `n${i}`, face: 'blank' as const, front: null, back: null, folded: false, pickup: true }));

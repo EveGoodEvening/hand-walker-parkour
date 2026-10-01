@@ -147,8 +147,8 @@ export class PlayerActor implements ViewSystem {
       crawlInputFrom(prev, next, a, this.inp);
       this.backfill(next);
       if (!WP5.poseTest) {
-        // 本车道前方有必需障碍：上半身淡到 40%。只在追尾机位下爬行时（修复轮 U5 第二轮：停拍看水洼、5-3 的高机位、
-        // 回头、摔倒时镜头不在他身后，淡出没有用处，反而让他变成半透明的人）
+        // 本车道前方有必需障碍：上半身淡到 40%。只在镜头在他身后时爬行（追尾、竖屏追尾、5-3 段内追尾，§10.3；CameraRig 写 chaseCam）。
+        // 停拍看水洼、回头、转头、穿玻璃侧拍、摔倒时镜头不在他身后，淡出没有用处，反而让他变成半透明的人（修复轮 U5 第二轮）
         const seg = this.chapter?.segments[next.segIndex];
         const N = next.player;
         const want = !!seg && seg.kind === 'run' && N.lookBack < 0.3 && FADE_MODES.has(N.mode) && WP5.chaseCam

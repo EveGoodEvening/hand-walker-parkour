@@ -19,7 +19,7 @@ import { urlParams, type UrlParams } from './urlParams';
 import { compile } from '../levels/compile';
 import { availableChapters, getChapter, nextChapterOf } from '../levels/chapters/index';
 import { lineText, type LineId } from '../levels/lines';
-import type { CompiledChapter, EventBody, RunSegmentDef } from '../levels/schema';
+import type { CompiledChapter, EventBody, RunSegmentDef, StandSegmentDef } from '../levels/schema';
 
 const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 const GAMEPLAY: ReadonlySet<Action> = new Set(['left', 'right', 'up', 'down', 'look', 'ask']);
@@ -348,6 +348,11 @@ export class Game implements GameCommands {
     this.dirty = true;
   }
 
+  private isDreamStand(index: number): boolean {
+    const seg = this.compiled?.segments[index];
+    return seg?.kind === 'stand' && (seg.def as StandSegmentDef).script === 'dream';
+  }
+
   /** 自动画质的决定在这里才真正生效（不跑的时刻）。 */
   private applyPendingQuality(): void {
     const t = this.pendingQ;
@@ -462,7 +467,9 @@ export class Game implements GameCommands {
         break;
       case 'segment':
         this.ctxLook = false; this.ctxAsk = false; this.updateInputContext();
-        if (e.data.kind !== 'run') this.applyPendingQuality();   // 静场 / 站立段开头是镜头切换，重建 chunk 的那一下卡顿被切换盖住
+        // 静场 / 站立段开头是镜头切换，重建 chunk 的那一下卡顿被切换盖住。梦里的站立（4-2 → 4-3）从爬行直接起身、没有黑场
+        // （ui/hud/overlays.ts 的 segmentCut，§10.4），在那里切档会在最快的跑段和「我站起来。」之间卡一下：留到 4-4 的静场再切。
+        if (e.data.kind !== 'run' && !this.isDreamStand(e.data.index)) this.applyPendingQuality();
         break;
       case 'prompt': this.ctxLook = e.data.context.look; this.ctxAsk = e.data.context.ask; this.updateInputContext();
         if (e.data.hint) this.hint = { id: e.data.hint, until: snap.t + 30 }; else this.hint = null;

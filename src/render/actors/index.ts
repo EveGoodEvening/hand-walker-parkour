@@ -30,7 +30,7 @@ registerViewSystem(shadowSys);
 
 registerCueHandler('actor', 'WP5', (b, c) => playerActor.playClip(b.clip, b.seconds, c.snap.t));
 registerCueHandler('double', 'WP5', (b, c) => doubles.spawn(b.spec, c.snap));
-registerCueHandler('doubleMod', 'WP5', (b, c) => doubles.modify(b.target, b.mod, c.snap.t));
+registerCueHandler('doubleMod', 'WP5', (b, c) => doubles.modify(b.target, b.mod, c.snap.t, c.snap.player.s));
 registerCueHandler('doubleEnd', 'WP5', (b, c) => doubles.end(b.target, b.fade, c.snap.t));
 registerCueHandler('shadow', 'WP5', (b, c) => shadowSys.setMode(b.mode, b.seconds, c.snap.t));
 registerCueHandler('memory', 'WP5', (b, c) => doubles.memory(b.surface, b.seconds, c.snap));

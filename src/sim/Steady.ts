@@ -1,5 +1,6 @@
 // src/sim/Steady.ts —— 稳度：唯一的失败源（DESIGN.md §2.6、D4）。CORE 编写，归 WP1。
-// 扣：绊 −1，撞 −2，软障碍 0。回：连续 16 拍没有受击 +1（施压段 24 拍，辅助模式 12 拍）；干脆一次回稳计数 +4 拍。
+// 扣：绊 −1，撞 −2，软障碍 0。回：连续 16 拍没有受击 +1（施压段、同拍段 24 拍，辅助模式 12 拍）；干脆一次回稳计数 +4 拍
+// （施压段、同拍段不加，辅助模式照加；§10.5）。
 // 失败：受击后稳度会跌破 0 时摔倒。hidden 模式照常扣，但最低停在 0，不会失败。
 import type { FollowerMode, HitSeverity } from '../core/types';
 import { TUNING } from './tuning';
@@ -21,7 +22,8 @@ export class Steady {
 
   regenBeats(mode: FollowerMode): number {
     if (this.assist) return TUNING.assist.regenBeats;
-    return mode === 'pressure' ? S.pressureRegenBeats : S.regenBeats;
+    // 同拍（4-5「同拍考试」）和施压一样 24 拍回 1（最终 QA，DESIGN §10.5）；上限仍是 3
+    return mode === 'pressure' ? S.pressureRegenBeats : mode === 'synced' ? S.syncedRegenBeats : S.regenBeats;
   }
 
   setMax(max: number): void { this.max = max; if (this.value > max) this.value = max; }
@@ -55,8 +57,14 @@ export class Steady {
     return false;
   }
 
-  /** 干脆：回稳计数 +4 拍（§2.2）。返回是否因此 +1。 */
-  crisp(mode: FollowerMode): boolean { return this.progress(S.crispBonusBeats, mode); }
+  /** 干脆给回稳计数加的拍数：缺省 4（§2.2）；施压段、同拍段 0（§10.5：技巧高潮里干脆只有声音上的对齐）；辅助模式照常 4。 */
+  crispBeats(mode: FollowerMode): number {
+    if (!this.assist && (mode === 'pressure' || mode === 'synced')) return S.pressureCrispBonusBeats;
+    return S.crispBonusBeats;
+  }
+
+  /** 干脆：回稳计数 +crispBeats 拍。返回是否因此 +1。 */
+  crisp(mode: FollowerMode): boolean { return this.progress(this.crispBeats(mode), mode); }
 
   /** 回头收益（每章第一次 +1，§3）。 */
   gain(n: number): void { this.value = Math.min(this.max, this.value + n); }

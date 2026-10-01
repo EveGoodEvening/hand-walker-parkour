@@ -9,6 +9,9 @@
 // 代价：输入次数 × 10（开口 15、长按每拍 +0.5）+ 不在中道的时间 × 0.02 − 拾取纸条 × 25。
 // 可选（laneLead > 0，human 机器人用，评审 U2）：待在「本车道前方 laneLead 秒内就要接触必需障碍」的位置上，每 0.05 s 加 0.2，
 // 比不在中道的代价大一个量级、又远小于一次输入：输入次数不变，但换道从「最后一刻」提前到接触前 laneLead 秒（做不到时尽早）。
+// 可选（human 机器人用，最终 QA）：marginY 是竖直方向的余量（缺省 = margin）。以前 0.25 m 的余量也加在盒顶上，伏低盒顶被抬到 0.425 m，
+// 高过所有横档的下沿（0.36–0.42 m），机器人只能撑跃细横档、10–35% 的时候撞上（§10.4「规划偏差」）。barJumpCost > 0 时，
+// 一次撑跃在本车道前方只会越过横档（同一跨度里没有低矮）就加这个代价：输入次数相同时选伏低（§2.5「横档：伏低，或换道」）。
 //
 // 与冻结契约（core/contracts.ts）的关系：SolverAPI.solve(seg, opts) 照旧；本文件的 SolveOptions 是它的超集，
 // 多出来的字段（untilS / start / maxSeconds）只给 WP1 自己的自动驾驶、领跑者和难度机器人用，调用时用变量传入。
@@ -71,6 +74,10 @@ export interface SolveOptions {
   maxSeconds?: number;
   /** 评审 U2：躲障碍至少提前多少秒换道（代价项，见文件头）；缺省 0 = 不加这一项。 */
   laneLead?: number;
+  /** 最终 QA：竖直方向的碰撞余量（米），缺省等于 margin。human 机器人取 0.05，伏低盒顶仍低于最低的横档下沿。 */
+  marginY?: number;
+  /** 最终 QA：只越过横档的撑跃加的代价（见文件头）；缺省 0。 */
+  barJumpCost?: number;
 }
 
 /** 求解结果：契约里的 Plan，另带开口的里程（旁路字段）。 */
@@ -127,6 +134,8 @@ export class Solver implements SolverAPI {
     const def = seg.def as RunSegmentDef;
     const minGap = Math.max(opts.minGap ?? 0.22, 0.22);
     const margin = opts.margin ?? 0.05;
+    const marginY = opts.marginY ?? margin;
+    const barJumpCost = Math.max(0, opts.barJumpCost ?? 0);
     const mul = opts.cadenceMul ?? 1;
     const forbid = opts.forbid ?? [];
     const noJump = def.controls?.jump === false;
@@ -174,7 +183,7 @@ export class Solver implements SolverAPI {
     const maxLayers = Math.ceil((opts.maxSeconds ?? this.maxSeconds) / GRID_DT);
     const finished: Node[] = [];
     const laneLead = Math.max(0, opts.laneLead ?? 0);
-    const ctx = { seg, index, evs, mev, mul, margin, endBeat, untilS, gapTicks, scratch, laneLead };
+    const ctx = { seg, index, evs, mev, mul, margin, marginY, barJumpCost, endBeat, untilS, gapTicks, scratch, laneLead };
     for (let g = 0; g < maxLayers && layer.length; g++) {
       const next = new Map<string, Node>();
       for (const node of layer) {
@@ -248,11 +257,12 @@ export class Solver implements SolverAPI {
   }
 
   private expand(ctx: {
-    seg: CompiledSegment; index: ObIndex; evs: readonly PaceEvent[]; mev: readonly MotionEvent[]; mul: number; margin: number; endBeat: number;
+    seg: CompiledSegment; index: ObIndex; evs: readonly PaceEvent[]; mev: readonly MotionEvent[]; mul: number; margin: number; marginY: number;
+    barJumpCost: number; endBeat: number;
     untilS: number; gapTicks: number; scratch: { box: AABB; prev: AABB; ob: AABB; infl: AABB; st: ObstacleState; tmp: CompiledObstacle[] };
     laneLead: number;
   }, node: Node, act: Act, hold: number): Node | null {
-    const { seg, index, evs, mev, mul, margin, endBeat, untilS, gapTicks, scratch, laneLead } = ctx;
+    const { seg, index, evs, mev, mul, margin, marginY, barJumpCost, endBeat, untilS, gapTicks, scratch, laneLead } = ctx;
     const p = clonePlayer(node.p);
     const pace = clonePace(node.pace);
     let taken = node.taken;
@@ -279,6 +289,7 @@ export class Solver implements SolverAPI {
           p.startJump(cad);
           busyUntilTick = tick + Math.ceil(p.airDur / TICK_DT) + 1;
           steps.push({ t, s, action: 'jump' });
+          if (barJumpCost > 0 && jumpsOnlyBars(seg, index, p.laneTarget, pace, p.airDur * Math.max(0.5, pace.base * mul), parts, scratch.st)) cost += barJumpCost;
         } else if (act === 'duck') {
           p.startDuck(beatNow);
           keyDown = true;
@@ -313,7 +324,7 @@ export class Solver implements SolverAPI {
       advancePace(seg, pace, evs, mul * p.hitMul * twitchSpeedMul(p), TICK_DT);
       const beat = (pace.s - seg.s0) / seg.stride;
       if (p.updateAir(TICK_DT)) {
-        if (p.duckAfterLandBeats > 0) { p.startDuck(beat, p.duckAfterLandBeats); p.duckHeld = false; p.duckAfterLandBeats = 0; }
+        if (p.duckAfterLandBeats > 0) { p.startDuck(beat, p.duckAfterLandBeats); p.duckHeld = keyDown; p.duckAfterLandBeats = 0; }
       }
       p.updateLane(TICK_DT, p.onSoft);
       p.updateDuck(TICK_DT, beat);
@@ -323,7 +334,7 @@ export class Solver implements SolverAPI {
       }
       tick++;
       const tk = taken === node.taken ? taken.slice() : taken;
-      if (this.hitTick(seg, index, p, pace, margin, parts, scratch, tk)) return null;
+      if (this.hitTick(seg, index, p, pace, margin, marginY, parts, scratch, tk)) return null;
       taken = tk;
       if (p.laneTarget !== 0) cost += 0.02 / GRID;
       if (pace.ended || beat >= endBeat || pace.s >= untilS) {
@@ -340,12 +351,12 @@ export class Solver implements SolverAPI {
   }
 
   /** 某一 tick 的碰撞检测：会受击返回 true；同时更新 onSoft 与拾取的纸条。 */
-  private hitTick(seg: CompiledSegment, index: ObIndex, p: PlayerState, pace: PaceState, margin: number, parts: readonly number[],
+  private hitTick(seg: CompiledSegment, index: ObIndex, p: PlayerState, pace: PaceState, margin: number, marginY: number, parts: readonly number[],
     sc: { box: AABB; prev: AABB; ob: AABB; infl: AABB; st: ObstacleState }, taken: number[]): boolean {
     const beat = (pace.s - seg.s0) / seg.stride;
     const box = playerBox(pace.s, p.x, p.y, p.duck, p.twitch, sc.box);
     const infl = sc.infl;
-    infl.x0 = box.x0 - margin * 0.5; infl.x1 = box.x1 + margin * 0.5; infl.y0 = box.y0; infl.y1 = box.y1 + margin * 0.5;
+    infl.x0 = box.x0 - margin * 0.5; infl.x1 = box.x1 + margin * 0.5; infl.y0 = box.y0; infl.y1 = box.y1 + marginY * 0.5;
     infl.s0 = box.s0 - margin; infl.s1 = box.s1 + margin;
     p.onSoft = false;
     const s = pace.s;
@@ -407,6 +418,29 @@ function dangerHit(o: CompiledObstacle, x: number, tSeg: number, beat: number, f
   if (ahead < 0 || ahead > reach) return false;
   if (!st.active && o.behavior.type !== 'swing' && o.behavior.type !== 'stretch') return false;
   return st.x0 < x + 0.22 && st.x1 > x - 0.22;
+}
+
+/**
+ * barJumpCost：从玩家盒后沿到前沿再往前 reach 米（一次撑跃的跨度），本车道上有横档、没有低矮——这次撑跃只是在越过横档。
+ * 周期障碍不论此刻开合都算；走动的人不算（横档都不走动）。
+ */
+function jumpsOnlyBars(seg: CompiledSegment, index: ObIndex, lane: Lane, pace: PaceState, reach: number, parts: readonly number[], st: ObstacleState): boolean {
+  const back = pace.s - TUNING.hitbox.sBack, front = pace.s + TUNING.hitbox.sFront;
+  const beat = (pace.s - seg.s0) / seg.stride;
+  const x = lane * LANE_WIDTH;
+  let bar = false;
+  for (let i = lastAtOrBefore(index.s0s, front + reach); i >= 0; i--) {
+    const o = index.statics[i] as CompiledObstacle;
+    if (o.s0 < back - index.maxLen) break;
+    if (o.s1 < back || (o.cls !== 'bar' && o.cls !== 'low')) continue;
+    if (parts.length && partedAt(parts, o.id, pace.tSeg)) continue;
+    obstacleState(o, pace.tSeg, beat, st);
+    if (!st.active && o.behavior.type !== 'swing' && o.behavior.type !== 'stretch') continue;
+    if (!(st.x0 < x + 0.22 && st.x1 > x - 0.22)) continue;
+    if (o.cls === 'low') return false;
+    bar = true;
+  }
+  return bar;
 }
 
 function partedAt(parts: readonly number[], id: number, tSeg: number): boolean {

@@ -43,8 +43,8 @@ export function createAudio(mute: boolean, g: AudioGlobals = globalThis as unkno
     ...(w ? { gestures: w } : {}),
   });
   if (w) {
-    // 第四章结尾卡等 ↓ 时，↓ 是床单上的一下：这次按键里引擎收到了床单声，就不再发菜单的「移动」声。
-    // 修复轮 B3：等输入期间（界面发 hw-ui-await）任何键都不发「移动」「确认」
+    // 修复轮 B3：等输入期间（界面发 hw-ui-await）任何键都不发「移动」「确认」。
+    // 后备（结尾卡现在都发 hw-ui-await，走不到）：↓ 是床单上的一下时，这次按键里引擎收到了床单声，就不再发菜单的「移动」声
     attachUiSounds(w, (k) => engine.ui(k), () => engine.menuScreen, {
       mayConsume: (key) => key === 'ArrowDown' && engine.screen === 'outro',
       consumed: () => engine.outroTaps,

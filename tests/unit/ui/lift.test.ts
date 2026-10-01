@@ -7,6 +7,13 @@ import { resolve } from 'node:path';
 import * as THREE from 'three';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { STILL_ORIGIN } from '../../../src/core/constants';
+import { QUALITY } from '../../../src/core/quality';
+import { BONE_INDEX } from '../../../src/core/rig';
+import { crawlPose, PoseBuilder } from '../../../src/render/actors/handCycle';
+import { buildRigGeometry, Rig, rigDetail } from '../../../src/render/actors/rigBuild';
+import { vFromH } from '../../../src/render/camera/CameraRig';
+import { FOLLOW } from '../../../src/render/camera/shots';
+import { crawlInput } from '../actors/helpers';
 import { getSet } from '../../../src/core/registry';
 import { DEFAULT_SETTINGS } from '../../../src/core/settings';
 import { WP5 } from '../../../src/render/actors/shared';
@@ -83,6 +90,56 @@ describe('4-4 palmEye: the bottom stack (subtitles, hint, beat dots) moves above
       const [x0, y0] = px(new THREE.Vector3(pb.min.x, pb.max.y, pb.max.z)), [x1] = px(new THREE.Vector3(pb.max.x, pb.max.y, pb.max.z));
       expect(oldY).toBeGreaterThan(y0);
       expect(W / 2).toBeGreaterThan(x0); expect(W / 2).toBeLessThan(x1);
+    });
+  }
+});
+
+// 最终 QA：横屏追尾机位下，字幕压在主角的头和胸口上（640×360 时一行字幕约在 66–74% 高度，主角的头和胸在 54–74%）。
+// 主角下面是拖在身后的腿，一直到画面下沿，没有空地；往上挪又会压到 5–10 m 外正要读的障碍（约 49–56% 高度）。
+// 所以横屏字幕直接落到节拍器上面（去掉以前给提示留的 28 px）：头、胸口和头顶的餐盘露出来，字幕只压在骨盆以下的腿上。
+describe('landscape chase camera: subtitles stay below the protagonist\'s head and chest', () => {
+  const css = readFileSync(resolve(process.cwd(), 'src/ui/styles.css'), 'utf8');
+  const land = css.slice(css.indexOf('@media (min-aspect-ratio: 1/1) {'));
+  const landBlock = land.slice(0, land.indexOf('\n}'));
+  const subsMargin = Number(/\.hw-subs \{[^}]*margin-bottom: (\d+)px/.exec(landBlock)?.[1] ?? 0);
+  const geo = buildRigGeometry(rigDetail(QUALITY.low));
+  const rig = new Rig(geo, new THREE.MeshBasicMaterial(), 'player');
+  const pos = geo.getAttribute('position') as THREE.BufferAttribute, skin = geo.getAttribute('skinIndex') as THREE.BufferAttribute;
+  const TOP = new Set((['chest', 'neck', 'head', 'propHead'] as const).map((n) => BONE_INDEX[n]));   // 头顶的餐盘（2-4）也算
+  /** 头、胸口（含头顶的道具）在屏幕上的最低点（px，从上往下）。 */
+  function chestBottom(W: number, H: number, lane: number): number {
+    const L = FOLLOW.landscape, x = lane * 1.1;
+    const cam = new THREE.PerspectiveCamera(Math.min(L.vMax, Math.max(L.vMin, vFromH(L.hfov, W / H))), W / H, 0.05, 200);
+    cam.position.set(L.k * x, L.h, L.back); cam.lookAt(L.lookK * x, L.ly, L.lz); cam.updateMatrixWorld(true);
+    const b = new PoseBuilder(), v = new THREE.Vector3();
+    let low = -Infinity;
+    for (const beat of [6, 6.25, 6.5, 6.75, 7, 7.25, 7.5, 7.75]) {
+      rig.apply(crawlPose(crawlInput({ s: 0, x, laneTarget: lane, beat }), b));
+      rig.root.updateMatrixWorld(true);
+      for (let i = 0; i < pos.count; i++) {
+        if (!TOP.has(skin.getX(i))) continue;
+        v.fromBufferAttribute(pos, i); rig.mesh.applyBoneTransform(i, v); v.applyMatrix4(rig.mesh.matrixWorld).project(cam);
+        low = Math.max(low, (1 - v.y) / 2 * H);
+      }
+    }
+    return low;
+  }
+  /** n 行字幕的上沿（px）：栈底 = gut，往上是节拍器（52 px）、字幕下边距、n 行（18 px × 1.5，行间 4 px）。 */
+  const subsTop = (H: number, n: number) => H - Math.max(14, 0.035 * H) - 52 - subsMargin - n * 18 * 1.5 - (n - 1) * 4;
+  it('the stack numbers this test assumes are the ones in styles.css', () => {
+    expect(css).toContain('--gut: max(14px, 3.5vh);');
+    expect(css).toContain('.hw-metro { position: relative; width: 168px; height: 52px;');
+    expect(css).toMatch(/\.hw-subs \{[^}]*gap: 4px;/);
+    expect(css).toMatch(/\.hw-line \{[^}]*font-size: 18px; line-height: 1\.5;/);
+    expect(subsMargin).toBe(0);
+  });
+  for (const [W, H, lines] of [[640, 360, 1], [960, 540, 2], [1280, 720, 2], [1920, 1080, 2]] as const) {
+    it(`${W}×${H}: ${lines === 1 ? 'one line' : 'one or two lines'} of subtitles start below the head and chest in every lane`, () => {
+      for (const lane of [-1, 0, 1]) {
+        const low = chestBottom(W, H, lane);
+        expect(low / H).toBeGreaterThan(0.6);                                   // 主角确实在画面下部
+        for (let n = 1; n <= lines; n++) expect(subsTop(H, n), `lane ${lane}, ${n} line(s): chest at ${low.toFixed(0)} px`).toBeGreaterThan(low);
+      }
     });
   }
 });

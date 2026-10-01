@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 // tests/unit/ui/ui.test.ts —— 界面与 HUD（DESIGN.md §7、§2.7、附录 B；§8.10 WP8 验收 5、6，以及 lead 的补充要求）。
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { EventBody } from '../../../src/levels/schema';
 import { LINES, lineText, type LineEntry } from '../../../src/levels/lines';
@@ -440,6 +442,16 @@ describe('界面', () => {
     ui.show('title');
     expect(labels()).toEqual(['继续', '章节', '设置', '纸条']);
     expect(document.querySelector('[data-screen="title"] .hw-notice')).toBeNull();
+  });
+  it('标题的竖排小字：逐字堆叠，逗号、句号标成 .vp（styles.css 挪到字格右上），别的字不标', async () => {
+    const { ui } = await mountUI();
+    ui.show('title');
+    const spans = Array.from(document.querySelectorAll<HTMLElement>('[data-screen="title"] .hw-sub span'));
+    expect(spans.map((e) => e.textContent).join('')).toBe('掌根，指节，指腹。');
+    expect(spans.filter((e) => e.classList.contains('vp')).map((e) => e.textContent)).toEqual(['，', '，', '。']);
+    expect(document.querySelectorAll('[data-screen="title"] .hw-title span.vp').length).toBe(0);
+    const css = readFileSync(resolve(process.cwd(), 'src/ui/styles.css'), 'utf8');
+    expect(css).toMatch(/\.hw-sub span\.vp \{ transform: translate\(\.5em, -\.55em\); \}/);
   });
   it('章节：已完成的章行尾一道短横线加「纸条 a/b」；未解锁只显示「——」', async () => {
     const { ui, save } = await mountUI();

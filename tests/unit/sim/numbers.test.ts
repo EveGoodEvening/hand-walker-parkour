@@ -60,6 +60,26 @@ describe('伏低（§2.4）', () => {
     for (const b of [29.6, 29.65, 29.7, 29.72]) expect(duckAt(b), `press @${b}`).toEqual(['stumble']);
     expect(duckAt(null)).toEqual(['crash']);
   });
+  /** 撑跃越过 @20 的拖把桶，空中 @20.8 按 ↓（速降），按住或点一下；@24 是 0.8 m 深的长桌（QA：三道低矮 → 4 拍后三道横档）。 */
+  function fastFallThenBar(holdDown: boolean): { hits: string[]; fastFalls: number } {
+    const d = new Driver(chapter([runSeg({ cadence: 4.8, items: [{ at: 20, lane: 0, kind: 'mopBucket' }, { at: 24, lane: 0, kind: 'longTable' }] })]));
+    d.until(() => d.snap.player.beat >= 18.6 - 1e-9, 120 * 30);
+    d.tap('up');
+    d.until(() => d.snap.player.beat >= 20.8 - 1e-9, 120 * 30);
+    expect(d.snap.player.y, '按 ↓ 时还在空中').toBeGreaterThan(0.1);
+    if (holdDown) d.press('down'); else d.tap('down');
+    d.until(() => d.snap.player.beat >= 26, 120 * 30);
+    if (holdDown) d.release('down');
+    d.until(() => d.snap.player.beat >= 27, 120 * 30);
+    return { hits: d.of('hit').map((h) => h.data.severity), fastFalls: d.of('action').filter((a) => a.data.kind === 'fastFall').length };
+  }
+  it('空中按 ↓ 并按住：速降落地后的 2 拍伏低只是最短时长，按住可以延长，4 拍后钻过长桌 0 受击', () => {
+    expect(fastFallThenBar(true)).toEqual({ hits: [], fastFalls: 1 });
+    // 对照：只点一下，2 拍伏低在长桌前结束，一定会撞上——说明上面那条测的确实是「按住延长」
+    const tap = fastFallThenBar(false);
+    expect(tap.fastFalls).toBe(1);
+    expect(tap.hits.length).toBeGreaterThan(0);
+  });
   it('伏低碰撞盒顶 0.30 m，横档下沿 ≥ 0.36 m：净空 ≥ 6 cm；爬行盒顶 0.55 m', () => {
     expect(playerBox(0, 0, 0, 1, 0, box()).y1).toBeCloseTo(TUNING.duck.height, 9);
     expect(playerBox(0, 0, 0, 0, 0, box()).y1).toBeCloseTo(0.55, 9);
@@ -103,7 +123,7 @@ describe('撞与绊的分界（§2.5、§10.1）', () => {
 });
 
 describe('回稳（§2.6）：16 / 24 / 12 拍', () => {
-  function regenBeats(o: { mode: 'behind' | 'pressure'; assist?: boolean }): number {
+  function regenBeats(o: { mode: 'behind' | 'pressure' | 'synced'; assist?: boolean }): number {
     const d = new Driver(chapter([runSeg({ follower: { mode: o.mode, steady: o.mode === 'pressure' ? 2 : 3 }, items: [{ at: 20, lane: 0, kind: 'bag' }] })]));
     if (o.assist) d.sim.setAssist(true);
     d.until(() => d.of('hit').length === 1);
@@ -114,6 +134,27 @@ describe('回稳（§2.6）：16 / 24 / 12 拍', () => {
   }
   it('behind 16 拍', () => { expect(regenBeats({ mode: 'behind' })).toBeCloseTo(16, 0); });
   it('pressure 24 拍（上限 2）', () => { expect(regenBeats({ mode: 'pressure' })).toBeCloseTo(24, 0); });
+  it('synced（4-5 同拍考试）24 拍、上限仍是 3（§10.5）', () => {
+    expect(regenBeats({ mode: 'synced' })).toBeCloseTo(24, 0);
+    expect(Steady.maxFor('synced', undefined, false)).toBe(3);
+  });
+  it('干脆的回稳加成：behind / absent / ahead 4 拍；pressure、synced 0 拍（§10.5）；辅助模式照加 4 拍', () => {
+    const st = new Steady();
+    expect(st.crispBeats('behind')).toBe(4);
+    expect(st.crispBeats('absent')).toBe(4);
+    expect(st.crispBeats('ahead')).toBe(4);
+    expect(st.crispBeats('pressure')).toBe(0);
+    expect(st.crispBeats('synced')).toBe(0);
+    st.assist = true;
+    expect(st.crispBeats('pressure')).toBe(4);
+    // 施压段里干脆不推进回稳计数
+    const p = new Steady(); p.setMax(2); p.value = 1;
+    for (let i = 0; i < 10; i++) expect(p.crisp('pressure')).toBe(false);
+    expect(p.regen).toBe(0);
+    const b = new Steady(); b.value = 2;
+    for (let i = 0; i < 3; i++) b.crisp('behind');
+    expect(b.regen).toBe(12);
+  });
   it('辅助模式 12 拍、上限 +1', () => {
     expect(regenBeats({ mode: 'behind', assist: true })).toBeCloseTo(12, 0);
     expect(Steady.maxFor('behind', undefined, true)).toBe(4);

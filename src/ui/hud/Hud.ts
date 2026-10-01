@@ -16,11 +16,16 @@ import { metronome, type MetroView } from './metronome';
 import { SubtitleQueue, type SubLine } from './subtitles';
 
 export type HintSource = 'cue' | 'prompt' | 'still';
-interface HintState { id: HintId; source: HintSource; until: number; still: boolean }
+interface HintState { id: HintId; source: HintSource; until: number; still: boolean; t0: number; first: boolean }
 interface CountState { from: number; step: 1 | -1; len: number; lag: number; k: number; until: number }
 interface NoteOpenState { def: NoteDef | null; id: string; t0: number }
 
 export const NOTE_FLASH_SEC = 1.2;
+/**
+ * 教学提示（不是静场里的提示）整个存档只出现一次（UI.policyHint）：头 FIRST_HINT_SEC 秒放大一档、提亮（.hw-hint.first），
+ * 之后缩回原来的大小。最终 QA：960×540 下 11–12 px 的灰字贴在右下角，第一次玩的人盯着主角和字幕，容易错过。
+ */
+export const FIRST_HINT_SEC = 2.0;
 export const CHNAME_FADE_SEC = 8;
 /** 纸条翻看（noteOpen）：正面 1.0 s → 翻面 → 背面停到 4.4 s → 0.4 s 淡出。 */
 export const NOTE_OPEN = { flipAt: 1.0, fadeAt: 4.4, endAt: 4.8 } as const;
@@ -142,7 +147,7 @@ export class Hud {
   }
 
   showHint(id: HintId, source: HintSource, t: number, seconds: number): void {
-    this.hint = { id, source, until: t + seconds, still: source === 'still' || this.inStill };
+    this.hint = { id, source, until: t + seconds, still: source === 'still' || this.inStill, t0: t, first: source !== 'still' };
   }
   /** prompt 事件的 hint = null：只撤掉由 prompt / 静场显示的提示，不影响教学提示。 */
   clearPromptHint(): void { if (this.hint && this.hint.source !== 'cue') this.hint = null; }
@@ -201,6 +206,7 @@ export class Hud {
     const ht = hint ? hintText(hint.id, this.device, { still: hint.still, driftDir: this.driftDir }) : '';
     if (ht !== this.hintDrawn) { this.hintDrawn = ht; b.run(() => fillHint(this.hintEl, ht)); }
     b.cls(this.hintEl, 'on', !!ht);
+    b.cls(this.hintEl, 'first', !!ht && !!hint && hint.first && t - hint.t0 < FIRST_HINT_SEC);
     // 数数：每出一个新数，数字和残影各自重新淡入（换一个同样的动画名，CSS 动画才会重播）
     if (this.count && this.count.until < t) this.count = null;
     const [cs, cg] = this.countShown();

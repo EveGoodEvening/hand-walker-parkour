@@ -40,6 +40,31 @@ describe('attachUiSounds: while a screen awaits card input, keys make no menu so
   });
 });
 
+describe('fallback for a screen that does not send hw-ui-await: a key the screen used up makes no move sound', () => {
+  it('↓ that the card used (cloth counter changed during dispatch): silent; ↓ it did not use, and ↑: move', () => {
+    vi.useFakeTimers({ toFake: [...FAKE.toFake] });
+    const t = new EventTarget() as unknown as Window;
+    const played: string[] = [];
+    let cloth = 0;
+    let cardWants = true;
+    const off = attachUiSounds(t, (k) => played.push(k), () => true, { mayConsume: (k) => k === 'ArrowDown', consumed: () => cloth });
+    // 界面的监听在声音包之后（UI.ts 挂在 window 冒泡阶段）：卡还在等输入时把 ↓ 用掉
+    const card = (e: Event) => { if ((e as KeyboardEvent).key === 'ArrowDown' && cardWants) cloth++; };
+    t.addEventListener('keydown', card);
+    const press = (k: string) => { t.dispatchEvent(key(k)); vi.advanceTimersByTime(50); };
+    press('ArrowDown');
+    expect(cloth).toBe(1);
+    expect(played).toEqual([]);
+    press('ArrowUp');
+    expect(played).toEqual(['move']);
+    cardWants = false;
+    press('ArrowDown');
+    expect(played).toEqual(['move', 'move']);
+    t.removeEventListener('keydown', card);
+    off();
+  });
+});
+
 describe('real UI + OutroScreen (ch4 outro, ↓ ↓ ↓): the card input is silent apart from the cloth, the menu afterwards is not', () => {
   it('before the hint (no menu yet) and while waiting: no move / confirm for any key; after the third ↓: move / confirm again', async () => {
     vi.useFakeTimers({ toFake: [...FAKE.toFake] });

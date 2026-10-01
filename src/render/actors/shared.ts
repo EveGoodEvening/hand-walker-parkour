@@ -48,8 +48,8 @@ export const WP5 = {
    */
   foreheadReach: false,
   /**
-   * 镜头是不是普通的追尾机位（CameraRig 写，下一帧 Actor 读）：回头、停拍看替身、段内专门机位、摔倒时为 false。
-   * 上半身淡出（readability.ts）只在追尾机位下爬行时用。
+   * 镜头是不是还在主角身后（CameraRig 写，下一帧 Actor 读）：追尾、竖屏追尾、5-3 段内追尾为 true；回头、转头、停拍看替身、
+   * 穿玻璃侧拍、摔倒时为 false。上半身淡出（readability.ts）只在它为 true 时爬行用（§10.3）。
    */
   chaseCam: true,
   /** 主角的「行走相位」读数（测试用）：左右手腕的世界坐标。 */
