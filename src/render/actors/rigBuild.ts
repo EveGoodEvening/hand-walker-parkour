@@ -9,6 +9,7 @@
 //
 // 附录 A-4：没有面孔，只有两个小方块做眼睛，没有嘴。
 import * as THREE from 'three';
+import { propHex } from '../wallTone';
 import type { PoseHistoryAPI, QualityProfile, RigFactory, RigHandle, ViewContext } from '../../core/contracts';
 import { GeoBuilder, type V3 } from '../../core/geo';
 import { BONE_COUNT, BONE_INDEX, BONE_PARENT, BONES, type BoneName, type Pose } from '../../core/rig';
@@ -67,7 +68,9 @@ export const RIG_COLORS = {
   uniform: 0x2f4a6d, stripe: 0xd9dee3, pants: 0x2a3a52, skin: 0xc9b8a6, callus: 0x9b8f82, lines: 0x8c8279, hair: 0x1e2226,
   eye: 0x2a2f33, shoe: 0x2b3034, sole: 0xcfd4d6, third: 0xe6ebee, steel: 0x9ba5a9, bag: 0x3c4650, knuckle: 0xbba997, bowl: 0xdde2e4,
 } as const;
-const C = RIG_COLORS;
+/** lead 集成：深色衣物按 §5.1「画面上的颜色」反推（WP3 的 propHex）；眼睛、鞋底等测试用到的颜色不动。 */
+const TONED: ReadonlySet<string> = new Set(['uniform', 'pants', 'hair', 'shoe', 'bag']);
+const C = Object.fromEntries(Object.entries(RIG_COLORS).map(([k, v]) => [k, TONED.has(k) ? propHex(v) : v])) as Record<keyof typeof RIG_COLORS, number>;
 
 /** 画质 → 基本体细分。 */
 export interface RigDetail { radial: number; cap: number; ico: 0 | 1 }

@@ -128,6 +128,15 @@ export function propAlbedo(hex: number, o: PropToneOpts = {}): Lin {
   return wallAlbedo(hex, o.y ?? 0.6, { lift, shade: 1, tex: 1, lamp: o.lamp ?? LAMP_MEAN, desat: (o.desat ?? 0.15) * k, atmo: o.atmo ?? 'morning' });
 }
 
+/**
+ * 给只能写 sRGB 十六进制的包（WP5 的主角、WP6 的人，经 core/geo.ts 的 setHex）：补偿后的反照率换回十六进制，
+ * setHex 之后正好是 propAlbedo（各通道截到 1）。lead 集成：深色校服、裤子在画面上不再是饱和的宝蓝（附录 A-9）。
+ */
+export function propHex(hex: number, o: PropToneOpts = {}): number {
+  const a = propAlbedo(hex, o);
+  return _c.setRGB(Math.min(1, a[0]), Math.min(1, a[1]), Math.min(1, a[2]), THREE.LinearSRGBColorSpace).getHex();
+}
+
 /** KitGeo.tone 用的函数：hex → 补偿后的线性颜色。lift ≤ 0 时返回 null（不补偿，例如虚空走廊的近黑）。 */
 export function propTone(o: PropToneOpts = {}): ((hex: number) => Lin) | null {
   if ((o.lift ?? 1) <= 0) return null;

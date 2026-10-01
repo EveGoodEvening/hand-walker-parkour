@@ -1,7 +1,10 @@
 // src/render/npc/colors.ts —— WP6 用到的色值（摘自 DESIGN.md §5.1 色板；WP3 的 palette.ts 是包内文件，不能 import）。
 // 暖色只允许出现在规定位置：烟头 #D2553A、栏杆红灯 #B3322C 只在第三章（附录 A-9）。
 
-export const C = {
+import { propHex } from '../wallTone';
+
+/** 色板原值（§5.1，画面上的颜色）。 */
+export const PALETTE = {
   // 粉笔：白顶边（low）/ 细白线（bar）/ 描边
   chalkWhite: 0xe4e8e4,
   chalkLine: 0xc7d0d3,
@@ -50,3 +53,13 @@ export const C = {
   zhouJacket: 0x6c6f6e,
   maPants: 0x1e2226,
 } as const;
+
+/**
+ * 实际写进顶点色的值。lead 集成：深色衣物按「画面上的颜色」反推反照率（WP3 的 propHex，与 WP3 自己的人物一致），
+ * 否则在 WP3 的正式光照下校服、裤子是饱和度 0.85 以上的宝蓝（附录 A-9）。其余颜色（粉笔、暖色、地面）原样。
+ */
+export const C: { readonly [K in keyof typeof PALETTE]: number } = {
+  ...PALETTE,
+  uniform: propHex(PALETTE.uniform), trousers: propHex(PALETTE.trousers), hair: propHex(PALETTE.hair), shoe: propHex(PALETTE.shoe),
+  bag: propHex(PALETTE.bag), teacherSkirt: propHex(PALETTE.teacherSkirt), maPants: propHex(PALETTE.maPants),
+};
