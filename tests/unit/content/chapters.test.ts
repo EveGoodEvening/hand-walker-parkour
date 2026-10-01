@@ -1,6 +1,6 @@
 // tests/unit/content/chapters.test.ts —— 五章数据（DESIGN.md §4、§8.10 WP2 验收 1–4、6，附录 B.1、B.3、附录 C）。归 WP2。
 import { describe, expect, it } from 'vitest';
-import { CORRIDOR_WIDTH, LANE_WIDTH, LIMITS, TEXT } from '../../../src/core/constants';
+import { CORRIDOR_WIDTH, LANE_WIDTH, LIMITS, TEXT, TICK_DT } from '../../../src/core/constants';
 import { FALLBACK_ATMOSPHERES } from '../../../src/core/fallbacks';
 import { QUALITY } from '../../../src/core/quality';
 import type { ChapterId, ObstacleClass } from '../../../src/core/types';
@@ -13,6 +13,10 @@ import { OBSTACLES } from '../../../src/levels/obstacles';
 import type { ChapterDef, CompiledSegment, RunSegmentDef, SegmentDef, StillSegmentDef } from '../../../src/levels/schema';
 import { nominalTimeline, timeAtS, validateChapter } from '../../../src/levels/validate';
 import { solver } from '../../../src/sim/Solver';
+import { Sim } from '../../../src/sim/Sim';
+import { advancePace, createPaceState, nominalCadence, paceEvents } from '../../../src/sim/Pace';
+import { expandSegment, type Decor, type GroupInfo } from '../../../src/render/npc/crowds';
+import { specialById } from '../../../src/render/npc/specials';
 import { NOTE_OPEN } from '../../../src/ui/hud/Hud';
 
 const IDS = ['ch1', 'ch2', 'ch3', 'ch4', 'ch5'] as const;
@@ -423,22 +427,87 @@ describe('评审修复 U1 的数据形状', () => {
     expect(sat.at).toBeGreaterThanOrEqual(open.at + NOTE_OPEN.endAt - 1e-9);
     expect(dent.at).toBeGreaterThanOrEqual(open.at + NOTE_OPEN.endAt - 1e-9);
   });
-  it('班长与马老师的组存在（WP6 specials 按组 id 认出来；不是中道上的障碍）', () => {
-    const groups = (id: ChapterId, sid: string) => ((ch(id).segments.find((s) => s.id === sid) as RunSegmentDef).npcs ?? []).map((g) => g.id);
-    expect(groups('ch3', '3-1')).toContain('monitor');
-    expect(groups('ch5', '5-7')).toContain('teacherMa');
-    for (const id of IDS) for (const seg of compile(ch(id)).segments) {
-      for (const o of seg.obstacles) expect(['monitor', 'teacherMa'].includes(String(o.params.itemId ?? '')), `${seg.def.id} ${o.kind}`).toBe(false);
+  it('1-2 陈默：perfect 自动驾驶从检查点 @96 起，在他让开到那只脚之间只按一次，是撑跃越过那只脚（不是抢先换进右道贴着他躲过去）', () => {
+    const c = compile(ch('ch1'));
+    const sim = new Sim(solver);
+    sim.load(c, { segment: '1-2', beat: 96 }, c.seed);
+    sim.setAutopilot('perfect');
+    const acts: Array<{ beat: number; kind: string }> = [];
+    let hits = 0;
+    for (let i = 0; i < 120 * 30; i++) {
+      sim.step([], new Set());
+      const n = sim.snapshot();
+      for (const e of sim.drain()) {
+        if (e.type === 'hit') hits++;
+        if (e.type === 'action') acts.push({ beat: n.player.beat, kind: String((e.data as { kind?: string }).kind) });
+      }
+      if (n.player.beat > 121 || n.segment !== '1-2') break;
+    }
+    expect(hits).toBe(0);
+    const near = acts.filter((a) => a.beat > 112 && a.beat < 118.3 && ['lane', 'jump', 'duck'].includes(a.kind));
+    expect(near.map((a) => a.kind)).toEqual(['jump']);
+    expect(near[0]!.beat).toBeGreaterThan(116.5);
+  });
+  it('班长与马老师的组存在（不是中道上的障碍）；马老师的组是一个人，站在 5-8 七步起点的前方', () => {
+    const groups = (id: ChapterId, sid: string) => ((ch(id).segments.find((s) => s.id === sid) as RunSegmentDef).npcs ?? []);
+    expect(groups('ch3', '3-1').map((g) => g.id)).toContain('monitor');
+    const s57 = ch('ch5').segments.find((s) => s.id === '5-7') as RunSegmentDef;
+    const ma = groups('ch5', '5-7').find((g) => g.id === 'teacherMa')!;
+    expect(ma).toBeDefined();
+    expect(specialById(ma.id)).toBe('teacherMa');                        // WP6 的别名表认得这个 id（specialOfGroup 还要 WP6 补上）
+    // 站立段沿用紧挨着的前一个跑段的组（§10.2）：5-8 从 5-7 的终点起身，往前走七步，他要在那附近
+    const segs = ch('ch5').segments;
+    expect(segs[segs.findIndex((s) => s.id === '5-7') + 1]?.id).toBe('5-8');
+    expect(ma.from).toBeGreaterThanOrEqual(s57.beats);
+    expect(ma.to).toBeLessThanOrEqual(s57.beats + 4);
+    const seg = compile(ch('ch5')).segments.find((s) => s.def.id === '5-7')!;
+    const out: Decor[] = [], info: GroupInfo[] = [];
+    expandSegment(1705, seg, out, info);
+    const gi = info.findIndex((g) => g.key === 'teacherMa');
+    expect(out.filter((d) => d.group === gi)).toHaveLength(1);
+    for (const id of IDS) for (const sg of compile(ch(id)).segments) {
+      for (const o of sg.obstacles) expect(['monitor', 'teacherMa'].includes(String(o.params.itemId ?? '')), `${sg.def.id} ${o.kind}`).toBe(false);
     }
   });
-  it('4-5 照原文「很慢，很慢。但比站着好。」：段首约 5 m/s，段内渐变到不超过约 6.5 m/s，明显低于 4-1；段首有这两句', () => {
+  it('3-7：compound kit 在栏杆前只画门卫室，栏杆不能太靠后；「它在所有……」三句都在钻栏杆之前出字，红光那句在之后', () => {
+    const seg = runSeg('ch3', '3-7');
+    const bar = seg.obstacles.find((o) => o.kind === 'barrierArm')!;
+    expect(bar.s0 - seg.s0, 'metres of street before the barrier').toBeLessThanOrEqual(24);
+    const at = (l: string) => seg.events.find((e) => e.body.type === 'text' && [e.body.line].flat().includes(l as never))!.at;
+    for (const l of ['c3.reflective', 'c3.seeSelf', 'c3.shouldStand']) expect(at(l), l).toBeLessThan(bar.beat);
+    expect(at('c3.redLight')).toBeGreaterThan(bar.beat);
+    // 「它不在我身后。」紧接「我已经知道回头没用。」，在 3-6 最后一排之后
+    const s36 = ch('ch3').segments.find((s) => s.id === '3-6') as RunSegmentDef;
+    const nb = (s36.events ?? []).find((e) => e.type === 'text' && e.line === 'c3.notBehind');
+    expect(nb?.at).toBeGreaterThan(Math.max(...(s36.rows ?? []).map((r) => r[0])));
+  });
+  it('4-5 照原文「很慢，很慢。但比站着好。」（lead 裁定）：步幅 1.1–1.2 m、段首约 4.2 掌/s（约 5 m/s），渐变到 ≤ 6.5 m/s，「我们终于跑成了一样的速度。」之前已经稳定', () => {
     const s45 = runSeg('ch4', '4-5'), s41 = runSeg('ch4', '4-1');
-    const v = (seg: CompiledSegment, b: number) => seg.cadenceAt(b) * seg.stride;
-    expect(v(s45, 0)).toBeGreaterThanOrEqual(4.6);
-    expect(v(s45, 0)).toBeLessThanOrEqual(5.4);
-    const vmax = Math.max(...Array.from({ length: 281 }, (_, b) => v(s45, b)));
-    expect(vmax).toBeLessThanOrEqual(6.6);
-    expect(vmax).toBeLessThan(0.75 * v(s41, 0));
+    // AGENTS.md：清醒时步幅 1.0–1.1 m；lead 批准 4-5 用到 1.2 m（撑跃窗口 ≥ 0.16 s）
+    expect(s45.stride).toBeGreaterThanOrEqual(1.1 - 1e-9);
+    expect(s45.stride).toBeLessThanOrEqual(1.2 + 1e-9);
+    // 按 Pace 实际推进（含段中的 cadence 事件），取每一拍的名义步频
+    const cad: number[] = [];
+    const p = createPaceState(s45, s45.s0, 0);
+    const evs = paceEvents(s45);
+    const beats = (s45.def as RunSegmentDef).beats;
+    for (let b = (p.s - s45.s0) / s45.stride; b < beats; b = (p.s - s45.s0) / s45.stride) {
+      if (cad.length <= Math.floor(b)) cad.push(nominalCadence(s45, p, b));
+      advancePace(s45, p, evs, 1, TICK_DT);
+    }
+    expect(cad[0]!).toBeGreaterThanOrEqual(4.0);                         // 约 4.2 掌/s
+    expect(cad[0]!).toBeLessThanOrEqual(4.6);
+    expect(Math.max(...cad)).toBeLessThanOrEqual(5.4 + 1e-9);             // 到 5.4 掌/s 为止
+    expect(cad[0]! * s45.stride).toBeGreaterThanOrEqual(4.6);
+    expect(cad[0]! * s45.stride).toBeLessThanOrEqual(5.4);
+    for (let b = 1; b < cad.length; b++) expect(cad[b]!).toBeGreaterThanOrEqual(cad[b - 1]! - 1e-9);   // 只会越来越快
+    const vmax = Math.max(...cad) * s45.stride;
+    expect(vmax).toBeLessThanOrEqual(6.5 + 1e-9);
+    expect(vmax).toBeLessThan(0.75 * s41.cadenceAt(0) * s41.stride);
+    const inSync = s45.events.find((e) => e.id === 'inSync')!;
+    let lastChange = 0;
+    for (let b = 1; b < cad.length; b++) if (Math.abs(cad[b]! - cad[b - 1]!) > 1e-6) lastChange = b;
+    expect(inSync.at - lastChange, 'beats of steady cadence before 「我们终于跑成了一样的速度。」').toBeGreaterThanOrEqual(20);
     const first = s45.events.find((e) => e.body.type === 'text')!;
     expect(first.at).toBe(0);
     const body = first.body as Extract<typeof first.body, { type: 'text' }>;

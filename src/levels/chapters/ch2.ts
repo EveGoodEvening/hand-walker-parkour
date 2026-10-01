@@ -108,7 +108,7 @@ export default {
       follower: { mode: 'absent' },
       events: [
         { at: 0.0, type: 'camera', shot: 'counter', seconds: 0 },
-        { at: 0.3, type: 'actor', clip: 'counterStand', seconds: 7.5 },
+        { at: 0.3, type: 'actor', clip: 'counterStand', seconds: 7.0 },                // 撑到静场结束（7.3 s）
         { at: 0.3, type: 'text', line: 'c2.counter', id: 'counterStand' },
         { at: 3.0, type: 'text', line: 'c2.eatMore', style: 'other', speaker: 'lunchLady' },
         { at: 5.0, type: 'text', line: 'c2.compensate' },                               // 显示到 7.24 s

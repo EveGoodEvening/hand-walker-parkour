@@ -10,11 +10,16 @@
 //   · 评审修复 U1（偏离 §4.1 表格的地方，建议 lead 写进 §10.3）：
 //     - 1-2 陈默：右侧储物柜错开到 @99–@113（长度不变，@113 之后右道空着，是他向右让开的地方）；「喂。」@101、减速 @102（1.2 s 减到 1.2 m/s、走 5.0 s、1.2 s 回到原速），
 //       中间按原文补「他的问题很真诚，真诚到近乎冒犯。」「他愣了一下，然后笑了，像是我开了个玩笑。」；他在 @112 让开（表中 @115），
-//       回速在 @115.2 结束，@118 那只脚在稳定步频下撑跃。陈默本人仍在 @116，脚仍在 @118。
+//       回速在 @115.2 结束，@118 那只脚在稳定步频下撑跃。陈默本人仍在 @116，脚仍在 @118。右道 @117.8 放他的书包（低矮，
+//       止于 @118.0，不占他让开的站位）：右道空出来以后，最省的路线曾经是 @117.5 换进右道、贴着他躲过那只脚；现在那样要多跳一次，
+//       求解器和 perfect 自动驾驶都回到 @117.5 撑跃越过那只脚（原文「我双手发力，越过他伸在过道里的脚」）。
 //     - 1-2 @6、@22 按原文补「他们以为它只是个绰号。」「有时候我也这么以为。」（@22 在第一个挡道之后，不和教学抢）。
 //     - 1-3 @38 低头保持 1.0 s → 2.8 s：@44「它还在低头。」出字到消失（1.36 → 2.70 s）都在低头。@19 加 'LL.'（门道是可选路线）。
-//     - 1-1 撑跃提示 @4 → @6（第一句旁白出来之后，接触前仍 ≥ 1.2 s）。
+//     - 1-1 撑跃提示 @4 → @6（折中：仍和第一句旁白重叠约 1 s；等旁白消失再提示，接触前就不够 R7 的 1.2 s）。
 //     - 半句比喻补成原文整句，两行显示：1-2 @124「那种熟悉的、细微的刺痛，」「像旧友拍肩。」；1-3 @58「早自习铃终于响了，」「尖锐，像某种警告。」。
+//       1-3「那我的脚，究竟是用来做什么的？」@66 → @67.5：字幕是滚动的两行，以前铃声那两行只显示了 75% 就被挤上去。
+//     - 1-2 陈默那场的字幕按两行队列重排（减速开始后 0.3 / 1.0 / 1.6 / 2.9 / 3.85 / 4.3 s）：「他的问题很真诚……」显示完整的 2.24 s
+//       才被「每天都疼。」挤上去（以前只显示 71%），「他愣了一下，然后笑了」仍在他起身之前。
 // 台词全部来自 lines.ts。
 import type { ChapterDef } from '../schema';
 
@@ -40,7 +45,9 @@ export default {
       rows: [[12, ['.', 'footOut', '.']], [20, ['.', 'footOut', '.']]],     // 静止伸在过道里的脚
       events: [
         { at: 0, type: 'text', line: 'c1.leaveClass' },
-        { at: 6, type: 'hint', hint: 'jump' },                                         // 第一句旁白出完之后；接触 @11.75 前 1.3 s（R7）
+        // 折中：「我把书包甩上肩……」显示到 2.42 s，提示在 1.36 s 出现，和它重叠约 1 s。等旁白完全消失再提示，
+        // 离接触（2.67 s）就不到 R7 要求的 1.2 s 了；@6 比原来的 @4 晚 0.45 s，接触前仍有 1.3 s
+        { at: 6, type: 'hint', hint: 'jump' },
         { at: 0, type: 'ambience', amb: 'reading', level: 1, seconds: 1.5 },
       ],
     },
@@ -67,6 +74,9 @@ export default {
         { at: 99, lane: 1, kind: 'locker', len: 14 },                       // 右侧错开到 @99–@113：给陈默留出向右让开的地方
         { at: 116, lane: 0, kind: 'chenMo', id: 'chenmo', behavior: { type: 'yield', atBeat: 112 } },   // 对话说完，他站起来让到右边
         { at: 118, lane: 0, kind: 'footOut', id: 'chenmoFoot', behavior: { type: 'static' } },          // 留在过道里的脚
+        // 他的书包落在右道、紧挨着他让开的位置（止于 @118.0，在 chenStepAside 的 ±0.35 m 站位窗口之外）：
+        // 抢先换进右道躲脚也要多跳一次，最省的路线回到原文「我双手发力，越过他伸在过道里的脚」
+        { at: 117.8, lane: 1, kind: 'bag' },
       ],
       notes: [{ at: 132, lane: 1, note: 'n1-a' }],
       events: [
@@ -85,12 +95,14 @@ export default {
         // 他起身（ObstacleView：yield 前 2.6 → 1.6 拍）、让到右边（前 1.6 → 0.6 拍），@112 让开；回速在 @115.2 结束，
         // @118 那只脚在稳定步频下撑跃
         { at: 102, type: 'slow', speed: 1.2, seconds: 5.0, ramp: 1.2, timeline: [
+          // 字幕是滚动的两行：「他的问题很真诚……」（16 字，2.24 s）要显示完，「每天都疼。」才把它挤上去；
+          // 「他愣了一下，然后笑了」在他起身（yield 前 2.6 拍，减速开始后约 4.32 s）之前出字
           { at: 0.3, type: 'text', line: 'c1.handsQ', style: 'other', speaker: 'chenMo', id: 'chenMoAsk' },
-          { at: 1.1, type: 'text', line: 'c1.hurtQ', style: 'other', speaker: 'chenMo' },
-          { at: 1.9, type: 'text', line: 'c1.sincere' },
+          { at: 1.0, type: 'text', line: 'c1.hurtQ', style: 'other', speaker: 'chenMo' },
+          { at: 1.6, type: 'text', line: 'c1.sincere' },
           { at: 2.9, type: 'text', line: 'c1.hurtA1', style: 'self' },
-          { at: 3.5, type: 'text', line: 'c1.hurtA2', style: 'self' },
-          { at: 4.2, type: 'text', line: 'c1.laughed' },
+          { at: 3.85, type: 'text', line: 'c1.hurtA2', style: 'self' },
+          { at: 4.3, type: 'text', line: 'c1.laughed' },
         ] },
         { at: 124, type: 'text', line: ['c1.prickle', 'c1.oldFriend'] },                  // 原文一句，两行显示
         { at: 156, type: 'text', line: 'c1.gaze' },
@@ -120,7 +132,7 @@ export default {
         { at: 56, type: 'lights', op: 'flicker', from: 56, to: 60, every: 1 },
         { at: 58, type: 'bell', kind: 'morning', id: 'bellWarning' },
         { at: 58, type: 'text', line: ['c1.bellRang', 'c1.bell'] },                       // 原文一句，两行显示
-        { at: 66, type: 'text', line: 'c1.feetQ' },
+        { at: 67.5, type: 'text', line: 'c1.feetQ' },                                   // 上面两行（18 字，2.42 s）显示约 2.2 s 之后
       ],
     },
     /* 1-4 英语老师：静场；教「按住」 */
