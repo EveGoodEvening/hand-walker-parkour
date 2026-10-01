@@ -41,12 +41,12 @@ export const SET_SHOTS: Partial<Record<ShotId, SetShot>> = {
  * 镜中站在倒影身后的人和搭在肩上的手在主角的右边。
  */
 export const SET_SHOT_RETURN: Partial<Record<ShotId, SetShot>> = {
-  bathroomMirror: { pos: [1.0, 1.45, 1.3], look: [-0.3, 1.3, -0.87], fov: 55 },
+  bathroomMirror: { pos: [0.95, 1.7, 1.0], look: [-0.28, 1.32, -0.87], fov: 45 },
 };
 
 /** 静场里过了某个时刻慢慢推到的近景（修复轮 U5）：5-9 推到枕边的凹陷，从床边平视枕头，主角的身体退出画面。 */
 export const SET_SHOT_LATE: Partial<Record<ShotId, { after: number; blend: number; shot: SetShot }>> = {
-  infirmaryBed: { after: 7.0, blend: 1.2, shot: { pos: [-1.0, 0.28, 0.45], look: [-0.45, 0.0, 0.7], fov: 50 } },
+  infirmaryBed: { after: 7.0, blend: 1.2, shot: { pos: [-1.0, 0.45, 0.35], look: [-0.45, -0.02, 0.72], fov: 52 } },
 };
 
 /** 每个 set 的缺省机位（`camera` cue 可以覆盖）。键 = `${set}.${variant}` 或 `${set}`。 */

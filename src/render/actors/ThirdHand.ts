@@ -62,8 +62,10 @@ export function applyThirdHand(b: PoseBuilder, g: ThirdHandGesture, extend: numb
       break;
     }
     case 'shoulder': {
+      // 搭在前面那人的肩上，手指从肩头垂到前面（修复轮 U5：以前手平放在肩上，从镜头看是一条 2–3 px 的线）
       if (tgt.point) b.toChar(tgt.point, _t); else _t.copy(S).addScaledVector(FWD, 0.45).addScaledVector(DOWN, 0.25);
-      _f.copy(FWD); _n.copy(DOWN);
+      _t.y += 0.05;
+      _f.set(0, -0.7, -0.7).normalize(); _n.set(0, -0.7, 0.7).normalize();
       break;
     }
     case 'point': {

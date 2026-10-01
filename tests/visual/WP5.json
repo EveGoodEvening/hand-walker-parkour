@@ -895,7 +895,7 @@
     "eval": "U5.until(()=>__game.beats().includes('seventhFall'),6000)"
    },
    {
-    "steps": 72
+    "steps": 192
    },
    {
     "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"

@@ -36,12 +36,12 @@ export function dentShape(bed: Bed, x: number, z: number): number {
   if (!bed.dent) return 0;
   return Math.exp(-((x - bed.dent[0]) ** 2) / 0.045 - ((z - bed.dent[1]) ** 2) / 0.06);
 }
-/** 床单高度：平铺，两侧垂下；枕边的凹陷（高斯，深 6 cm）。 */
+/** 床单高度：平铺，两侧垂下；枕边的凹陷（高斯，深 8 cm）。 */
 export function sheetHeight(bed: Bed, x: number, z: number): number {
   let y = bed.top + 0.03;
   const ax = Math.abs(x - bed.cx);
   if (ax > 0.42) y -= (ax - 0.42) * 2.4;
-  y -= 0.06 * dentShape(bed, x, z);
+  y -= 0.08 * dentShape(bed, x, z);              // 修复轮 U5：6 cm → 8 cm，近景里读得出是个坑
   return y;
 }
 export const INFIRMARY_BED: Readonly<Bed> = BEDS.bed;
@@ -101,7 +101,7 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
     for (let i = 0; i < pos.count; i++) {
       const k = dentShape(bed, pos.getX(i), pos.getZ(i));
       const rim = Math.max(0, pos.getZ(i) - bed.dent[1]) * 1.2 * k;
-      const f = 1 - 0.5 * k + rim;
+      const f = 1 - 0.62 * k + rim;
       col.setXYZ(i, f, f, f);
     }
     col.needsUpdate = true;

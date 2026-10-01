@@ -52,7 +52,7 @@ export function readableLight(dir: THREE.Vector3, out: THREE.Vector3): THREE.Vec
  * 以前只保证「水平 ≥ 1.2 × 竖直」，影子只伸出约 1.3 m，被身体挡住；4-3 的影子还朝后落，与「它选择了另一个方向」不符。
  * 水平 / 竖直比按姿势自己算：影子的尖（最远的关节投影）落在根的前右方 EVENT_TIP 米处，比例限制在 [RATIO_MIN, RATIO_MAX]。
  */
-export const SHADOW_EVENT = { tip: 2.5, liesDownTip: 2.7, ratioMin: 3, liesDownRatioMin: 1.2, ratioMax: 8, longRatio: 5, blendSec: 0.5, defaultDir: [0.5, -0.866] as const } as const;
+export const SHADOW_EVENT = { tip: 2.5, liesDownTip: 3.3, ratioMin: 3, liesDownRatioMin: 1.2, ratioMax: 8, longRatio: 5, blendSec: 0.5, defaultDir: [0.5, -0.866] as const } as const;
 /**
  * 事件期间影子的水平方向（单位向量 x、z）：氛围的方向在前右 25°–60° 之间就沿用，否则用缺省的前右 30°。
  * 正前方（梦 dream 的 (0.1, −0.9)）不行：拉长的影子在追尾 / 站立机位里被压缩成主角身后的一团灰影。
@@ -313,7 +313,7 @@ export class PlanarShadowSystem implements ViewSystem {
         const x = N.x + (N.stand?.x ?? 0);
         const hd = eventHeading(this.dir, _h);
         const yaw = Math.atan2(-hd.x, -hd.y);                 // 角色的前方（−z）转到 hd
-        const back = 1.0;                                      // 根（骨盆前方）离脚约 1 m
+        const back = 1.6;                                      // 根离你的脚 1.6 m：站立机位看得到的地面从你前方约 1.6 m 起
         I.s = N.s - hd.y * back; I.x = x + hd.x * back; I.floorY = N.floorY; I.beat = 0.2; I.stride = 1; I.duck = 0.8; I.laneTarget = I.x / 1.1; I.speed = 0;
         crawlPose(I, b);
         I.duck = 0;
