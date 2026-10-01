@@ -14,6 +14,9 @@
 // 越过的障碍（U6）：镜头在主角身后 2.35 m 以上，越过的障碍会在镜头和主角之间停留，形成横跨画面下部的暗条
 // （3-4 静音段里整屏被挡）。障碍远端落到玩家碰撞盒后沿之后 0.3 m（s1 < s − PASS_BEHIND）起，在 PASS_FADE 秒内
 // 以底面中心为原点缩小到 0（之后不画）；回头（lookBack > 0）或镜头转向身后（turnBack 机位）时照常画，身后保留 14 m。
+// 人墙（U6）：人墙段——人群段（2-2、5-6，数据注释里的「人墙」）和紧挨着站立段（4-3、5-8）的前一个跑段（4-2、5-7，站立段只显示它们的组）——
+// 里站着的人（路边的组和人腿障碍）每个画质都画上身和没有五官的头（isWallSegment，读章时定）；梦里（plaza）的人中、高画质本来就有上身，
+// 低画质也画。别处的路边的人、障碍，以及所有坐着的人、伸脚的人只到腰带。
 import * as THREE from 'three';
 import type { ArchetypeId, QualityProfile, ViewContext, ViewSystem } from '../../core/contracts';
 import { LANE_WIDTH } from '../../core/constants';
@@ -33,7 +36,7 @@ import { CRAWL, Crawlers, type Crawler } from './Crawlers';
 import { expandChapter, lowerBound, type Decor, type GroupInfo } from './crowds';
 import { HitboxDebug } from './hitboxDebug';
 import type { InstPool } from './InstPool';
-import { BODY, LegForest, NEAR_UPPER, STAND_HIP, newPerson, type Person } from './LegForest';
+import { BODY, LegForest, STAND_HIP, newPerson, type Person } from './LegForest';
 import { KNEELER_BOY, KNEELER_CROWD } from './archetypes/kneeler';
 import { footSeat } from './archetypes/footOut';
 import { MAX_EXPAND } from './archetype';
@@ -116,6 +119,10 @@ export class ObstacleView implements ViewSystem {
   private fadeMarks: number[] = [];
   private decor: Decor[] = [];
   private groups: GroupInfo[] = [];
+  /** 人墙段（U6）：段 → 这一段里站着的人（路边的组、人腿障碍）画上身。读章时定。 */
+  private wallSegs: boolean[] = [];
+  /** 重来 / 读章之后的第一帧把衣服色调直接切到当前氛围（那时 World 已经按检查点重放过 atmosphere）。 */
+  private toneSnap = true;
   private groupState: Array<{ gaze: Decor['gaze'] | null; applaud: number; overtake: number; overtakeS: number }> = [];
   private globalOp: { applaud: number; overtake: number; overtakeS: number } = { applaud: -1, overtake: -1, overtakeS: 0 };
   private chenFoot = new Map<number, CompiledObstacle>();   // chenMo 障碍 id → 他留在过道里的脚
@@ -139,7 +146,7 @@ export class ObstacleView implements ViewSystem {
   private readonly target = new THREE.Vector3();
   private readonly box: AABB = { x0: 0, x1: 0, y0: 0, y1: 0, s0: 0, s1: 0 };
   private readonly m = new THREE.Matrix4();
-  private readonly fctx: FrameCtx = { s: 0, px: 0, t: 0, tAnim: 0, beat: 0, tSeg: 0, speed: 0, bps: 5, ahead: 40, behind: BEHIND_FORWARD, hush: 0, stand: false, reveal: 0 };
+  private readonly fctx: FrameCtx = { s: 0, px: 0, t: 0, tAnim: 0, beat: 0, tSeg: 0, speed: 0, bps: 5, ahead: 40, behind: BEHIND_FORWARD, hush: 0, reveal: 0 };
   private readonly fallbackLook: Look = lookFor('student', 1, 'fallback');
   private readonly sway: Sway = { dx: 0, knee: 0, side: 1 };
   private readonly trem: Tremble = { roll: 0, pitch: 0 };
@@ -184,6 +191,7 @@ export class ObstacleView implements ViewSystem {
     this.chapter = ch;
     const { decor, groups } = expandChapter(ch.seed, ch.segments);
     this.groups = groups;
+    this.wallSegs = ch.segments.map((_, i) => isWallSegment(ch.segments, i));
     this.groupState = groups.map(() => ({ gaze: null, applaud: -1, overtake: -1, overtakeS: 0 }));
     this.specials.clear(); this.looks.clear(); this.chenFoot.clear(); this.chenFootIds.clear(); this.chenDest.clear();
     this.segStart = ch.segments.map(() => Number.NaN);
@@ -291,6 +299,8 @@ export class ObstacleView implements ViewSystem {
   onReset(snap: SimSnapshot): void {
     this.resetState();
     this.forest.tone.snap(this.atmosphereId(snap.segIndex));
+    // 与 World 的 onReset 谁先谁后无关：下一帧再按那时的氛围（检查点重放过的 atmosphere）切一次
+    this.toneSnap = true;
     const segs = this.chapter?.segments ?? [];
     const i0 = snap.segIndex;
     const seg = segs[i0];
@@ -406,7 +416,8 @@ export class ObstacleView implements ViewSystem {
     const bps = next.segKind === 'run' ? Math.max(0.5, N.cadence || speed / Math.max(0.3, N.stride)) : 4.8;
     this.lastT = t;
     this.pruneGazeMemo(t);
-    this.forest.tone.update(this.atmosphereId(next.segIndex), t);
+    if (this.toneSnap) { this.forest.tone.snap(this.atmosphereId(next.segIndex)); this.toneSnap = false; }
+    else this.forest.tone.update(this.atmosphereId(next.segIndex), t);
     const fog = this.ctx.scene.fog as THREE.Fog | null;
     const fogFar = fog && 'far' in fog ? fog.far : 60;
     const ahead = Math.min(this.ctx.quality.chunksAhead * 12 + 6, fogFar + 4);
@@ -420,7 +431,7 @@ export class ObstacleView implements ViewSystem {
     pc.chapter = this.stage ? 'stage' : (this.chapter?.def.id ?? 'ch1') as ChapterId;
     const ctx = this.fctx;
     ctx.s = s; ctx.px = px; ctx.t = t; ctx.tAnim = tAnim; ctx.beat = beat; ctx.tSeg = tSeg; ctx.speed = speed; ctx.bps = bps;
-    ctx.ahead = ahead; ctx.behind = behind; ctx.hush = hush; ctx.stand = next.segKind === 'stand'; ctx.reveal = reveal;
+    ctx.ahead = ahead; ctx.behind = behind; ctx.hush = hush; ctx.reveal = reveal;
 
     // —— 障碍 ——
     if (this.stage) {
@@ -603,9 +614,10 @@ export class ObstacleView implements ViewSystem {
       if (shiftTurn !== 0) { const turn = shiftTurn * 70 * DEG; p.footYawL += turn; p.footYawR += turn; p.legYawL += turn * 0.3; p.legYawR += turn * 0.3; }
       // 障碍里的人只转鞋尖和腿（上身扭过去会让垂着的手伸出碰撞盒）
       this.applyGaze(p, o.id * 8 + i, (o.s0 + o.s1) / 2 + st.ds, f, 'turnShoes', -1, b.type === 'walk', OBSTACLE_GAZE_MAX, 0);
-      p.upper = look.upper || f.stand;
-      // 障碍里的人一律画上身（低画质也画）：画面不随玩家远近变化（不是冲着你来的）；路边的人才按距离（nearUpper）
-      p.near = 1;
+      // 人墙段里的人腿障碍（2-2、5-6 的「两侧车道的人墙」，5-7「排队同学的腿」）和路边的人一样画上身，梦里的人本来就有上身：
+      // 每个画质都画（U6）；别处只到腰带。不再看「当前是不是站立段」：那是整帧的开关，进站立段的那一帧画面里所有人一起长出上身
+      p.wall = kit === 'plaza' || (!this.stage && this.wallSegs[seg.index] === true);
+      p.upper = look.upper || p.wall;
       p.outdoor = OUTDOOR_KITS.has(kit);
       if (p.upper && this.globalOp.applaud >= 0) p.clap = clapClosed(f.tAnim, hash01(o.id + i)) ? 2 : 1;
       if (sp === 'directorZhou') p.glow = emberGlow(f.t, this.reducedFlicker);
@@ -664,7 +676,7 @@ export class ObstacleView implements ViewSystem {
   private resetPerson(p: Person, look: Look): void {
     p.look = look; p.yaw = 0; p.hipH = STAND_HIP; p.stance = BODY.stance;
     p.hipL = p.hipR = p.kneeL = p.kneeR = 0; p.legYawL = p.legYawR = 0; p.footYawL = p.footYawR = 0;
-    p.lean = 0; p.roll = 0; p.dx = 0; p.bob = 0; p.turn = 0; p.upper = false; p.near = 0; p.outdoor = false; p.clap = 0; p.glow = 0; p.targetL = null; p.seated = false; p.squat = false;
+    p.lean = 0; p.roll = 0; p.dx = 0; p.bob = 0; p.turn = 0; p.upper = false; p.wall = false; p.outdoor = false; p.clap = 0; p.glow = 0; p.targetL = null; p.seated = false; p.squat = false;
     p.arms = false;
   }
 
@@ -780,8 +792,9 @@ export class ObstacleView implements ViewSystem {
       } else this.applyIdle(p, f.tAnim, d.phase);
       this.applyGaze(p, -1 - i, sN, f, d.gaze, gi, d.pose === 'walk');
       const kit = groups[gi]?.kit;
-      p.upper = d.look.upper || f.stand || kit === 'plaza';
-      p.near = nearUpper(p.x, sN, f);
+      // 人墙（U6）：按组所在的段决定（梦里的人一律算），坐着的人不算（与别处坐着的人、伸脚的人一样只到腰带）
+      p.wall = d.pose !== 'seat' && (kit === 'plaza' || (!this.stage && this.wallSegs[groups[gi]?.seg ?? -1] === true));
+      p.upper = d.look.upper || kit === 'plaza' || p.wall;
       p.outdoor = kit !== undefined && OUTDOOR_KITS.has(kit);
       const applaud = (gs && gs.applaud >= 0) || this.globalOp.applaud >= 0;
       if (applaud && p.upper) p.clap = clapClosed(f.tAnim, d.phase) ? 2 : 1;
@@ -893,18 +906,30 @@ const OVERTAKE: OvertakeCrawler[] = (() => {
 })();
 
 interface FrameCtx {
-  s: number; px: number; t: number; tAnim: number; beat: number; tSeg: number; speed: number; bps: number; ahead: number; behind: number; hush: number; stand: boolean;
+  s: number; px: number; t: number; tAnim: number; beat: number; tSeg: number; speed: number; bps: number; ahead: number; behind: number; hush: number;
   /** 身后看得见的程度（0..1）：回头或镜头转向身后时越过的障碍照常画。 */
   reveal: number;
 }
 
+/** 人群段（crowd: true，2-2、5-6）：绊倒触发「安静的一秒」的那几段，两侧车道的人墙在这里。 */
+export function isCrowdSegment(seg: Pick<CompiledSegment, 'kind' | 'def'>): boolean {
+  return seg.kind === 'run' && (seg.def as RunSegmentDef).crowd === true;
+}
+
 /**
- * 近处的人加上身（U6，LegForest.NEAR_UPPER）：离玩家 r 米以内为 1，再往外 grow 米内降到 0。
- * 站立段（4-3、5-8）与近处的人墙（5-6、2-2）不再是齐腰截断的裤腿柱；远处路边的人仍只到腰带（P2）。
+ * 人墙段（U6）：人群段（2-2、5-6），以及紧挨着站立段（4-3、5-8）的前一个跑段（4-2、5-7；站立段只显示这一段的组，§10.2）。
+ * 这些段里站着的人（路边的组和人腿障碍）每个画质都画上身和没有五官的头，从出现到消失都一样：不按离玩家的远近
+ * （r1 在近处 6–7.5 m 内从腰里长出来，像是冲着你来的），也不在进入站立段的那一帧突然长出来。
  */
-export function nearUpper(x: number, s: number, f: { s: number; px: number }): number {
-  const d = Math.hypot(s - f.s, x - f.px);
-  return 1 - smoothstep(NEAR_UPPER.r, NEAR_UPPER.r + NEAR_UPPER.grow, d);
+export function isWallSegment(segments: ReadonlyArray<Pick<CompiledSegment, 'kind' | 'def'>>, i: number): boolean {
+  const seg = segments[i];
+  if (!seg || seg.kind !== 'run') return false;
+  return isCrowdSegment(seg) || segments[i + 1]?.kind === 'stand';
+}
+
+/** 人墙的组：组所在的段是人墙段。 */
+export function isWallGroup(g: Pick<GroupInfo, 'seg'>, segments: ReadonlyArray<Pick<CompiledSegment, 'kind' | 'def'>>): boolean {
+  return isWallSegment(segments, g.seg);
 }
 
 /**

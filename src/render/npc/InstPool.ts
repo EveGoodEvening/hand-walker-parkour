@@ -31,11 +31,55 @@ export class InstPool {
     } else this.colors = null;
   }
 
-  begin(): void { this.n = 0; this.dropped = 0; }
+  /** 按变体裁剪 drawRange（trackVariantRanges 之后）：变体 v 的顶点在 [vr[2v], vr[2v + 1])。 */
+  private vr: Int32Array | null = null;
+  /** 共用顶点（aHw.x < 0）覆盖的范围；没有共用顶点时为空区间。 */
+  private common: [number, number] = [Infinity, -Infinity];
+  private lo = Infinity;
+  private hi = -Infinity;
+
+  /**
+   * 本帧只画用到的变体覆盖的那一段顶点（U6）：几何体里每个变体的顶点是连续的一段（PartBuilder 按 variant() 的调用顺序写），
+   * 每帧按实例用到的变体取 [最小起点, 最大终点) 设 drawRange。同一个 InstancedMesh、同一次 draw call，
+   * 只是少处理没人用的变体：renderer.info 也只按这一段计三角形（three r186 renderBufferDirect 按 drawRange 截）。
+   * 低画质的 special 部件靠这个同时装特殊人物和人墙的上身：只有上身时每个实例只付上身那几十个三角形。
+   */
+  trackVariantRanges(): void {
+    const hw = this.mesh.geometry.getAttribute('aHw');
+    let maxV = -1;
+    for (let i = 0; i < hw.count; i++) maxV = Math.max(maxV, Math.round(hw.getX(i)));
+    const r = new Int32Array(Math.max(0, maxV + 1) * 2).fill(-1);
+    let c0 = Infinity, c1 = -Infinity;
+    for (let i = 0; i < hw.count; i++) {
+      const v = Math.round(hw.getX(i));
+      if (v < 0) { c0 = Math.min(c0, i); c1 = Math.max(c1, i + 1); continue; }
+      if ((r[v * 2] as number) < 0 || i < (r[v * 2] as number)) r[v * 2] = i;
+      r[v * 2 + 1] = Math.max(r[v * 2 + 1] as number, i + 1);
+    }
+    this.vr = r;
+    this.common = [c0, c1];
+  }
+
+  /** 变体 v 的顶点范围 [起点, 终点)（trackVariantRanges 之后；测试用）。没有这个变体时返回 null。 */
+  variantRange(v: number): [number, number] | null {
+    const r = this.vr;
+    if (!r || v < 0 || v * 2 + 1 >= r.length || (r[v * 2] as number) < 0) return null;
+    return [r[v * 2] as number, r[v * 2 + 1] as number];
+  }
+
+  begin(): void { this.n = 0; this.dropped = 0; this.lo = this.common[0]; this.hi = this.common[1]; }
 
   /** 追加一个实例；返回下标，满了返回 −1。 */
   push(m: THREE.Matrix4, variant = 0, glow = 0, color?: THREE.Color): number {
     if (this.n >= this.cap) { this.dropped++; return -1; }
+    const r = this.vr;
+    if (r) {
+      const k = Math.round(variant) * 2;
+      if (k >= 0 && k + 1 < r.length && (r[k] as number) >= 0) {
+        if ((r[k] as number) < this.lo) this.lo = r[k] as number;
+        if ((r[k + 1] as number) > this.hi) this.hi = r[k + 1] as number;
+      }
+    }
     const i = this.n++;
     m.toArray(this.mesh.instanceMatrix.array as Float32Array, i * 16);
     const h = this.hw.array as Float32Array;
@@ -70,10 +114,24 @@ export class InstPool {
   variantAt(i: number): number { return (this.hw.array as Float32Array)[i * 2] ?? 0; }
   glowAt(i: number): number { return (this.hw.array as Float32Array)[i * 2 + 1] ?? 0; }
 
+  /** 本帧实际画的三角形数（按 renderer.info 的算法：drawRange 内的三角形 × 实例数）。 */
+  triangles(): number {
+    if (this.n === 0) return 0;
+    const geo = this.mesh.geometry, count = geo.getAttribute('position').count, dr = geo.drawRange;
+    const start = Math.min(count, Math.max(0, dr.start));
+    const verts = Math.max(0, Math.min(count - start, dr.count));
+    return Math.floor(verts / 3) * this.n;
+  }
+
   end(): void {
     const n = this.n;
     this.mesh.count = n;
     this.mesh.visible = n > 0;
+    if (this.vr) {
+      if (n === 0) this.mesh.geometry.setDrawRange(0, Infinity);
+      else if (this.hi > this.lo) this.mesh.geometry.setDrawRange(this.lo, this.hi - this.lo);
+      else this.mesh.geometry.setDrawRange(0, 0);           // 实例都是几何体里没有的变体：本来就什么都不画
+    }
     if (n === 0) return;
     const im = this.mesh.instanceMatrix;
     im.clearUpdateRanges(); im.addUpdateRange(0, n * 16); im.needsUpdate = true;

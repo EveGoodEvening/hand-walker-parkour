@@ -78,6 +78,22 @@ describe('NPC 衣服颜色随氛围补偿（U6）', () => {
     expect(out.r).toBeCloseTo(npcAlbedo(C.trousers, 'dawn', true)[0], 6);
   });
 
+  it('重来：与 World 谁先 onReset 无关，第一帧直接按那时的氛围着色（不从旧氛围渐变 1.5 s）', () => {
+    const { view, ctx } = makeView('high');
+    // World 的氛围插值器：onReset 时还是旧的（假设 World 排在后面才重放检查点的 atmosphere）
+    const atmo = { id: 'nightIndoor' as AtmosphereId };
+    (ctx as { atmosphere?: unknown }).atmosphere = atmo;
+    const vd = new ViewDriver(view, getChapter('ch5') as ChapterDef, { segment: '5-7', beat: 8 });
+    vd.d.sim.setInvincible(true);
+    vd.step(2);
+    view.onReset(vd.d.snap);
+    expect(view.forest.tone.mode).toBe('morning');          // nightIndoor 按早晨补偿
+    atmo.id = 'overcast';                                   // World 这时才重放到 overcast
+    vd.step(1);
+    expect(view.forest.tone.mode).toBe('overcast');
+    expect(view.forest.tone.k).toBe(1);
+  });
+
   it('ObstacleView：5-7 跑道（户外）与 5-6 走廊（室内、有灯）按 overcast 着色；第一章按 morning（不变）', () => {
     const cases: Array<[ChapterId, string, AtmosphereId, boolean]> = [['ch5', '5-7', 'overcast', true], ['ch5', '5-6', 'overcast', false], ['ch1', '1-1', 'morning', false]];
     for (const [ch, seg, atmo, outdoor] of cases) {

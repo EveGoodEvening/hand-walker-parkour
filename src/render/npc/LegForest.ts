@@ -2,16 +2,17 @@
 // 「椅子腿、人腿、桌腿，从四面八方围过来。我从这些柱子下面穿过，视线里只有膝盖和腰带。」
 // 部件各一个 InstancedMesh，颜色走 instanceColor（衣服着色，鞋底 / 手 / 头发不着色）：
 //   高画质：鞋、小腿、大腿、髋、躯干、头 = 6 次 draw call；中画质：鞋、小腿、大腿、髋、上身（躯干 + 头合并）= 5；
-//   低画质：feet（鞋 + 合并的腿）、hipsLow（常见的几种髋）、special（周主任、班长、陈默）= 最多 3，不画躯干和头。
+//   低画质：feet（鞋 + 合并的腿）、hipsLow（常见的几种髋）、special（周主任、班长、陈默，以及人墙的上身）= 最多 3。
 // 每个实例都要处理整个几何体的全部顶点（不属于它的变体收拢成退化三角形），renderer.info 也按全量计数。
 // 低画质的 NPC 三角形预算只有 8k（§9.4），所以低画质把少见的特殊人物（夹克、作业本、陈默的上身）拆成单独的小几何体，
 // 只在他们出现时才有实例；常见的人只付 hipsLow 那一点三角形（审查 r2：原来每个实例都带着 8 个变体，24 人 10.3k）。
 // NPC 默认只建到腰带；躯干和头只在梦里、站立段显示（Person.upper）。陈默的上身（「全作唯一出现在你视线高度的头」）
 // 是髋部件的一个变体（低画质在 special 里），所以低画质下也在。所有人都没有五官。
-// U6：腰带只有四个侧面是黑的，上面加 12 cm 衬衫下摆（着衣服色），顶面不再是黑盖子（站着看下去以前像带盖的垃圾桶）；
-// 离玩家 ≤ NEAR_UPPER.r 的人（站立段、近处的人墙）加上身和没有五官的头（Person.near，再远 1.5 m 内从腰里长出来）。
-// 低画质的近处上身是一个很省的部件 upperLow（躯干 + 两臂 + 头，42 个三角形）；它和 special 不会同时出现
-// （同一帧两者都有时 upperLow 让出来），所以低画质仍然最多 3 次 draw call：feet、hipsLow、special / upperLow。
+// U6：腰带只有四个侧面是黑的，上面加 12 cm 衬衫下摆（着衣服色），顶面不再是黑盖子（站着看下去以前像带盖的垃圾桶）。
+// 人墙（Person.wall：人群段 2-2、5-6 与站立段 4-3、5-8 的前一个跑段 4-2、5-7 里站着的人，梦里的人）每个画质都画上身和没有五官的头，
+// 按组 / 段决定，与玩家远近、画面上还有谁无关（不会因为你走近而长出来，也不会因为陈默出现而让出去）。
+// 低画质的人墙上身是 special 几何体里的一个小变体（42 个三角形，排在顶点最前面）；special、hipsLow 按本帧用到的变体裁剪
+// drawRange（InstPool.trackVariantRanges），只有上身时每个实例只付这 42 个三角形，和特殊人物同帧也不让，仍然最多 3 次 draw call。
 import * as THREE from 'three';
 import type { QualityProfile, ViewContext } from '../../core/contracts';
 import { InstPool } from './InstPool';
@@ -36,10 +37,13 @@ export interface Person {
   /** 上身前倾（绕 x）、髋部侧倾（绕 z）、横向摆动、上下起伏、髋和上身绕竖轴的转向（凝视时跟着鞋尖转一点）。 */
   lean: number; roll: number; dx: number; bob: number; turn: number;
   look: Look;
-  /** 是否画躯干和头（梦里、站立段）。 */
+  /** 是否画躯干和头（梦里、站立段；中、高画质）。 */
   upper: boolean;
-  /** 离玩家近（U6）：0..1，> 0 时也画躯干和头（竖直按这个比例从腰里长出来）；低画质只看这一项。 */
-  near: number;
+  /**
+   * 人墙（U6）：人墙段（人群段 2-2、5-6，站立段 4-3、5-8 的前一个跑段 4-2、5-7）里站着的人（路边的组、人腿障碍）、梦里的人。
+   * 每个画质都画躯干和头（低画质也画），按组 / 段决定（ObstacleView 读章时定），与玩家远近、画面上还有谁无关。
+   */
+  wall: boolean;
   /** 站在户外 kit（street、plaza、track）里：衣服颜色的受光补偿不算灯（tone.ts，U6）。 */
   outdoor: boolean;
   /** 鼓掌：0 不鼓掌，1 张开，2 合上。 */
@@ -58,7 +62,7 @@ export function newPerson(look: Look): Person {
   return {
     x: 0, y: 0, z: 0, yaw: 0, hipH: STAND_HIP, stance: BODY.stance,
     hipL: 0, hipR: 0, kneeL: 0, kneeR: 0, legYawL: 0, legYawR: 0, footYawL: 0, footYawR: 0,
-    lean: 0, roll: 0, dx: 0, bob: 0, turn: 0, look, upper: false, near: 0, outdoor: false, clap: 0, glow: 0, targetL: null, seated: false, squat: false, arms: false,
+    lean: 0, roll: 0, dx: 0, bob: 0, turn: 0, look, upper: false, wall: false, outdoor: false, clap: 0, glow: 0, targetL: null, seated: false, squat: false, arms: false,
   };
 }
 
@@ -236,13 +240,16 @@ function hipsGeo(): THREE.BufferGeometry {
 
 /** 低画质的常见髋部（hipsLow 的变体按这个顺序编号）。 */
 export const HIPS_LOW: readonly HipsVariant[] = [HIPS.trousers, HIPS.skirt, HIPS.trackPants, HIPS.arms];
-/** 低画质的特殊人物（special 的变体按这个顺序编号）：周主任、班长、陈默。 */
+/** 低画质的特殊人物（special 的变体号 = 这里的下标）：周主任、班长、陈默。special 里另有人墙的上身 LOW_UPPER。 */
 export const HIPS_SPECIAL: readonly HipsVariant[] = [HIPS.jacket, HIPS.books, HIPS.fullUpper];
 
-/** 低画质的髋部件几何体（hipsLow、special）。 */
-function listGeo(ids: readonly HipsVariant[]): THREE.BufferGeometry {
+/**
+ * 低画质的常见髋部件几何体（hipsLow，变体号 = HIPS_LOW 下标）。顶点按最常见的在前排：普通裤子、障碍里的人垂着的手、
+ * 运动裤、裙子；hipsLow 也按本帧用到的变体裁剪 drawRange（U6），只有普通人时每个实例只付裤子那一段。
+ */
+function hipsLowGeo(): THREE.BufferGeometry {
   const b = new PartBuilder();
-  ids.forEach((id, i) => b.variant(i, () => hipsPart(b, id, true)));
+  for (const id of [HIPS.trousers, HIPS.arms, HIPS.trackPants, HIPS.skirt] as const) b.variant(HIPS_LOW.indexOf(id), () => hipsPart(b, id, true));
   return b.build();
 }
 
@@ -284,29 +291,37 @@ function headGeo(): THREE.BufferGeometry {
 }
 
 /**
- * 低画质近处的人的上身（U6）：躯干、垂着的两臂（都着衣服色）和没有五官的头，一个变体、42 个三角形。
+ * 低画质人墙的上身（U6）：躯干、垂着的两臂（都着衣服色）和没有五官的头，42 个三角形。
  * 原点在髋关节，与中画质的 upper 同一套尺寸（躯干 0.14–0.66 m，头顶约 0.93 m，即离地约 1.83 m）。
  */
-function upperLowGeo(): THREE.BufferGeometry {
-  const b = new PartBuilder();
-  b.variant(0, () => {
-    b.with({ tint: 1 }, () => {
-      b.box([0, 0.4, 0], [0.4, 0.52, 0.22], W, { faces: '+x-x+z-z+y', colors: { '+y': G1 } });
-      for (const s of [-1, 1]) b.box([s * 0.24, 0.38, 0.02], [0.075, 0.5, 0.08], G1, { faces: '+x-x+z-z+y' });
-    });
-    b.box([0, 0.66 + 0.15, 0.01], [0.17, 0.24, 0.18], C.skin, { colors: { '+y': C.hair, '-z': C.hair } });
+function lowUpper(b: PartBuilder): void {
+  b.with({ tint: 1 }, () => {
+    b.box([0, 0.4, 0], [0.4, 0.52, 0.22], W, { faces: '+x-x+z-z+y', colors: { '+y': G1 } });
+    for (const s of [-1, 1]) b.box([s * 0.24, 0.38, 0.02], [0.075, 0.5, 0.08], G1, { faces: '+x-x+z-z+y' });
   });
+  b.box([0, 0.66 + 0.15, 0.01], [0.17, 0.24, 0.18], C.skin, { colors: { '+y': C.hair, '-z': C.hair } });
+}
+
+/** 低画质 special 部件里人墙上身的变体号（排在特殊人物 HIPS_SPECIAL 之后）。 */
+export const LOW_UPPER = HIPS_SPECIAL.length;
+/**
+ * special 几何体里各变体的顶点顺序（drawRange 按本帧用到的变体裁剪）：上身最常见，排最前；
+ * 其次是陈默（他和人墙同时出现的可能最大），周主任的夹克最后。
+ */
+const SPECIAL_ORDER: readonly number[] = [LOW_UPPER, HIPS_SPECIAL.indexOf(HIPS.fullUpper), HIPS_SPECIAL.indexOf(HIPS.books), HIPS_SPECIAL.indexOf(HIPS.jacket)];
+
+/** 低画质 special 部件的几何体：周主任、班长、陈默（变体号 = HIPS_SPECIAL 下标）与人墙的上身（LOW_UPPER）。 */
+function specialGeo(): THREE.BufferGeometry {
+  const b = new PartBuilder();
+  for (const v of SPECIAL_ORDER) b.variant(v, () => { if (v === LOW_UPPER) lowUpper(b); else hipsPart(b, HIPS_SPECIAL[v] as HipsVariant, true); });
   return b.build();
 }
 
-/** 近处的人加上身（U6）：离玩家 r 米以内画躯干和头，再往外 grow 米内从腰里长出来（竖直缩放 0 → 1）。 */
-export const NEAR_UPPER = { r: 6, grow: 1.5 } as const;
-
-export type PartId = 'shoe' | 'shin' | 'thigh' | 'hips' | 'torso' | 'head' | 'upper' | 'feet' | 'hipsLow' | 'special' | 'upperLow';
+export type PartId = 'shoe' | 'shin' | 'thigh' | 'hips' | 'torso' | 'head' | 'upper' | 'feet' | 'hipsLow' | 'special';
 /** 左右两侧（热路径里不每帧新建数组）。 */
 const SIDES = [-1, 1] as const;
 
-const _root = new THREE.Matrix4(), _m = new THREE.Matrix4(), _a = new THREE.Matrix4(), _b = new THREE.Matrix4(), _g = new THREE.Matrix4();
+const _root = new THREE.Matrix4(), _m = new THREE.Matrix4(), _a = new THREE.Matrix4(), _b = new THREE.Matrix4();
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1);
 const _col = new THREE.Color(), _col2 = new THREE.Color(), _d = new THREE.Vector3();
 const DOWN = new THREE.Vector3(0, -1, 0);
@@ -345,14 +360,15 @@ export class LegForest {
     add('head', headGeo(), cap);
     add('upper', torsoGeo(true), cap);
     add('feet', feetGeo(), cap * 4);
-    add('hipsLow', listGeo(HIPS_LOW), cap);
-    add('special', listGeo(HIPS_SPECIAL), 16);
-    add('upperLow', upperLowGeo(), cap);
+    add('hipsLow', hipsLowGeo(), cap);
+    // 特殊人物最多十几个，人墙的上身最多 npcMax 个：容量与髋部一样
+    add('special', specialGeo(), cap);
     this.p = {
       shoe: this.pool('shoe'), shin: this.pool('shin'), thigh: this.pool('thigh'), hips: this.pool('hips'), torso: this.pool('torso'),
       head: this.pool('head'), upper: this.pool('upper'), feet: this.pool('feet'), hipsLow: this.pool('hipsLow'), special: this.pool('special'),
-      upperLow: this.pool('upperLow'),
     };
+    this.p.hipsLow.trackVariantRanges();
+    this.p.special.trackVariantRanges();
     ctx.scene.add(this.group);
     this.setQuality(ctx.quality);
   }
@@ -366,11 +382,7 @@ export class LegForest {
   get meshes(): THREE.InstancedMesh[] { return Array.from(this.parts.values(), (p) => p.mesh); }
 
   begin(): void { this.people = 0; this.hadTarget = false; for (const p of this.parts.values()) p.begin(); }
-  end(): void {
-    // 低画质最多 3 次 draw call：特殊人物（陈默、周主任、班长）在画面里的那几帧，近处的上身让出来
-    if (this.tier === 'low' && this.p.special.n > 0 && this.p.upperLow.n > 0) this.p.upperLow.begin();
-    for (const p of this.parts.values()) p.end();
-  }
+  end(): void { for (const p of this.parts.values()) p.end(); }
 
   /** 画一个人。 */
   add(p: Person): void {
@@ -427,9 +439,8 @@ export class LegForest {
     _a.makeTranslation(p.dx, p.hipH + p.bob, 0).premultiply(_root);
     if (p.turn !== 0) _a.multiply(_b.makeRotationY(p.turn));
     _a.multiply(_b.makeRotationZ(p.roll)).multiply(_m.makeRotationX(p.lean));
-    // 上身：中、高画质在梦里 / 站立段（upper）或离得近（near）时画；低画质只给近处的人画（upperLow）
-    const upperK = low ? p.near : p.upper ? 1 : p.near;
-    const upperOn = upperK > 0 && look.hips !== HIPS.fullUpper;
+    // 上身：中、高画质在梦里 / 站立段（upper）和人墙（wall）画；低画质只给人墙画（special 的 LOW_UPPER 变体）
+    const upperOn = (low ? p.wall : p.upper || p.wall) && look.hips !== HIPS.fullUpper;
     const hipsHex = look.hips === HIPS.jacket || look.legs === LEGV.bare ? look.shirt : look.pants;
     // 鼓掌时前臂举在胸前（躯干部件），不再垂在身侧
     const armsOn = p.arms && !(upperOn && p.clap > 0);
@@ -437,38 +448,33 @@ export class LegForest {
       const [sp, v] = LOW_SLOT[look.hips] ?? [false, 0];
       (sp ? P.special : P.hipsLow).push(_a, v, p.glow, tone.color(hipsHex, out, _col));
       if (armsOn) P.hipsLow.push(_a, LOW_ARMS, 0, tone.color(look.shirt, out, _col));
-      if (upperOn) P.upperLow.push(this.grown(upperK), 0, 0, tone.color(look.shirt, out, _col));
+      if (upperOn) P.special.push(_a, LOW_UPPER, 0, tone.color(look.shirt, out, _col));
       return;
     }
     P.hips.push(_a, look.hips === HIPS.noHands ? HIPS.trousers : look.hips, p.glow, tone.color(hipsHex, out, _col));
     if (armsOn) P.hips.push(_a, HIPS.arms, 0, tone.color(look.shirt, out, _col));
     if (upperOn) {
       tone.color(look.shirt, out, _col);
-      const m = this.grown(upperK);
       if (this.tier === 'high') {
-        P.torso.push(m, p.clap, 0, _col);
-        P.head.push(m, look.hair, 0, _col);
-      } else P.upper.push(m, p.clap, 0, _col);
+        P.torso.push(_a, p.clap, 0, _col);
+        P.head.push(_a, look.hair, 0, _col);
+      } else P.upper.push(_a, p.clap, 0, _col);
     }
   }
 
-  /** 髋部矩阵（_a）按 k 竖直缩放：上身从腰里长出来（k = 1 原样）。 */
-  private grown(k: number): THREE.Matrix4 {
-    if (k >= 1) return _a;
-    return _g.copy(_a).multiply(_b.makeScale(1, Math.max(1e-3, k), 1));
-  }
-
-  /** 本帧画出来的 NPC 三角形（按 renderer.info 的算法：几何体全部三角形 × 实例数；§9.4 低画质 ≤ 8k）。 */
+  /** 本帧画出来的 NPC 三角形（按 renderer.info 的算法：drawRange 内的三角形 × 实例数；§9.4 低画质 ≤ 8k）。 */
   triangles(): number {
     let n = 0;
-    for (const p of this.parts.values()) if (p.n > 0) n += (p.mesh.geometry.getAttribute('position').count / 3) * p.n;
+    for (const p of this.parts.values()) n += p.triangles();
     return n;
   }
 
   /** 鞋的实例（测试用：低画质下鞋和腿在同一个 feet 部件里）。 */
   shoes(): { pool: InstPool; variant: number } { return this.tier === 'low' ? { pool: this.p.feet, variant: FEET.shoe } : { pool: this.p.shoe, variant: 0 }; }
-  /** 髋部件（测试用：低画质下普通人在 hipsLow 里、特殊人物在 special 里）。 */
+  /** 髋部件（测试用：低画质下普通人在 hipsLow 里、特殊人物在 special 里；special 里变体 LOW_UPPER 是人墙的上身，不是髋）。 */
   hipsPools(): InstPool[] { return this.tier === 'low' ? [this.p.hipsLow, this.p.special] : [this.p.hips]; }
+  /** 低画质本帧画了多少个人墙的上身（测试用）。 */
+  lowUppers(): number { let k = 0; const sp = this.p.special; for (let i = 0; i < sp.n; i++) if (sp.variantAt(i) === LOW_UPPER) k++; return k; }
 
   /** 各部件本帧的实例数（测试用）。 */
   counts(): Record<PartId, number> {
