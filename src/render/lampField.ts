@@ -128,7 +128,10 @@ export function patchBasicLamp(mat: THREE.MeshBasicMaterial, u: LampFieldUniform
 interface Ring { s: number; x: number; strength: number; radius: number; t0: number }
 interface PalmRange { s0: number; s1: number }
 
-/** 灯的运行状态（结构数组，读章时一次建好）。 */
+/** 一盏灯的身份：种类 + 位置（毫米 / 厘米精度）。 */
+function lampKey(kind: number, s: number, x: number): string { return `${kind}:${s.toFixed(3)}:${x.toFixed(2)}`; }
+
+/** 灯的运行状态（结构数组，读章时一次建好；之后增删灯时按 lampKey 迁移状态）。 */
 class LampTable {
   n = 0;
   s = new Float64Array(0);
@@ -145,18 +148,52 @@ class LampTable {
   trigEnd = new Float64Array(0);
   soundDelay = new Float32Array(0);
 
-  build(list: ReadonlyArray<LampSpec>): void {
-    const sorted = [...list].sort((a, b) => a.s - b.s);
+  /**
+   * 按灯表重建。migrate = true 时，旧表里同一盏灯（kind、s、x 相同）的运行状态原样搬过来：
+   * 读章之后再 addLamps / removeLamps（画质切换重建 chunk、别的包加灯）不会让熄灭、闪烁、声控的灯回到常亮。
+   * 种子只由 kind、s、x 和同位置的序号决定，重建前后闪烁的相位不变。
+   */
+  build(list: ReadonlyArray<LampSpec>, migrate = false): void {
+    const sorted = [...list].sort((a, b) => a.s - b.s || a.x - b.x);
     const n = sorted.length;
+    const old = migrate && this.n > 0 ? this.snapshot() : null;
     this.n = n;
     this.s = new Float64Array(n); this.x = new Float32Array(n); this.kind = new Uint8Array(n); this.flickerable = new Uint8Array(n); this.seed = new Uint32Array(n);
     this.flicker = new Uint8Array(n); this.sound = new Uint8Array(n);
     this.from = new Float32Array(n).fill(1); this.to = new Float32Array(n).fill(1); this.tChange = new Float64Array(n).fill(-1e9);
     this.trigStart = new Float64Array(n).fill(-1e9); this.trigEnd = new Float64Array(n).fill(-1e9); this.soundDelay = new Float32Array(n);
+    const dup = new Map<string, number>();
     sorted.forEach((l, i) => {
-      this.s[i] = l.s; this.x[i] = l.x; this.kind[i] = KIND_INDEX[l.kind] ?? 0; this.flickerable[i] = l.flickerable ? 1 : 0;
-      this.seed[i] = hashString(`lamp:${l.s.toFixed(3)}:${l.x.toFixed(2)}:${i}`);
+      const kind = KIND_INDEX[l.kind] ?? 0;
+      const base = lampKey(kind, l.s, l.x);
+      const k = dup.get(base) ?? 0;
+      dup.set(base, k + 1);
+      const key = `${base}:${k}`;
+      this.s[i] = l.s; this.x[i] = l.x; this.kind[i] = kind; this.flickerable[i] = l.flickerable ? 1 : 0;
+      this.seed[i] = hashString(`lamp:${key}`);
+      const j = old?.index.get(key);
+      if (old && j !== undefined) {
+        this.flicker[i] = old.flicker[j] as number; this.sound[i] = old.sound[j] as number;
+        this.from[i] = old.from[j] as number; this.to[i] = old.to[j] as number; this.tChange[i] = old.tChange[j] as number;
+        this.trigStart[i] = old.trigStart[j] as number; this.trigEnd[i] = old.trigEnd[j] as number; this.soundDelay[i] = old.soundDelay[j] as number;
+      }
     });
+  }
+
+  /** 当前状态的副本（按灯的键索引），build 迁移用。 */
+  private snapshot() {
+    const index = new Map<string, number>();
+    const dup = new Map<string, number>();
+    for (let i = 0; i < this.n; i++) {
+      const base = lampKey(this.kind[i] as number, this.s[i] as number, this.x[i] as number);
+      const k = dup.get(base) ?? 0;
+      dup.set(base, k + 1);
+      index.set(`${base}:${k}`, i);
+    }
+    return {
+      index, flicker: this.flicker, sound: this.sound, from: this.from, to: this.to, tChange: this.tChange,
+      trigStart: this.trigStart, trigEnd: this.trigEnd, soundDelay: this.soundDelay,
+    };
   }
 
   reset(): void {
@@ -193,6 +230,8 @@ export class LampField implements LampFieldAPI {
   private readonly owners = new Map<string, readonly LampSpec[]>();
   private readonly t = new LampTable();
   private dirty = false;
+  /** 下一次重建灯表时是否保留旧状态（读章 clear() 之后不保留）。 */
+  private migrate = false;
   private readonly rings: Ring[] = Array.from({ length: RING_CAP }, () => ({ s: 0, x: 0, strength: 0, radius: 1, t0: -1e9 }));
   private ringHead = 0;
   private readonly palm: PalmRange[] = [];
@@ -224,10 +263,11 @@ export class LampField implements LampFieldAPI {
   }
 
   // ——— LampFieldAPI ———
+  /** 增删灯：随时可以调（别的包、画质切换）；已有的灯保留熄灭 / 闪烁 / 声控状态。 */
   addLamps(owner: string, lamps: readonly LampSpec[]): void { this.owners.set(owner, lamps); this.dirty = true; }
   removeLamps(owner: string): void { if (this.owners.delete(owner)) this.dirty = true; }
-  /** 清空全部灯（读章）。 */
-  clear(): void { this.owners.clear(); this.palm.length = 0; this.dirty = true; this.clearRings(); }
+  /** 清空全部灯（读章）：之后重建灯表时不保留旧状态。 */
+  clear(): void { this.owners.clear(); this.palm.length = 0; this.dirty = true; this.migrate = false; this.clearRings(); }
 
   op(op: 'flicker' | 'out' | 'on' | 'sound' | 'palmRings', s0: number, s1: number, o: { every?: number; delay?: number } = {}): void {
     this.ensure();
@@ -333,8 +373,9 @@ export class LampField implements LampFieldAPI {
     if (!this.dirty) return;
     const all: LampSpec[] = [];
     for (const l of this.owners.values()) all.push(...l);
-    this.t.build(all);
+    this.t.build(all, this.migrate);
     this.dirty = false;
+    this.migrate = true;
   }
 
   private sumAt(s: number, t: number): number {

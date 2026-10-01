@@ -6,6 +6,8 @@
 //   · 别的包的 kit（WP4 户外、CORE 占位）：沿用 12 m 一个、逐个预建（它们可能按绝对里程摆东西）。
 //   · 每个 chunk 最多 3 个网格（floor / static / emissive）= ≤ 3 次 draw call；可见的是身后 1 个 + 前方 chunksAhead 个。
 // 静场：隐藏全部 chunk，显示对应 set（放在 STILL_ORIGIN）。站立段：显示为该段单独预建的几个 chunk。
+// 画质切换（含自动档位在游玩 3 s 后的那一次）：只按新档位重建 chunk 几何体；灯的状态（LampField 按灯迁移）、
+// 氛围过渡与 fog cue（AtmosphereMixer.setFogMul）、黑板（不随档位重建）全部保留。
 import * as THREE from 'three';
 import type { EnvKit, KitChunk, LampSpec, Opening, TextureBank, ViewContext, ViewSystem } from '../core/contracts';
 import { CHUNK_LEN, LANE_WIDTH, RENDER_ORDER, STILL_ORIGIN } from '../core/constants';
@@ -64,6 +66,33 @@ export function allBodies(ch: CompiledChapter): EventBody[] {
   return out;
 }
 
+/**
+ * 重来时要重放的事件体（按发生顺序）：检查点所在段之前的全部段，加上当前跑段 at ≤ segBeat 的部分。
+ * 静场 / 站立段从头重来，当前段不重放。stop / slow 的时间线随父事件；回头窗口的 then 只在 auto（必然发生）时算；
+ * 静场 input.onDone 只算之前的段。
+ */
+export function replayBodies(ch: CompiledChapter, segIndex: number, segBeat: number): Array<{ seg: CompiledSegment; body: EventBody }> {
+  const out: Array<{ seg: CompiledSegment; body: EventBody; key: number; n: number }> = [];
+  let n = 0;
+  const push = (seg: CompiledSegment, key: number, b: EventBody) => { for (const x of nested(b)) out.push({ seg, body: x, key, n: n++ }); };
+  for (const sg of ch.segments) {
+    if (sg.index > segIndex) break;
+    const current = sg.index === segIndex;
+    if (current && sg.kind !== 'run') continue;
+    for (const ev of sg.events) {
+      if (current && ev.at > segBeat + 1e-6) continue;
+      push(sg, ev.at, ev.body);
+    }
+    for (const w of sg.windows) {
+      if (w.type !== 'lookBack' || !w.auto || (current && w.to > segBeat + 1e-6)) continue;
+      for (const t of w.then ?? []) push(sg, w.to, t as unknown as EventBody);
+    }
+    if (!current) for (const t of (sg.def as StillSegmentDef).input?.onDone ?? []) push(sg, Number.MAX_SAFE_INTEGER, t as unknown as EventBody);
+  }
+  out.sort((a, b) => a.seg.index - b.seg.index || a.key - b.key || a.n - b.n);
+  return out.map(({ seg, body }) => ({ seg, body }));
+}
+
 export function openingsOf(surfaces: readonly CompiledSurface[], s0: number, s1: number): Opening[] {
   const out: Opening[] = [];
   for (const su of surfaces) {
@@ -100,6 +129,8 @@ export class World implements ViewSystem {
   private standSlots = new Map<number, Slot[]>();
   private previewSlots: Slot[] = [];
   private geoms = new Set<THREE.BufferGeometry>();
+  private previewGeoms = new Set<THREE.BufferGeometry>();
+  private boardGeoms = new Set<THREE.BufferGeometry>();
   private floorMats = new Map<string, THREE.MeshLambertMaterial>();
   private staticAtlasMat!: THREE.MeshLambertMaterial;
   private staticPlainMat!: THREE.MeshLambertMaterial;
@@ -171,6 +202,8 @@ export class World implements ViewSystem {
     // 黑板字：按全部 board cue 预先生成
     for (const b of allBodies(ch)) if (b.type === 'board' && b.op === 'write' && b.line) this.boardTexture(b.line, !!b.tremble);
     this.buildGeometry(ch);
+    // 跑段上的 board 表面（与画质无关，只在读章时建）
+    for (const seg of this.runSegs) for (const su of seg.surfaces) if (su.kind === 'board' && (su.side === 'L' || su.side === 'R')) this.addRunBoard(seg, su);
     // 静场 set
     for (const seg of ch.segments) {
       if (seg.kind !== 'still') continue;
@@ -210,8 +243,6 @@ export class World implements ViewSystem {
     this.standFlat = Array.from(this.standSlots.values()).flat();
     this.stats.pools = pools.size;
     for (const l of this.slots) this.lamps.addLamps(`slot:${l.s0.toFixed(3)}`, l.lamps);
-    // 跑段上的 board 表面
-    for (const seg of this.runSegs) for (const su of seg.surfaces) if (su.kind === 'board' && (su.side === 'L' || su.side === 'R')) this.addRunBoard(seg, su);
   }
 
   private chunkLenFor(kit: EnvKit, stride: number): number {
@@ -242,7 +273,7 @@ export class World implements ViewSystem {
   }
 
   private buildRunSegment(seed: number, seg: CompiledSegment, kitId: KitId, variant: string, prev: HwKitExt['prev'], next: HwKitExt['next'],
-    pools: Map<string, GeoSet[]>, openingsIn: (a: number, b: number) => readonly Opening[]): Slot[] {
+    pools: Map<string, GeoSet[]>, openingsIn: (a: number, b: number) => readonly Opening[], into: Set<THREE.BufferGeometry> = this.geoms): Slot[] {
     const kit = getKit(kitId);
     if (!kit) return [];
     const out: Slot[] = [];
@@ -262,7 +293,7 @@ export class World implements ViewSystem {
         || seg.surfaces.some((su) => (su.kind === 'doorPlate' || su.kind === 'board') && su.s0 < s1 + 1 && su.s1 > s0 - 1);
       if (special) {
         const ctx = this.kitCtx(seed, seg, variant, s0, s1, openings, this.hwExt(false, prev, next, len), `chunk:${seg.def.id}:${i}`);
-        const gs = this.geoSet(this.safeBuild(kit, ctx), 0);
+        const gs = this.geoSet(this.safeBuild(kit, ctx), 0, into);
         out.push(this.makeSlot(seg, s0, s1, gs, -1));
         this.stats.special++;
       } else {
@@ -275,7 +306,7 @@ export class World implements ViewSystem {
           const t0 = seg.s0 + len;          // 模板位置：第 2 个 chunk（整拍对齐）
           const j = pool.length;
           const ctx = this.kitCtx(seed, seg, variant, t0, t0 + len, [], this.hwExt(true, prev, next, len), `generic:${key}:${j}`);
-          pool.push(this.geoSet(this.safeBuild(kit, ctx), t0));
+          pool.push(this.geoSet(this.safeBuild(kit, ctx), t0, into));
         }
         const gs = pool[k] as GeoSet;
         out.push(this.makeSlot(seg, s0, s1, gs, k));
@@ -302,8 +333,8 @@ export class World implements ViewSystem {
   }
 
   /** 把 kit 的产物登记为可复用的几何体组；templateS0 ≠ 0 时灯的 s 存成相对值。 */
-  private geoSet(kc: KitChunk, templateS0: number): GeoSet {
-    for (const g of [kc.floor, kc.static, kc.emissive]) if (g) { this.ctx.mat.ensureChalkAttr(g); this.geoms.add(g); }
+  private geoSet(kc: KitChunk, templateS0: number, into: Set<THREE.BufferGeometry> = this.geoms): GeoSet {
+    for (const g of [kc.floor, kc.static, kc.emissive]) if (g) { this.ctx.mat.ensureChalkAttr(g); into.add(g); }
     const h = floorHints(kc.floor.userData as Record<string, unknown>);
     return {
       floor: kc.floor, static: kc.static, emissive: kc.emissive,
@@ -350,18 +381,33 @@ export class World implements ViewSystem {
     return { seg, s0, s1, group, gloss: gs.gloss, tris: gs.tris, lamps, generic };
   }
 
+  /** 章节 chunk（不含预览段、黑板）：读章与画质切换时重建。 */
   private disposeSlots(): void {
-    for (const sl of [...this.slots, ...this.previewSlots, ...Array.from(this.standSlots.values()).flat()]) this.root.remove(sl.group);
+    for (const sl of [...this.slots, ...Array.from(this.standSlots.values()).flat()]) this.root.remove(sl.group);
     for (const g of this.geoms) g.dispose();
     this.geoms.clear();
-    this.slots = []; this.previewSlots = []; this.standSlots.clear(); this.standFlat = [];
-    for (const rb of this.runBoards) { this.root.remove(rb.board.mesh); rb.board.mesh.geometry.dispose(); BOARDS.forEach((b, k) => { if (b === rb.board) BOARDS.delete(k); }); }
-    this.runBoards = [];
+    this.slots = []; this.standSlots.clear(); this.standFlat = [];
     Object.assign(this.stats, { slots: 0, generic: 0, special: 0, pools: 0, maxSlotTris: 0, maxSlotCalls: 0 });
+  }
+
+  private disposePreview(): void {
+    for (const sl of this.previewSlots) { this.root.remove(sl.group); this.lamps.removeLamps(`preview:${sl.s0.toFixed(2)}`); }
+    for (const g of this.previewGeoms) g.dispose();
+    this.previewGeoms.clear();
+    this.previewSlots = [];
+  }
+
+  private disposeBoards(): void {
+    for (const rb of this.runBoards) { this.root.remove(rb.board.mesh); BOARDS.forEach((b, k) => { if (b === rb.board) BOARDS.delete(k); }); }
+    for (const g of this.boardGeoms) g.dispose();
+    this.boardGeoms.clear();
+    this.runBoards = [];
   }
 
   private clearWorld(): void {
     this.disposeSlots();
+    this.disposePreview();
+    this.disposeBoards();
     this.setBySeg.clear();
     for (const e of this.sets.values()) e.obj.visible = false;
     this.preview = null;
@@ -399,7 +445,7 @@ export class World implements ViewSystem {
     const y0 = su.y?.[0] ?? 0.9, y1 = su.y?.[1] ?? 2.1;
     const w = Math.max(0.6, su.s1 - su.s0);
     const geo = new THREE.PlaneGeometry(w, y1 - y0);
-    this.geoms.add(geo);
+    this.boardGeoms.add(geo);
     const blank = this.ctx.tex.get('chalkboard', { text: '' });
     const board = new Board(new THREE.Mesh(geo), blank);
     board.mesh.material = boardMaterial(blank, this.lamps.uniforms, board.uniforms);
@@ -452,19 +498,25 @@ export class World implements ViewSystem {
     for (const b of BOARDS.values()) b.clear();
     if (!ch || !seg) return;
     this.atmo.snap(seg.def.atmosphere);
-    // 重放：之前各段的 lights、当前段已经发生过的 lights / atmosphere / fog（瞬时完成）
+    // 重放检查点之前已经发生的表现（瞬时完成）：之前各段与当前段已过部分的 lights、黑板字；当前段的 atmosphere / fog。
+    // 包括 stop / slow 的时间线、自动回头窗口的 then、静场按完之后的 onDone。
     const past = snap.t - 100;
-    for (const sg of ch.segments) {
-      if (sg.index > seg.index) break;
-      for (const ev of sg.events) {
-        if (sg.index === seg.index && (sg.kind !== 'run' || ev.at > snap.segBeat + 1e-6)) continue;
-        const b = ev.body;
-        if (b.type === 'lights') this.lightsOp(b.op, sg, b.from, b.to, b.every, b.delay, past);
-        else if (sg.index === seg.index && b.type === 'atmosphere') this.atmo.snap(b.id);
-        else if (sg.index === seg.index && b.type === 'fog') this.atmo.fogTo(b.near, b.far, 0, snap.t);
-      }
+    for (const r of replayBodies(ch, seg.index, snap.segBeat)) {
+      const b = r.body, sg = r.seg;
+      if (b.type === 'lights') this.lightsOp(b.op, sg, b.from, b.to, b.every, b.delay, past);
+      else if (b.type === 'board') this.boardRestore(b);
+      else if (sg.index === seg.index && b.type === 'atmosphere') this.atmo.snap(b.id);
+      else if (sg.index === seg.index && b.type === 'fog') this.atmo.fogTo(b.near, b.far, 0, snap.t);
     }
     this.lamps.now = snap.t;
+  }
+
+  /** 重来时把黑板恢复到检查点之前的样子（写完的字整段显示；擦过的只剩粉笔雾）。 */
+  private boardRestore(body: Extract<EventBody, { type: 'board' }>): void {
+    const b = BOARDS.get(body.surface);
+    if (!b) return;
+    if (body.op === 'write') b.show(body.line ? this.boardTexture(body.line, !!body.tremble) : b.blank);
+    else b.restoreWiped();
   }
 
   /** atmosphere cue。 */
@@ -621,17 +673,19 @@ export class World implements ViewSystem {
     return this.last?.player.floorY ?? 0;
   }
 
+  /**
+   * 画质切换：雾距按新倍率重算（不打断过渡、不丢 fog cue），chunk 按新档位重建（灯状态由 LampField 按灯迁移）。
+   * 黑板、set、贴花、预览段都不重建。
+   */
   setQuality(q: import('../core/contracts').QualityProfile): void {
-    this.atmo.fogMul = q.fogMul;
-    this.atmo.snap(this.atmo.id);
+    this.atmo.setFogMul(q.fogMul);
     if (this.chapter && this.builtTier !== q.tier) this.buildGeometry(this.chapter);
   }
 
   // ——————————————————— 预览（调试扩展，只在 ?test / ?debug 下可用） ———————————————————
   /** 在远处按参数单独建一段 kit，或显示一个 set；View 同时切换到预览镜头。 */
   startPreview(o: PreviewOpts): { s: number; floorY: number; x: number; setShot: boolean } {
-    for (const sl of this.previewSlots) { this.root.remove(sl.group); }
-    this.previewSlots = [];
+    this.disposePreview();
     if (o.set) {
       const e = this.ensureSet(o.set, o.variant);
       const seg = this.fakeSegment(o);
@@ -643,7 +697,7 @@ export class World implements ViewSystem {
     const kit = o.kit ?? 'corridor';
     const variant = o.variant ?? (getKit(kit)?.variants[0] ?? 'default');
     const pools = new Map<string, GeoSet[]>();
-    this.previewSlots = this.buildRunSegment(7, seg, kit, variant, { kit: 'corridor', variant: 'morning' }, null, pools, (a, b) => openingsOf(seg.surfaces, a, b));
+    this.previewSlots = this.buildRunSegment(7, seg, kit, variant, { kit: 'corridor', variant: 'morning' }, null, pools, (a, b) => openingsOf(seg.surfaces, a, b), this.previewGeoms);
     for (const sl of this.previewSlots) this.lamps.addLamps(`preview:${sl.s0.toFixed(2)}`, sl.lamps);
     const s = seg.s0 + (o.beat ?? 6) * seg.stride;
     this.preview = { s, x: o.x ?? 0, seg, set: null, t: null };
@@ -656,8 +710,7 @@ export class World implements ViewSystem {
   }
 
   stopPreview(): void {
-    for (const sl of this.previewSlots) this.root.remove(sl.group);
-    this.previewSlots = [];
+    this.disposePreview();
     for (const e of this.sets.values()) e.obj.visible = false;
     this.preview = null;
   }

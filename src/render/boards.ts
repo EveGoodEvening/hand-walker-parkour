@@ -51,6 +51,8 @@ export class Board {
   /** 立即显示整段字（重来时恢复状态用）。 */
   show(tex: THREE.Texture): void { this.uniforms.uText.value = tex; this.uniforms.uReveal.value = 1.08; this.uniforms.uWipe.value = 0; this.mode = 'idle'; }
   clear(): void { this.uniforms.uText.value = this.blank; this.uniforms.uReveal.value = 0; this.uniforms.uWipe.value = 0; this.mode = 'idle'; }
+  /** 立即变成「擦完」的样子（重来时恢复状态用）：字没了，只剩一层粉笔雾。 */
+  restoreWiped(): void { this.uniforms.uReveal.value = 1.08; this.uniforms.uWipe.value = 1.05; this.mode = 'idle'; }
 
   write(tex: THREE.Texture, now: number, chars: number): void {
     this.uniforms.uText.value = tex; this.uniforms.uReveal.value = 0; this.uniforms.uWipe.value = 0;

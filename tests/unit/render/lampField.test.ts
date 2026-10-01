@@ -191,4 +191,39 @@ describe('LampField 亮度场', () => {
     lf.resetStates();
     expect(lf.brightnessAt(20)).toBeGreaterThan(0.8);
   });
+
+  it('读章之后增删灯（画质切换重建、别的包加灯）：已有的灯保留熄灭 / 闪烁 / 声控状态，闪烁相位不变；clear() 之后不保留', () => {
+    const lf = new LampField();
+    lf.addLamps('a', tubes(0, 40));
+    lf.addLamps('b', tubes(41, 81));
+    lf.now = 0;
+    lf.op('out', 0, 20);
+    lf.op('flicker', 21, 40);
+    lf.op('sound', 41, 60);
+    lf.now = 1;
+    const out0 = lf.brightnessAt(10), snd0 = lf.brightnessAt(50);
+    expect(out0).toBeLessThan(0.05);
+    expect(snd0).toBeLessThan(0.05);
+    const [fa, fb] = lf.range(21, 40);
+    const before = Array.from({ length: 200 }, (_, k) => lf.level(fa + (k % (fb - fa)), 1 + k * 0.013));
+    // 同一批灯换成新的数组对象（重建 chunk）、再加一组、删一组
+    lf.addLamps('a', tubes(0, 40));
+    lf.addLamps('c', tubes(100, 120));
+    lf.removeLamps('b');
+    lf.addLamps('b', tubes(41, 81));
+    expect(lf.brightnessAt(10)).toBeCloseTo(out0, 6);
+    expect(lf.brightnessAt(50)).toBeCloseTo(snd0, 6);
+    expect(lf.brightnessAt(110)).toBeGreaterThan(0.8);                   // 新加的灯常亮
+    const [ga, gb] = lf.range(21, 40);
+    expect(gb - ga).toBe(fb - fa);
+    const after = Array.from({ length: 200 }, (_, k) => lf.level(ga + (k % (gb - ga)), 1 + k * 0.013));
+    expect(after).toEqual(before);
+    lf.soundTrigger(44);
+    lf.now = 1.5;
+    expect(lf.brightnessAt(48)).toBeGreaterThan(0.5);                   // 声控仍然有效
+    // 读章：clear() 之后重建，全部回到常亮
+    lf.clear();
+    lf.addLamps('a', tubes(0, 40));
+    expect(lf.brightnessAt(10)).toBeGreaterThan(0.8);
+  });
 });

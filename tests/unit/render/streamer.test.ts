@@ -33,7 +33,7 @@ function segAt(ch: CompiledChapter, s: number): number {
   return idx;
 }
 
-async function setup(tier: 'low' | 'high' = 'low') {
+async function setup(tier: 'low' | 'medium' | 'high' = 'low') {
   const ctx = fakeCtx(tier);
   const ch = compile(ch1 as ChapterDef);
   (ctx.surfaces as unknown as { load(c: CompiledChapter): void }).load(ch);
@@ -135,6 +135,116 @@ describe('ChunkStreamer', () => {
     expect(w.stats.slots).toBeGreaterThan(30);
     let shared = 0; for (const g of after) if (before.has(g)) shared++;
     expect(shared).toBeLessThan(after.size);    // chunk 几何体换成了新的
+  });
+});
+
+describe('ChunkStreamer：画质切换保留运行状态', () => {
+  it('lights out、flicker 与 fog cue 之后切画质：亮度、闪烁、雾距不变（雾远距离只按新档位的倍率换算）', async () => {
+    const { w, ch, ctx } = await setup('medium');
+    const seg = ch.segments.find((s) => s.def.id === '1-2');
+    expect(seg).toBeTruthy();
+    if (!seg) return;
+    w.onReset({ ...snap({ s: seg.s0 + 10, t: 10, segIndex: seg.index }), segBeat: 10 });
+    w.lightsOp('out', seg, 20, 60, undefined, undefined, 10);
+    w.lightsOp('flicker', seg, 70, 90, undefined, undefined, 10);
+    w.fogOverride(5, 15, 0, 10);
+    w.lamps.now = 11;
+    w.atmo.update(11);
+    const b40 = w.lamps.brightnessAt(seg.s0 + 40);
+    expect(b40).toBeLessThan(0.2);
+    const [fa, fb] = w.lamps.range(seg.s0 + 70, seg.s0 + 90);
+    const flick = (a: number, b: number) => Array.from({ length: 300 }, (_, k) => w.lamps.level(a + (k % (b - a)), 11 + k * 0.011));
+    const f0 = flick(fa, fb);
+    expect(f0.some((v) => v < 0.9)).toBe(true);
+    const g0 = geoms(ctx.scene);
+    // medium → high（雾倍率同为 1）：全部不变
+    Object.assign(ctx.quality, resolveQuality('high'));
+    w.setQuality(ctx.quality);
+    w.atmo.update(11.5);
+    expect(geoms(ctx.scene)).not.toEqual(g0);                        // chunk 确实重建了
+    expect(w.lamps.brightnessAt(seg.s0 + 40)).toBeCloseTo(b40, 6);
+    const [ga, gb] = w.lamps.range(seg.s0 + 70, seg.s0 + 90);
+    expect(flick(ga, gb)).toEqual(f0);
+    expect([w.atmo.fog.near, w.atmo.fog.far]).toEqual([5, 15]);
+    // high → low（自动档位降档）：灯照旧；雾仍是 fog cue 的值，远距离 ×0.8
+    Object.assign(ctx.quality, resolveQuality('low'));
+    w.setQuality(ctx.quality);
+    w.atmo.update(12);
+    expect(w.lamps.brightnessAt(seg.s0 + 40)).toBeCloseTo(b40, 6);
+    expect(w.atmo.fog.near).toBe(5);
+    expect(w.atmo.fog.far).toBeCloseTo(12, 6);
+  });
+
+  it('进行中的氛围过渡在切画质之后继续', async () => {
+    const { w, ctx } = await setup('medium');
+    w.onReset(snap({ s: 0, t: 0, segIndex: 0 }));
+    w.transitionTo('nightIndoor', 4, 20);
+    w.atmo.update(21);
+    const hemi = w.atmo.hemi.intensity;
+    Object.assign(ctx.quality, resolveQuality('low'));
+    w.setQuality(ctx.quality);
+    expect(w.atmo.transitioning).toBe(true);
+    expect(w.atmo.hemi.intensity).toBeCloseTo(hemi, 6);
+    w.atmo.update(24.01);
+    expect(w.atmo.fog.near).toBe(6);
+    expect(w.atmo.fog.far).toBeCloseTo(24, 6);
+    expect(w.atmo.cur.dark).toBe(true);
+  });
+});
+
+describe('ChunkStreamer：重来时重放', () => {
+  const def = {
+    id: 'test', title: '测试', name: '测试', seed: 5, card: ['c1.card'], outro: { lines: [] }, notes: [], requiredBeats: [],
+    segments: [
+      {
+        id: 'r1', kind: 'run', kit: 'corridor', variant: 'morning', atmosphere: 'morning', surface: 'terrazzo', beats: 80, stride: 1, cadence: 4.8, follower: { mode: 'behind' },
+        surfaces: [{ id: 'runBoard', kind: 'board', side: 'R', from: 30, to: 32, y: [0.9, 2.1] }],
+        events: [
+          { at: 6, type: 'stop', seconds: 2, timeline: [{ at: 0.5, type: 'lights', op: 'out', from: 0, to: 12 }] },
+          { at: 28, type: 'board', surface: 'runBoard', op: 'write', line: 'c1.card' },
+        ],
+        windows: [
+          { from: 14, to: 18, type: 'lookBack', auto: true, then: [{ at: 0.2, type: 'lights', op: 'out', from: 40, to: 50 }] },
+          { from: 20, to: 24, type: 'lookBack', then: [{ at: 0.2, type: 'lights', op: 'out', from: 60, to: 70 }] },
+        ],
+      },
+    ],
+  } as unknown as ChapterDef;
+
+  it('stop 时间线里的 lights、自动回头窗口的 then、跑段黑板字都在重来时恢复；画质切换不丢黑板', async () => {
+    const { BOARDS } = await import('../../../src/render/boards');
+    const ctx = fakeCtx('medium');
+    const ch = compile(def);
+    (ctx.surfaces as unknown as { load(c: CompiledChapter): void }).load(ch);
+    const w = new World();
+    w.init(ctx);
+    await w.loadChapter(ch);
+    const seg = ch.segments[0];
+    if (!seg) return;
+    const at = (b: number) => seg.s0 + b * seg.stride;
+    w.onReset({ ...snap({ s: at(40), t: 40, segIndex: 0 }), segBeat: 40 });
+    w.lamps.now = 40.5;
+    expect(w.lamps.brightnessAt(at(6))).toBeLessThan(0.2);             // stop 时间线里的 out
+    expect(w.lamps.brightnessAt(at(45))).toBeLessThan(0.2);            // auto 回头窗口的 then
+    expect(w.lamps.brightnessAt(at(65))).toBeGreaterThan(0.8);         // 非 auto 的窗口不一定回过头：不重放
+    const board = BOARDS.get('runBoard');
+    expect(board).toBeTruthy();
+    if (!board) return;
+    expect(board.uniforms.uReveal.value).toBeGreaterThan(1);            // 整段字直接显示
+    expect(board.uniforms.uText.value).toBe((w as unknown as { boardTex: Map<string, unknown> }).boardTex.get('c1.card|0'));
+    // 检查点在黑板字之前：黑板是空的
+    w.onReset({ ...snap({ s: at(20), t: 20, segIndex: 0 }), segBeat: 20 });
+    expect(board.uniforms.uText.value).toBe(board.blank);
+    expect(board.uniforms.uReveal.value).toBe(0);
+    // 写字过程中切画质：同一块黑板、同样的进度
+    w.boardOp({ type: 'board', surface: 'runBoard', op: 'write', line: 'c1.card' } as never, 30);
+    board.update(30.5);
+    const reveal = board.uniforms.uReveal.value;
+    Object.assign(ctx.quality, resolveQuality('low'));
+    w.setQuality(ctx.quality);
+    expect(BOARDS.get('runBoard')).toBe(board);
+    expect(board.uniforms.uReveal.value).toBe(reveal);
+    expect(w.root.children.includes(board.mesh)).toBe(true);
   });
 });
 
