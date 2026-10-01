@@ -4,6 +4,7 @@
 // 第五章（终章，没有下一章）：两句之间 2.8 s；最后一句之后留 5 s 空白，什么都不出；然后才是统计和按钮，
 // 统计出现 7 s 后自动进入演职卡。
 // 结尾卡期间模拟不推进，这里用真实时间计时。
+// 等输入的开始和结束在 window 上发 OUTRO_AWAIT_EVENT（修复轮 B3）：这段时间里任何键都是结尾卡的输入，声音包不发菜单音。
 import type { Device } from '../../core/types';
 import { button, h } from '../dom';
 import { hintText, STR } from '../strings';
@@ -18,6 +19,17 @@ export const FINAL_OUTRO = { lineGap: 2.8, blankAfter: 5.0 } as const;
 export const CREDITS_AFTER = 7.0;
 /** 第一句开始淡入的时刻。 */
 const FIRST_AT = 0.3;
+/**
+ * 结尾卡开始 / 结束等输入时在 window 上发的事件（detail = true / false，修复轮 B3）。等输入时界面把每一次按键都当作结尾卡的输入
+ * （↓ 是床单上的一下，别的键什么也不做），声音包（audio/ui.ts）据此不发菜单的「移动」「确认」声。
+ */
+export const OUTRO_AWAIT_EVENT = 'hw-ui-await';
+
+function announceAwait(on: boolean): void {
+  try {
+    if (typeof window !== 'undefined' && typeof CustomEvent === 'function') window.dispatchEvent(new CustomEvent(OUTRO_AWAIT_EVENT, { detail: on }));
+  } catch { /* 没有 DOM（单元测试）就不发 */ }
+}
 
 export interface OutroActions {
   next(): void; replay(): void; toTitle(): void; device(): Device;
@@ -39,7 +51,7 @@ export class OutroScreen {
   dispose(): void {
     for (const t of this.timers) clearTimeout(t);
     this.timers = [];
-    this.waiting = null;
+    if (this.waiting) { this.waiting = null; announceAwait(false); }
   }
 
   private later(sec: number, fn: () => void): void { this.timers.push(setTimeout(fn, Math.max(0, sec * 1000))); }
@@ -89,12 +101,14 @@ export class OutroScreen {
       if (!this.waiting) return;
       if (this.waiting.taps === 0) this.a.input?.(step.id, 0);
       this.waiting = null;
+      announceAwait(false);
       hint.classList.add('done');
       post.forEach((l, i) => addLine(l, 0.4 + i * gap));
       finish(0.4, post.length, (Date.now() - t0) / 1000);
     };
     this.later(hintAt, () => {
       this.waiting = { step, taps: 0, need: step.input.mode === 'taps3' ? 3 : 1, resolve: done };
+      announceAwait(true);
       this.later(Math.max(0.5, step.input.timeout), done);
     });
   }
