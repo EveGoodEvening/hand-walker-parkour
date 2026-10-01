@@ -160,3 +160,5 @@
   - 画面里任何「按帧间隔积分」的量（替身的 offS）在 test 模式下都会错：shot.mjs 只画最后一帧，间隔是整段。写成「生效时刻 + 倍率 × (此刻 − 生效时刻)」，生效时刻从 cue 的快照取。单元测试对比「每帧都画」和「中间不画」。
   - 横屏追尾机位下主角的头和胸在 54–74% 高度，腿一直拖到画面下沿；5–10 m 外要读的障碍在 49–56%。字幕只能贴着节拍器放，往上挪会压障碍。`tests/unit/ui/lift.test.ts` 按游戏机位投影主角的头和胸，和字幕栈比较。
   - 需要按 CSS 断言可见性时，happy-dom 能对注入的 `<style>`（读 `src/ui/styles.css`）算 `getComputedStyle().visibility`，后代选择器也认。
+- 发布成 claude.ai Artifact（2026-10-01）：Artifact 发布时会自己包一层 `<!doctype html><html><head>…<body>`，所以要把 `dist/index.html` 的 doctype、`<html>`、`<head>`、`<body>` 及其闭合标签、charset meta 去掉，并补 `<style>:root{color-scheme:dark;background:#0d1216}</style>`（骨架把 `:root` 钉成 light）。内联的 `type="module"` 脚本本来就会延迟执行，放在 `#app` 之前没问题。发布前用一个仿骨架的 wrapped.html 经 heavy-gate 冒烟一次即可。
+- PreToolUse 的 heavy-gate hook 会扫描整条命令文本：在同一条 Bash 里用 heredoc 写一个提到 playwright 的脚本文件也会被判成启动浏览器。用 Write 工具写脚本文件，再单独经闸门运行它（不要改写命令去绕过）。
