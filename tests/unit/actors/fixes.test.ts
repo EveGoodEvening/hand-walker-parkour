@@ -1,6 +1,9 @@
 // tests/unit/actors/fixes.test.ts —— 修复轮 U5 的替身修复：attachBehind 的地面高度（3-10 静场 / 5-4 跑段）、
 // 世界替身淡入 ≥ 0.6 s（§10.2）、渲染端求解器路线只求一次。
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { BONE_INDEX, createPose } from '../../../src/core/rig';
+import { clipPose } from '../../../src/render/actors/clips';
 import type { Plan, SolverAPI } from '../../../src/core/contracts';
 import { compile } from '../../../src/levels/compile';
 import ch3 from '../../../src/levels/chapters/ch3';
@@ -110,5 +113,60 @@ describe('render-side solver plans are solved once per segment (U5)', () => {
     }
     expect(L.state.visible).toBe(true);
     expect(calls).toBe(ahead.length);
+  });
+});
+
+describe('4-3: the standing "me" is inside a standing mirror on the plaza (U5, D10)', () => {
+  async function worldDouble(chDef: ChapterDef, segId: string, spec: Parameters<DoubleSystem['spawn']>[0], kind: 'stand' | 'run') {
+    const ctx = fakeCtx('low');
+    const f = new ActorRigFactory(ctx); (ctx as { rig: unknown }).rig = f;
+    const surf = new ReflectSurfaces(); surf.init(ctx);
+    const dbl = new DoubleSystem(surf); dbl.init(ctx);
+    const ch = compile(chDef);
+    await surf.loadChapter(ch); await dbl.loadChapter(ch);
+    const seg = ch.segments.find((s) => s.def.id === segId)!;
+    const at = (t: number) => { const n = snap({ s: seg.s0 + 3, t: 20 + t, segKind: kind }); n.segIndex = seg.index; return n; };
+    dbl.spawn(spec, at(0));
+    let prev = at(0);
+    for (let i = 1; i <= 90; i++) { const n = at(i / 60); dbl.frame(prev, n, 1, 1 / 60); prev = n; }
+    return { dbl, ctx, last: prev };
+  }
+
+  it('a world double in a stand segment comes with a mirror frame and faces the camera (yaw within 20°)', async () => {
+    const ch4 = (await import('../../../src/levels/chapters/ch4')).default as ChapterDef;
+    const { dbl, ctx, last } = await worldDouble(ch4, '4-3', { id: 'dreamMirror', surface: 'world', source: 'script', clip: 'smile', anchor: { sAhead: 7, lane: 1, speed: 0 }, ttl: 3 }, 'stand');
+    const d = dbl.active().find((q) => q.id === 'dreamMirror')!;
+    expect(d.visible).toBe(true);
+    expect(d.framed).toBe(true);
+    const frame = ctx.scene.getObjectByName('wp5.mirrorFrame')!;
+    expect(frame.visible).toBe(true);
+    // 替身在框里：头在框的上下沿之间、左右之内，镜底在它身后（离镜头更远）
+    expect(Math.abs(d.head[0]! - frame.position.x)).toBeLessThan(0.45);
+    expect(d.head[1]! - frame.position.y).toBeLessThan(2.05);
+    expect(frame.position.z).toBeLessThan(d.head[2]!);
+    // 朝向镜头：站立机位在玩家身后 (0, 1.62, +1.9)
+    const fwd = [-Math.sin(d.yaw), -Math.cos(d.yaw)];
+    const cx = last.player.x - d.head[0]!, cz = (-last.player.s + 1.9) - d.head[2]!;
+    const ang = Math.acos((fwd[0]! * cx + fwd[1]! * cz) / Math.hypot(cx, cz)) * 180 / Math.PI;
+    expect(ang).toBeLessThan(20);
+  });
+
+  it('the 5-6 walking "me" (run segment) has no mirror frame', async () => {
+    const { dbl, ctx } = await worldDouble(ch5 as ChapterDef, '5-6', { id: 'standMe', surface: 'world', source: 'script', clip: 'walkUpright', anchor: { sAhead: 14, speed: -1.2 }, avoidPlayerLane: true }, 'run');
+    expect(dbl.active()[0]!.visible).toBe(true);
+    expect(dbl.active()[0]!.framed).toBe(false);
+    expect(ctx.scene.getObjectByName('wp5.mirrorFrame')!.visible).toBe(false);
+  });
+
+  it('smile lifts the head and lowers the hands over ~1.5 s (no face; appendix A-4)', () => {
+    const b = new PoseBuilder();
+    const at = (t: number) => {
+      clipPose('smile', t, b, createPose(), { x: 0, y: 0, s: 0, yaw: 0 });
+      const q = b.wq[BONE_INDEX.head]!.clone().premultiply(b.rootQ);
+      return { look: new THREE.Vector3(0, 0, -1).applyQuaternion(q).y, hand: b.jointWorld('palmL', new THREE.Vector3()).y };
+    };
+    const a = at(0), z = at(2);
+    expect(z.look).toBeGreaterThan(a.look + 0.12);
+    expect(z.hand).toBeLessThan(a.hand - 0.02);
   });
 });

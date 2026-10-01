@@ -16,7 +16,7 @@ import { clamp, DEG, easeInOutSine, frac, lerp, springStep } from '../../core/ma
 import type { Settings } from '../../core/settings';
 import type { ShotId, SimSnapshot } from '../../core/types';
 import { WP5 } from '../actors/shared';
-import { FOLLOW, RUN_SHOT_OFFSETS, SET_DEFAULT_SHOT, SET_SHOTS, STAND_SHOTS, DEFAULT_SET_SHOT } from './shots';
+import { FOLLOW, RUN_SHOT_OFFSETS, SEGMENT_SHOTS, SET_DEFAULT_SHOT, SET_SHOTS, STAND_SHOTS, DEFAULT_SET_SHOT } from './shots';
 
 export interface CamPose { pos: THREE.Vector3; look: THREE.Vector3; roll: number; fov: number }
 
@@ -46,6 +46,8 @@ export class CameraRig implements ViewSystem {
   private standShot: 'standEye' | 'trackSky' | null = null;
   private fallBlend = 0;
   private gazeBlend = 0;
+  /** 段内专门追尾机位（SEGMENT_SHOTS）的权重。 */
+  private segBlend = 0;
   private standBlend = 0;
   private roll = 0;
   private fovExtra = 0;
@@ -73,7 +75,7 @@ export class CameraRig implements ViewSystem {
     if (e.type === 'hit' && !rm) this.shake = 0.12;
     if (e.type === 'land') this.landT = 0;
     if (e.type === 'segment') { this.shot = null; this.stillShot = null; this.standShot = null; }
-    if (e.type === 'retry') { this.fallBlend = 0; this.shot = null; this.gazeBlend = 0; }
+    if (e.type === 'retry') { this.fallBlend = 0; this.shot = null; this.gazeBlend = 0; this.segBlend = 0; }
   }
 
   onReset(snap: SimSnapshot): void {
@@ -170,6 +172,18 @@ export class CameraRig implements ViewSystem {
     }
     o.pos.set(L.k * this.sx, fy + camY, -s + L.back);
     o.look.set(L.lookK * this.sx, fy + L.ly + 0.2 * y + lookDy, -s + L.lz);
+    // —— 段内专门追尾机位（5-3 @30–@140：身后追来的影子）——
+    const ss = SEGMENT_SHOTS[next.segment];
+    const inSeg = !!ss && next.segBeat >= ss.from && next.segBeat < ss.to;
+    this.segBlend = rm || snap ? (inSeg ? 1 : 0) : clamp(this.segBlend + (inSeg ? bdt : -bdt) / (ss?.blend ?? 1), 0, 1);
+    let segFov = 0;
+    if (ss && this.segBlend > 0) {
+      const k = easeInOutSine(this.segBlend);
+      _g.set(L.k * this.sx + ss.dx, fy + ss.h + (camY - L.h), -s + ss.back);
+      _gl.set(L.lookK * this.sx + ss.lx, fy + ss.ly + 0.2 * y + lookDy, -s + ss.lz);
+      o.pos.lerp(_g, k); o.look.lerp(_gl, k);
+      segFov = k;
+    }
     // —— 回头：绕玩家转 160° ——
     let yaw = 0;
     const lb = N.lookBack;
@@ -246,7 +260,8 @@ export class CameraRig implements ViewSystem {
     const dream = N.speed > 7;
     this.fovExtra = rm ? 0 : lerp(this.fovExtra, dream ? 8 : 0, clamp(bdt * 2, 0, 1));
     const pulse = !rm && this.shake > 0 ? 1.5 * (this.shake / 0.12) : 0;
-    const base = portrait ? Math.min(FOLLOW.portrait.vMax, vFromH(FOLLOW.landscape.hfov, aspect)) : clamp(vFromH(FOLLOW.landscape.hfov, aspect), FOLLOW.landscape.vMin, FOLLOW.landscape.vMax);
+    let base = portrait ? Math.min(FOLLOW.portrait.vMax, vFromH(FOLLOW.landscape.hfov, aspect)) : clamp(vFromH(FOLLOW.landscape.hfov, aspect), FOLLOW.landscape.vMin, FOLLOW.landscape.vMax);
+    if (ss && segFov > 0) base = lerp(base, portrait ? Math.min(80, ss.fov * 1.3) : ss.fov, segFov);
     o.fov = portrait ? Math.min(FOLLOW.portrait.vMax, base + this.fovExtra * 0.5 + pulse) : base + this.fovExtra + pulse;
     return o;
   }

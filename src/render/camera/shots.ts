@@ -67,3 +67,13 @@ export const FOLLOW = {
   landscape: { k: 0.7, h: 1.15, back: 2.8, ly: 0.2, lz: -7, lookK: 0.42, hfov: 76, vMin: 50, vMax: 62 },
   portrait: { k: 0.6, h: 1.3, back: 3.8, ly: 0.3, lz: -6, lookK: 0.3, vMax: 80 },
 } as const;
+
+/**
+ * 跑段里某一拍区间的专门追尾机位（修复轮 U5）。5-3 @30–@140：反向的影子从身后追来（第二个影子在身后 follower.distance 处），
+ * 默认机位看不到身后 2 m；拉高拉远、看向前方 2 m 的地面，自己的影子（前右方）和追来的影子都在画面里。
+ * pos / look 相对玩家（x 跟随车道：pos.x = k·x + dx，look.x = lookK·x + lx）；fov 为竖直视角（横屏），竖屏 ×1.3、≤ 80°。
+ */
+export interface SegmentShot { from: number; to: number; dx: number; h: number; back: number; lx: number; ly: number; lz: number; fov: number; blend: number }
+export const SEGMENT_SHOTS: Readonly<Record<string, SegmentShot>> = {
+  '5-3': { from: 30, to: 140, dx: 0.4, h: 1.8, back: 3.8, lx: 0, ly: 0, lz: -2, fov: 60, blend: 1.0 },
+};

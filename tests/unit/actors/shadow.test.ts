@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { BONE_INDEX, copyPose } from '../../../src/core/rig';
 import { crawlPose, PoseBuilder } from '../../../src/render/actors/handCycle';
+import { applyPosture, standing } from '../../../src/render/actors/poses';
 import { PlanarShadowSystem } from '../../../src/render/actors/PlanarShadow';
 import { ActorRigFactory, type Rig } from '../../../src/render/actors/rigBuild';
 import { WP5 } from '../../../src/render/actors/shared';
@@ -80,5 +81,76 @@ describe('planar shadow modes', () => {
     expect(m.sh.state.second).toBe(true);
     const second = m.rigs[1] as THREE.Object3D;
     expect(-boneWorld(second, 'pelvis').z).toBeLessThan(20 - 1.5);
+  });
+});
+
+// —— 修复轮 U5：影子异常事件期间，影子伸出身体 2–3 m，方向在前右方（+x、−z），追尾 / 站立机位都看得见 ——
+function projected(root: THREE.Object3D): THREE.Vector3[] {
+  root.updateMatrixWorld(true);
+  let mesh: THREE.SkinnedMesh | null = null;
+  root.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) mesh = o as THREE.SkinnedMesh; });
+  const m = mesh as unknown as THREE.SkinnedMesh;
+  const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute, skin = m.geometry.getAttribute('skinIndex') as THREE.BufferAttribute;
+  const out: THREE.Vector3[] = [];
+  for (let i = 0; i < pos.count; i++) {
+    const bi = skin.getX(i);
+    if (bi >= BONE_INDEX.propHead) continue;                                     // 道具（缩放为 0）
+    if (bi >= BONE_INDEX.arm3Upper && (root.getObjectByName('arm3Upper') as THREE.Bone).scale.x < 0.01) continue;
+    const v = new THREE.Vector3().fromBufferAttribute(pos, i);
+    m.applyBoneTransform(i, v);
+    out.push(v.applyMatrix4(m.matrixWorld));
+  }
+  return out;
+}
+
+describe('shadow anomalies are cast long and front-right (U5)', () => {
+  const MODES = ['jellyfish', 'threeHands', 'pointBack', 'pointMirror', 'long', 'reversed', 'chase', 'liesDown'] as const;
+  for (const atmo of ['morning', 'dawn', 'dream'] as const) {
+    for (const mode of MODES) {
+      it(`${mode} (${atmo}): the shadow reaches ≥ 2 m from the root, toward +x / −z`, () => {
+        const m = setup('low');
+        m.sh.onEvent({ type: 'cue', tick: 0, data: { body: { type: 'atmosphere', id: atmo, seconds: 0.01 } } } as never);
+        const b = new PoseBuilder();
+        let s = snap({ s: 20, beat: 20.2, t: 1 });
+        if (mode === 'liesDown') {
+          s = snap({ s: 20, t: 1, segKind: 'stand' });
+          s.player.stand = { phase: 'walking', x: 0, theta: 0, steps: 0, stepT: 0, held: 0, script: 'dream' } as never;
+          copyPose(WP5.playerPose, applyPosture(standing({ knee: 6, lean: 3 }), { x: 0, y: 0, s: 20, yaw: 0 }, b));
+        } else copyPose(WP5.playerPose, crawlPose(crawlInput({ s: 20, beat: 20.2 }), b));
+        if (mode === 'chase') s.follower = { ...s.follower, mode: 'pressure', hud: 'shadow', distance: 2 };
+        m.sh.frame(s, s, 1, 1 / 60);
+        m.sh.setMode(mode === 'chase' ? 'reversed' : mode, 10, 1.05);
+        for (let i = 1; i <= 60; i++) { const n = { ...s, t: 1.05 + i / 60 }; m.sh.frame(n, n, 1, 1 / 60); }
+        expect(m.sh.state.planar).toBe(true);
+        expect(m.sh.state.eventK).toBe(1);
+        const L = m.sh.light;
+        expect(L.x).toBeGreaterThan(0); expect(L.z).toBeLessThan(0);
+        const hx = L.x / Math.hypot(L.x, L.z), hz = L.z / Math.hypot(L.x, L.z);
+        const pts = projected(m.rigs[0] as THREE.Object3D);
+        const rx = s.player.x, rz = -s.player.s;
+        let tip = -Infinity, cx = 0, cz = 0;
+        for (const p of pts) { tip = Math.max(tip, (p.x - rx) * hx + (p.z - rz) * hz); cx += p.x - rx; cz += p.z - rz; }
+        expect(tip).toBeGreaterThanOrEqual(2);
+        expect(cx / pts.length).toBeGreaterThan(0);
+        expect(cz / pts.length).toBeLessThan(0);
+      });
+    }
+  }
+
+  it('chase: the second shadow is 0.5 opaque, compact behind you and does not overlap your own shadow', () => {
+    const m = setup('medium');
+    const b = new PoseBuilder();
+    copyPose(WP5.playerPose, crawlPose(crawlInput({ s: 20, beat: 20.2 }), b));
+    const s = snap({ s: 20, beat: 20.2, t: 2 });
+    s.follower = { ...s.follower, mode: 'pressure', hud: 'shadow', distance: 2 };
+    for (let i = 0; i < 60; i++) { const n = { ...s, t: 2 + i / 60 }; m.sh.frame(n, n, 1, 1 / 60); }
+    expect(m.sh.state.second).toBe(true);
+    const second = m.rigs[1] as THREE.Object3D;
+    let mesh: THREE.SkinnedMesh | null = null;
+    second.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) mesh = o as THREE.SkinnedMesh; });
+    expect(((mesh as unknown as THREE.SkinnedMesh).material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(0.5, 6);
+    const mine = projected(m.rigs[0] as THREE.Object3D), its = projected(second);
+    const zMineMax = Math.max(...mine.map((p) => p.z)), zItsMin = Math.min(...its.map((p) => p.z));
+    expect(zItsMin).toBeGreaterThan(zMineMax - 0.05);                  // 它整个在你的影子后面（+z 是身后）
   });
 });

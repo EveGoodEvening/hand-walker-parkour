@@ -28,6 +28,9 @@ export const SET_DEFAULT_CLIP: Partial<Record<string, AnyClip | null>> = {
   bedroom: 'lieBack', 'infirmary.bed': 'lieBack', 'infirmary.ceiling': 'lieBack', infirmary: 'lieBack', placeholder: 'sitDesk',
 } satisfies Partial<Record<SetId | string, AnyClip | null>>;
 
+/** smile：抬头的角度（弧度，局部 x）。 */
+export const SMILE_HEAD_UP = 0.22;
+
 const crawlIn: CrawlInput = { s: 0, x: 0, y: 0, floorY: 0, beat: 0, stride: 1, cadence: 4.8, speed: 4.8, duck: 0, air: false, airT: 0, mode: 'crawl', modeT: 0, laneTarget: 0, twitch: 0, drift: 0, lookBack: 0 };
 const _tmp = createPose();
 
@@ -58,7 +61,16 @@ function posture(id: AnyClip, t: number): Posture | null {
       P.chest = [0.01 * Math.sin(t * 1.4), 0, 0];
       return P;
     }
-    case 'smile': { const P = standing({ knee: 4, lean: 0 }); P.head = [0.04, 0.05, 0.1]; return P; }
+    case 'smile': {
+      // 4-3 镜中的「我」在笑（没有五官，附录 A-4）：慢慢抬起头、肩膀松下来，两手垂到身侧
+      const k = smoothstep(0.3, 1.5, t);
+      const P = standing({ knee: 4, lean: 0, arms: 'hang' });
+      P.head = [0.04 + SMILE_HEAD_UP * k, 0.05, 0.1 * (1 - k)];
+      P.chest = [-0.05 * k, 0, 0];
+      P.L = { ...P.L, t: [P.L.t[0] - 0.01 * k, P.L.t[1] - 0.04 * k, P.L.t[2]] };
+      P.R = { ...P.R, t: [P.R.t[0] + 0.01 * k, P.R.t[1] - 0.04 * k, P.R.t[2]] };
+      return P;
+    }
     case 'walkUpright': return walkingLegs(armSwing(standing({ knee: 6, lean: 3 }), t * 0.95), t * 0.95, 0.62, 0);
     case 'turnAround': { const P = standing({ knee: 5 }); P.yaw = Math.PI * easeInOutSine(clamp(t / 1.0, 0, 1)); return P; }
     case 'turnHead': { const P = seated({ lean: 2, L: { t: [-0.13, 0.6, PELVIS_Z - 0.36], f: [0, 0, -1], n: [0, -1, 0] }, R: { t: [0.13, 0.6, PELVIS_Z - 0.36], f: [0, 0, -1], n: [0, -1, 0] } }); P.head = [0, 70 * DEG * easeInOutSine(clamp(t / 0.8, 0, 1)), 0]; return P; }
@@ -190,7 +202,7 @@ function posture(id: AnyClip, t: number): Posture | null {
 }
 
 /** 与时间无关的体态：缓存一次，避免每帧分配（§9.4「热路径不分配内存」）。 */
-const STATIC: ReadonlySet<AnyClip> = new Set<AnyClip>(['sit', 'sitDesk', 'sitEat', 'busSeat', 'busSeatNormal', 'smile', 'kneel', 'kneelSit', 'lieBack',
+const STATIC: ReadonlySet<AnyClip> = new Set<AnyClip>(['sit', 'sitDesk', 'sitEat', 'busSeat', 'busSeatNormal', 'kneel', 'kneelSit', 'lieBack',
   'palmToGlass', 'pointMirror', 'pointBack', 'answerLean', 'counterStand', 'sinkLean', 'touchPillowDent', 'palmEyeHold', 'handsInWater', 'sitFloor']);
 const STATIC_CACHE = new Map<AnyClip, Posture>();
 

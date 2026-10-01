@@ -59,6 +59,13 @@ interface Rec {
 
 interface Slot { rig: Rig; box: THREE.Group; body: THREE.MeshLambertMaterial; mirror: THREE.MeshLambertMaterial; puddle: THREE.MeshLambertMaterial; memory: THREE.MeshLambertMaterial; pose: Pose; tmp: Pose; rec: Rec | null }
 
+/**
+ * 站立段里的世界替身自带一面立着的大镜子（修复轮 U5）：4-3「广场边上的大镜子里站着的我」。站立段的数据不支持反光面，
+ * 只在渲染端处理：镜框 + 浅色镜底 + 一层很淡的玻璃，替身站在框里、面朝镜头（附录 D10：异常只出现在倒影里）。
+ * 内框宽 MIRROR_FRAME.w、高 h，镜底在替身身后 back 米。跑段（5-6 迎面走来的「我」）不加。
+ */
+export const MIRROR_FRAME = { w: 0.95, h: 2.05, bar: 0.07, depth: 0.05, back: 0.3, frame: 0x3a4146, base: 0xaeb9be, glass: 0xd7e0e4 } as const;
+
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _pl = new THREE.Plane();
 const _tgt: ThirdHandTarget = {};
 const _tp = new THREE.Vector3(), _td = new THREE.Vector3(), _m3 = new THREE.Matrix4();
@@ -95,6 +102,10 @@ export class DoubleSystem implements ViewSystem {
   private planSeg = -1;
   private lastT = 0;
   private readonly crawlIn: CrawlInput = { s: 0, x: 0, y: 0, floorY: 0, beat: 0, stride: 1, cadence: 4.8, speed: 4.8, duck: 0, air: false, airT: 0, mode: 'crawl', modeT: 0, laneTarget: 0, twitch: 0, drift: 0, lookBack: 0 };
+  /** 站立段世界替身的镜子（MIRROR_FRAME）：读章前建好，游戏中不建几何体。 */
+  readonly mirrorFrame = new THREE.Group();
+  private frameMats: THREE.MeshBasicMaterial[] = [];
+  private frameOwner: string | null = null;
 
   constructor(private readonly surfaces: ReflectSurfaces) {}
 
@@ -119,7 +130,49 @@ export class DoubleSystem implements ViewSystem {
       ctx.scene.add(box);
       this.slots.push({ rig, box, body, mirror, puddle, memory, pose: createPose(), tmp: createPose(), rec: null });
     }
+    this.buildMirrorFrame(ctx);
   }
+
+  private buildMirrorFrame(ctx: ViewContext): void {
+    const F = MIRROR_FRAME;
+    const frameMat = ctx.mat.basic({ color: F.frame, transparent: true, opacity: 1 });
+    const baseMat = ctx.mat.basic({ color: F.base, transparent: true, opacity: 1 });
+    const glassMat = ctx.mat.basic({ color: F.glass, transparent: true, opacity: 0.14 });
+    for (const m of [frameMat, baseMat]) m.depthWrite = true;
+    glassMat.depthWrite = false;
+    this.frameMats = [frameMat, baseMat, glassMat];
+    const g = this.mirrorFrame;
+    g.name = 'wp5.mirrorFrame';
+    const W = F.w + 2 * F.bar, H = F.h + 2 * F.bar;
+    const bars: Array<[number, number, number, number]> = [
+      [0, F.bar / 2, W, F.bar], [0, H - F.bar / 2, W, F.bar], [-(F.w + F.bar) / 2, H / 2, F.bar, H], [(F.w + F.bar) / 2, H / 2, F.bar, H],
+    ];
+    for (const [x, y, w, h] of bars) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, F.depth), frameMat);
+      m.position.set(x, y, 0);
+      g.add(m);
+    }
+    // 镜底（替身身后）：浅色，深色校服的人贴在上面读得清
+    const base = new THREE.Mesh(new THREE.PlaneGeometry(F.w, F.h), baseMat);
+    base.position.set(0, F.bar + F.h / 2, -F.depth / 2 - 0.002);
+    // 两条支脚
+    for (const sx of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.5), frameMat);
+      leg.position.set(sx * (W / 2 - 0.05), 0.025, -0.25);
+      g.add(leg);
+    }
+    g.add(base);
+    // 玻璃（替身前面，很淡）：渲染顺序在替身之后
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(F.w, F.h), glassMat);
+    glass.position.set(0, F.bar + F.h / 2, F.back + 0.02);
+    glass.renderOrder = 10;
+    g.add(glass);
+    g.visible = false;
+    ctx.scene.add(g);
+  }
+
+  /** 替身 id 是否带着镜框（测试用）。 */
+  framed(id: string): boolean { return this.mirrorFrame.visible && this.frameOwner === id; }
 
   async loadChapter(ch: CompiledChapter): Promise<void> { this.chapter = ch; this.clear(); }
   onSegment(seg: CompiledSegment): void {
@@ -136,15 +189,16 @@ export class DoubleSystem implements ViewSystem {
   }
   onReset(): void { this.clear(); }
 
-  clear(): void { for (const sl of this.slots) this.free(sl); WP5.focus = null; }
+  clear(): void { for (const sl of this.slots) this.free(sl); WP5.focus = null; this.mirrorFrame.visible = false; this.frameOwner = null; }
   private free(sl: Slot): void { sl.rec = null; sl.box.visible = false; }
 
   /** 替身所在的槽位下标（没有返回 −1）。 */
   slotIndexOf(id: string): number { return this.slots.findIndex((s) => s.rec?.id === id); }
 
   /** 活动替身（调试 / 测试用）。 */
-  active(): Array<{ id: string; kind: Kind; alpha: number; visible: boolean; head: number[] }> {
-    return this.slots.filter((s) => s.rec).map((s) => ({ id: (s.rec as Rec).id, kind: (s.rec as Rec).kind, alpha: (s.rec as Rec).alpha, visible: s.box.visible, head: (s.rec as Rec).head.toArray() }));
+  active(): Array<{ id: string; kind: Kind; alpha: number; visible: boolean; head: number[]; yaw: number; framed: boolean }> {
+    return this.slots.filter((s) => s.rec).map((s) => ({ id: (s.rec as Rec).id, kind: (s.rec as Rec).kind, alpha: (s.rec as Rec).alpha, visible: s.box.visible,
+      head: (s.rec as Rec).head.toArray(), yaw: s.pose.root[3] as number, framed: this.framed((s.rec as Rec).id) }));
   }
 
   // ———————————————————— cue ————————————————————
@@ -219,6 +273,7 @@ export class DoubleSystem implements ViewSystem {
     if (!(step >= 0) || step > 60) step = 0;
     this.lastT = t;
     let focus: Rec | null = null;
+    let frameOn = false;
     for (const sl of this.slots) {
       const r = sl.rec;
       if (!r) continue;
@@ -242,7 +297,16 @@ export class DoubleSystem implements ViewSystem {
       sl.rig.mesh.renderOrder = r.kind === 'floor' ? -18 : 0;
       if (sl.box.visible && r.kind !== 'memory' && r.kind !== 'world' && al > 0.5) focus = !focus || r.t0 > focus.t0 ? r : focus;
       if (r.surf) this.surfaces.want(r.surf.id);
+      // 站立段的世界替身：镜子跟着它，透明度一起淡入淡出
+      if (sl.box.visible && r.kind === 'world' && next.segKind === 'stand' && !frameOn) {
+        frameOn = true; this.frameOwner = r.id;
+        const root = sl.pose.root;
+        this.mirrorFrame.position.set(root[0] as number, lerp(prev.player.floorY, next.player.floorY, a), -(root[2] as number) - MIRROR_FRAME.back);
+        this.frameMats[0]!.opacity = al; this.frameMats[1]!.opacity = al; this.frameMats[2]!.opacity = 0.14 * al;
+      }
     }
+    this.mirrorFrame.visible = frameOn;
+    if (!frameOn) this.frameOwner = null;
     // 镜头焦点：最近出现的那个镜中 / 水洼替身
     if (focus) {
       const kind = focus.kind === 'end' ? 'end' : focus.kind === 'floor' ? 'floor' : focus.kind === 'side' ? 'side' : 'world';
@@ -381,7 +445,8 @@ export class DoubleSystem implements ViewSystem {
           }
           root[1] = (root[1] as number) + fyNow;
         }
-        root[0] = r.worldX; root[2] = r.worldS; root[3] = toward ? Math.PI : 0;
+        // 站立段（4-3 镜中的「我」）：站在镜子里，面朝镜头
+        root[0] = r.worldX; root[2] = r.worldS; root[3] = toward || next.segKind === 'stand' ? Math.PI : 0;
         box.matrix.identity();
         break;
       }

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, type Settings } from '../../../src/core/settings';
 import { CameraRig, vFromH } from '../../../src/render/camera/CameraRig';
-import { FOLLOW } from '../../../src/render/camera/shots';
+import { FOLLOW, SEGMENT_SHOTS } from '../../../src/render/camera/shots';
 import { snap } from './helpers';
 
 function apply(cam: THREE.PerspectiveCamera, o: { pos: THREE.Vector3; look: THREE.Vector3; roll: number; fov: number }, aspect: number): void {
@@ -105,5 +105,35 @@ describe('CameraRig (§5.4)', () => {
   it('vFromH derives the vertical fov from 76° horizontal', () => {
     expect(vFromH(76, 16 / 9)).toBeCloseTo(47.4, 0);
     expect(vFromH(76, 1)).toBeCloseTo(76, 6);
+  });
+});
+
+describe('segment chase shot (U5): 5-3 @30–@140 pulls back so the shadow crawling after you is in frame', () => {
+  const run = (segBeatOf: (i: number) => number, frames: number) => {
+    const rig = new CameraRig();
+    const settings = { ...DEFAULT_SETTINGS, reducedMotion: false };
+    let prev = snap({ s: 0 }); prev.segment = '5-3';
+    let o = rig.compute(prev, prev, 1, 1 / 60, 16 / 9, settings);
+    for (let i = 1; i <= frames; i++) {
+      const n = snap({ s: i * 0.09, beat: i * 0.09, t: i / 60 });
+      n.segment = '5-3'; n.segBeat = segBeatOf(i);
+      o = rig.compute(prev, n, 1, 1 / 60, 16 / 9, settings);
+      prev = n;
+    }
+    return { o, last: prev };
+  };
+  it('inside the range the camera is ~1.8 m up and ~3.8 m back, looking at the ground 2 m ahead; outside it is the normal follow camera', () => {
+    const inside = run((i) => 40 + i * 0.08, 120);
+    const sh = SEGMENT_SHOTS['5-3']!;
+    expect(inside.o.pos.y).toBeCloseTo(sh.h, 1);
+    expect(inside.o.pos.z - -inside.last.player.s).toBeCloseTo(sh.back, 1);
+    expect(inside.o.look.y).toBeLessThan(0.15);
+    // 身后 2 m 的地面在画面里（追来的影子）
+    const cam = new THREE.PerspectiveCamera(inside.o.fov, 16 / 9, 0.05, 200);
+    apply(cam, inside.o, 16 / 9);
+    const behind = new THREE.Vector3(0, 0, -inside.last.player.s + 2).project(cam);
+    expect(Math.abs(behind.x)).toBeLessThan(1); expect(Math.abs(behind.y)).toBeLessThan(1);
+    const outside = run((i) => 141 + i * 0.08, 120);
+    expect(outside.o.pos.y).toBeCloseTo(FOLLOW.landscape.h, 1);
   });
 });

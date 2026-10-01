@@ -3,6 +3,7 @@
 // DetachedBindMode、bindMatrix = I；Basic #0B0F12 不透明度 0.38；模板位 0x7F「Increment + Equal 0」，重叠处只压暗一次
 // （和 three 的 ShadowMesh 同一做法）。没有模板时关掉模板（接受重叠处发深）。
 // 光线方向取氛围预设的 planarDir（缺省让影子落在前右方，追尾镜头随时看得到）；atmosphere cue 时按秒插值。
+// 影子异常事件期间（修复轮 U5）光线压低到前右方，影子伸出 2–3 m（SHADOW_EVENT）；追来的第二个影子不透明度 0.5。
 // 低画质（planarShadow = 'events'）：平时只画圆形暗斑，只在影子异常事件期间换成平面投影。
 // 模式（ShadowMode）：normal、jellyfish（展开四肢的水母，1-5）、threeHands / pointBack（胸口伸出的手指向身后，2-9）、
 // pointMirror（指向走廊尽头的镜子，2-10）、long（拉长，4-1）、liesDown（你站着，它趴下、双手前伸，4-3）、
@@ -12,9 +13,9 @@ import type { ViewContext, ViewSystem } from '../../core/contracts';
 import { RENDER_ORDER, STENCIL } from '../../core/constants';
 import type { GameEvent } from '../../core/events';
 import { FALLBACK_ATMOSPHERES } from '../../core/fallbacks';
-import { clamp, DEG, lerp } from '../../core/math';
+import { clamp, DEG, easeInOutSine, lerp } from '../../core/math';
 import { getAtmosphere } from '../../core/registry';
-import { copyPose, createPose, type Pose } from '../../core/rig';
+import { BONE_INDEX, copyPose, createPose, type Pose } from '../../core/rig';
 import type { AtmosphereId, ShadowMode, SimSnapshot } from '../../core/types';
 import type { CompiledSegment } from '../../levels/schema';
 import { armTo, crawlPose, PoseBuilder, setHand, type CrawlInput } from './handCycle';
@@ -46,8 +47,25 @@ export function readableLight(dir: THREE.Vector3, out: THREE.Vector3): THREE.Vec
   return out.normalize();
 }
 
-const _L = new THREE.Vector3(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _d = new THREE.Vector3();
+/**
+ * 影子异常事件期间（修复轮 U5）：光线压得很低、方向固定在前右方，影子伸出身体 2–3 m，追尾镜头和站立机位都看得见。
+ * 以前只保证「水平 ≥ 1.2 × 竖直」，影子只伸出约 1.3 m，被身体挡住；4-3 的影子还朝后落，与「它选择了另一个方向」不符。
+ * 水平 / 竖直比按姿势自己算：影子的尖（最远的关节投影）落在根的前右方 EVENT_TIP 米处，比例限制在 [RATIO_MIN, RATIO_MAX]。
+ */
+export const SHADOW_EVENT = { tip: 2.5, ratioMin: 3, ratioMax: 8, longRatio: 7, blendSec: 0.5, defaultDir: [0.5, -0.866] as const } as const;
+/** 事件期间影子的水平方向（单位向量 x、z）：氛围的方向已经是前右（x > 0、z < 0）就沿用，否则用缺省的前右。 */
+export function eventHeading(dir: THREE.Vector3, out: THREE.Vector2): THREE.Vector2 {
+  const h = Math.hypot(dir.x, dir.z);
+  if (h > 1e-3 && dir.x > 0.05 * h && dir.z < -0.3 * h) return out.set(dir.x / h, dir.z / h);
+  return out.set(SHADOW_EVENT.defaultDir[0], SHADOW_EVENT.defaultDir[1]);
+}
+/** 按水平方向 (hx, hz) 与水平 / 竖直比 r 组成光线方向（单位向量，y < 0）。 */
+export function lightFrom(hx: number, hz: number, r: number, out: THREE.Vector3): THREE.Vector3 { return out.set(hx * r, -1, hz * r).normalize(); }
+
+const _L = new THREE.Vector3(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _d = new THREE.Vector3(), _E = new THREE.Vector3(), _L2 = new THREE.Vector3();
+const _h = new THREE.Vector2(), _r = new THREE.Vector3();
 const DOWN = new THREE.Vector3(0, -1, 0), FWD = new THREE.Vector3(0, 0, -1);
+const TIP_JOINTS = ['head', 'padL', 'padR', 'palmL', 'palmR', 'chest', 'pelvis', 'footL', 'footR', 'shinL', 'shinR', 'foreArmL', 'foreArmR', 'arm3Hand'] as const;
 
 export class PlanarShadowSystem implements ViewSystem {
   readonly id = 'wp5.shadow';
@@ -64,6 +82,11 @@ export class PlanarShadowSystem implements ViewSystem {
   private modeT0 = 0;
   private modeUntil = Infinity;
   private readonly dir = new THREE.Vector3(0.3, -1, -0.55).normalize();
+  /** 事件光线的权重（0..1，按模拟时间 blendSec 过渡）。 */
+  private eventK = 0;
+  /** 第二个影子（追来的那个）：不透明度 0.5，自己的材质（模板同一组位，与你的影子不叠）。 */
+  private matSecond!: THREE.MeshBasicMaterial;
+  private matSecondPlain!: THREE.MeshBasicMaterial;
   private readonly dirFrom = new THREE.Vector3();
   private readonly dirTo = new THREE.Vector3();
   private dirK = 1; private dirDur = 1.5;
@@ -72,14 +95,16 @@ export class PlanarShadowSystem implements ViewSystem {
   private readonly pose = createPose();
   private readonly pose2 = createPose();
   private readonly crawl: CrawlInput = { s: 0, x: 0, y: 0, floorY: 0, beat: 0, stride: 1, cadence: 4.8, speed: 4.8, duck: 0, air: false, airT: 0, mode: 'crawl', modeT: 0, laneTarget: 0, twitch: 0, drift: 0, lookBack: 0 };
-  /** 调试：本帧是否画了平面投影 / 暗斑。 */
-  state = { planar: false, blob: false, second: false, stencil: true };
+  /** 调试：本帧是否画了平面投影 / 暗斑；事件光线的水平 / 竖直比与权重。 */
+  state = { planar: false, blob: false, second: false, stencil: true, ratio: 0, eventK: 0 };
+  /** 本帧主影子用的光线方向（测试用）。 */
+  readonly light = new THREE.Vector3();
 
   init(ctx: ViewContext): void {
     this.ctx = ctx;
     const f = ctx.rig as unknown as ActorRigFactory;
-    const mk = (stencil: boolean) => {
-      const m = ctx.mat.basic({ color: 0x0b0f12, transparent: true, opacity: 0.38 });
+    const mk = (stencil: boolean, opacity = 0.38) => {
+      const m = ctx.mat.basic({ color: 0x0b0f12, transparent: true, opacity });
       m.depthWrite = false; m.side = THREE.FrontSide;   // 压扁的闭合网格：朝上的面投下来是正面，朝下的面被剔除（没有模板时也只一层）
       m.polygonOffset = true; m.polygonOffsetFactor = -1; m.polygonOffsetUnits = -1;
       if (stencil) {
@@ -90,6 +115,8 @@ export class PlanarShadowSystem implements ViewSystem {
       return m;
     };
     this.matStencil = mk(true); this.matPlain = mk(false);
+    this.matSecond = mk(true, 0.5); this.matSecondPlain = mk(false, 0.5);
+    this.matSecond.name = 'wp5.shadowSecond'; this.matSecondPlain.name = 'wp5.shadowSecondPlain';
     this.main = f.make('shadow', this.matStencil);
     this.second = f.make('shadow', this.matStencil);
     for (const r of [this.main, this.second]) {
@@ -154,10 +181,9 @@ export class PlanarShadowSystem implements ViewSystem {
     const stencil = this.ctx.stencil && !WP5.forceNoStencil;
     this.state.planar = planar; this.state.blob = blob; this.state.stencil = stencil;
     const mat = stencil ? this.matStencil : this.matPlain;
+    this.eventK = WP5.poseTest ? (event ? 1 : 0) : clamp(this.eventK + (event ? 1 : -1) * sdt / SHADOW_EVENT.blendSec, 0, 1);
+    if (sdt > 0.25) this.eventK = event ? 1 : 0;
     const L = readableLight(this.dir, _L);
-    if (mode === 'long') { L.y *= 0.45; L.normalize(); }
-    // 水母：光线压低一些，摊开的四肢投到身体轮廓外面（追尾镜头才看得见，不全埋在身体下面）
-    if (mode === 'jellyfish') { L.y *= 0.7; L.normalize(); }
     // —— 主影子 ——
     this.main.root.visible = planar;
     if (planar) {
@@ -166,10 +192,21 @@ export class PlanarShadowSystem implements ViewSystem {
       if (still) this.main.root.matrix.copy(WP5.stillAnchor); else this.main.root.matrix.identity();
       this.main.root.matrixWorldNeedsUpdate = true;
       const h = (still ? WP5.playerRoot.y : lerp(prev.player.floorY, next.player.floorY, alpha)) + 0.004;
+      if (this.eventK > 0) {
+        // 事件光线：前右方，按姿势算水平 / 竖直比，影子的尖落在根前右方约 2.5 m
+        const hd = eventHeading(this.dir, _h);
+        const r = mode === 'long' ? SHADOW_EVENT.longRatio : this.tipRatio(hd, still, h - 0.004);
+        lightFrom(hd.x, hd.y, r, _E);
+        L.lerp(_E, easeInOutSine(this.eventK)).normalize();
+        this.state.ratio = r;
+      } else this.state.ratio = Math.hypot(L.x, L.z) / Math.max(1e-6, -L.y);
+      this.state.eventK = this.eventK;
+      this.light.copy(L);
       shadowMatrix(L, h, this.main.mesh.matrixWorld);
       if (this.main.mesh.material !== mat) this.main.mesh.material = mat;
     }
-    // —— 第二个影子（5-3 chase）——
+    // —— 第二个影子（5-3 chase）：身后按 follower.distance 追来；不透明度 0.5，头歪着一点；
+    //    用陡一些的光投在它自己脚下，不和你的影子叠在一起（你的影子投向前右方）——
     const chase = planar && mode === 'chase' && !still;
     this.second.root.visible = chase;
     this.state.second = chase;
@@ -177,13 +214,19 @@ export class PlanarShadowSystem implements ViewSystem {
       const N = next.player;
       const dist = next.follower.distance > 0 ? next.follower.distance : 2;
       const I = this.crawl;
-      I.s = N.s - dist; I.x = N.x; I.floorY = N.floorY; I.stride = N.stride; I.cadence = N.cadence || 5;
-      I.beat = N.beat * 1.06 + (t - this.modeT0) * 0.35; I.laneTarget = N.laneTarget; I.speed = N.speed;
-      copyPose(this.pose2, crawlPose(I, this.b));
+      I.s = N.s - dist; I.x = N.x + 0.3; I.floorY = N.floorY; I.stride = N.stride; I.cadence = N.cadence || 5;
+      I.beat = N.beat * 1.06 + (t - this.modeT0) * 0.35; I.laneTarget = N.laneTarget + 0.3 / 1.1; I.speed = N.speed;
+      const b = this.b;
+      crawlPose(I, b);
+      b.addLocal('neck', 0, 0.35, 0.25); b.addLocal('head', 0.2, 0.3, 0.3);
+      b.fkAll(BONE_INDEX.head);
+      copyPose(this.pose2, b.finish());
       this.second.apply(this.pose2);
       this.second.root.matrix.identity(); this.second.root.matrixWorldNeedsUpdate = true;
-      shadowMatrix(L, N.floorY + 0.004, this.second.mesh.matrixWorld);
-      if (this.second.mesh.material !== mat) this.second.mesh.material = mat;
+      const hd = eventHeading(this.dir, _h);
+      shadowMatrix(lightFrom(hd.x, hd.y, 0.8, _L2), N.floorY + 0.004, this.second.mesh.matrixWorld);
+      const m2 = stencil ? this.matSecond : this.matSecondPlain;
+      if (this.second.mesh.material !== m2) this.second.mesh.material = m2;
     }
     // —— 暗斑（低画质的平时状态）——
     this.blob.visible = blob;
@@ -196,6 +239,25 @@ export class PlanarShadowSystem implements ViewSystem {
       this.blob.scale.set(sc, 1, sc);
       this.blobMat.opacity = 0.34 * sc;
     }
+  }
+
+  /**
+   * 事件光线的水平 / 竖直比：影子的尖（各关节投影里沿 hd 最远的那个）落在根前方 SHADOW_EVENT.tip 米处。
+   * 姿势刚由 shadowPose 写进 this.b（关节位置在角色空间里，静场里再乘锚点）。
+   */
+  private tipRatio(hd: THREE.Vector2, still: boolean, ground: number): number {
+    const b = this.b;
+    let need: number = SHADOW_EVENT.ratioMin;
+    const r0 = b.rootP;
+    for (const j of TIP_JOINTS) {
+      const i = BONE_INDEX[j];
+      b.toWorld(b.wp[i] as THREE.Vector3, _v);
+      if (still) _v.applyMatrix4(WP5.stillAnchor);
+      const rx = still ? WP5.playerRoot.x : r0.x, rz = still ? WP5.playerRoot.z : r0.z;
+      const f = (_v.x - rx) * hd.x + (_v.z - rz) * hd.y, hgt = Math.max(0.05, _v.y - ground);
+      need = Math.max(need, (SHADOW_EVENT.tip - f) / hgt);
+    }
+    return clamp(need, SHADOW_EVENT.ratioMin, SHADOW_EVENT.ratioMax);
   }
 
   /** 按模式生成影子的姿势。 */
@@ -238,12 +300,18 @@ export class PlanarShadowSystem implements ViewSystem {
         return b.finish();
       }
       case 'liesDown': {
-        // 你站着，影子趴下去，双手向前伸
+        // 你站着，影子趴下去，双手向前伸（4-3「它选择了另一个方向」）：它沿着前右方的光线趴在地上，脚在你脚边，手伸向前右方
         const I = this.crawl, N = next.player;
         const x = N.x + (N.stand?.x ?? 0);
-        I.s = N.s; I.x = x; I.floorY = N.floorY; I.beat = 0.2; I.stride = 1; I.duck = 0.8; I.laneTarget = x / 1.1; I.speed = 0;
+        const hd = eventHeading(this.dir, _h);
+        const yaw = Math.atan2(-hd.x, -hd.y);                 // 角色的前方（−z）转到 hd
+        const back = 1.0;                                      // 根（骨盆前方）离脚约 1 m
+        I.s = N.s - hd.y * back; I.x = x + hd.x * back; I.floorY = N.floorY; I.beat = 0.2; I.stride = 1; I.duck = 0.8; I.laneTarget = I.x / 1.1; I.speed = 0;
         crawlPose(I, b);
         I.duck = 0;
+        const p = b.finish();
+        p.root[3] = yaw;
+        b.load(p);
         for (const side of ['L', 'R'] as const) {
           b.toWorld(_v.set(side === 'L' ? -0.2 : 0.2, 0, -0.95), _w); _w.y = N.floorY + 0.03;
           armTo(b, side, _w, 0.6);
@@ -257,6 +325,7 @@ export class PlanarShadowSystem implements ViewSystem {
         const out = copyPose(this.pose, src);
         out.root[3] = (r[3] as number) + Math.PI;
         out.root[2] = (r[2] as number) - 0.35;
+        b.load(out);                                  // tipRatio 按构建器里的姿势量关节
         return out;
       }
       default: return copyPose(this.pose, src);
