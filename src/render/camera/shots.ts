@@ -15,7 +15,7 @@ export const SET_SHOTS: Partial<Record<ShotId, SetShot>> = {
   // 2-5：低机位（0.32 m，修复轮 U5）在主角左后方、窗与他之间，对着干净的窗玻璃：窗里的「我」正面坐着、腿垂到地上，
   // 第三只手的掌心贴在玻璃上；主角自己在画面右边缘之外
   windowSeat: { pos: [-0.1, 0.32, 1.0], look: [-1.05, 0.6, -0.25], fov: 55 },
-  // 2-9：背靠实验桌腿坐着，看黑板。修复轮 U5 第二轮：镜头在他左后方的低处、越过他的左肩看黑板，右手边的实验台（x = 1.05，
+  // 2-9：背靠实验桌腿坐着，看黑板（修复轮 B3 第三轮：这是 5.2 s 转过来之后的机位，之前是 STILL_TURN_BACK.labBoard 的低头看影子）。修复轮 U5 第二轮：镜头在他左后方的低处、越过他的左肩看黑板，右手边的实验台（x = 1.05，
   // 钢架腿就在他身旁，「背靠着实验桌的桌腿」）在画面右侧，挡不住黑板；他在画面右边、不和黑板重叠。第一轮把实验台挪到 x = 1.5，桌腿离他 1.1 m
   labBoard: { pos: [-0.55, 0.45, 0.9], look: [0.15, 1.25, -2.6], fov: 60 },
   // 3-5：公交车，车窗在左侧。从过道上方越过主角的头看车窗（修复轮 U5：以前与头同高，车窗里的「我」有一半被他挡住）
@@ -55,18 +55,26 @@ export const SET_SHOT_LATE: Partial<Record<ShotId, { after: number; blend: numbe
 };
 
 /**
- * 静场里的回头（`camera` cue turnBack：2-9 5.2 s「它多了一只手」指向身后、3-10 5.4 s「回头：什么也没有」）。修复轮 B3：
- * 以前静场只认 SET_SHOTS，turnBack 被丢掉，镜头一直停在原来的静场机位上。
- * 从当前静场机位转到看身后的机位（pos / look 相对锚点，主角朝 −z，身后是 +z），镜头位置平移、朝向按 turn 的方向转过去
- * （+1 向左、−1 向右，按镜头自己的朝向），TURN_RAMP 秒转过去、TURN_RAMP 秒转回来（与跑段的 turnBack 同速），「减少晃动」时直接切。
- * 镜头都在主角头的后面（+z 一侧），转过去之后他在镜头身后，画面里只有他身后的东西。
- *   labBoard：顺着影子那只手指的方向（右后方）转过去，看见教室后半边空着的实验台、凳子和后墙。
- *   bathroomMirror：从他右后方转过去看身后的门和门旁边滴水的毛巾（「只有我背后的卫生间门，和门旁边墙上挂着的一条毛巾」）。
- * 没有专门机位的静场：原地向左转 160°。
+ * 静场里的回头（`camera` cue turnBack：2-9 5.2 s「它多了一只手」指着的方向、3-10 5.4 s「回头：什么也没有」）。修复轮 B3：
+ * 以前静场只认 SET_SHOTS，turnBack 被丢掉，镜头一直停在原来的静场机位上。修复轮 B3 第三轮：两处都是「我慢慢地转过……」，
+ * 转身用掉 cue 的整段 seconds（2-9 0.8 s、3-10 1.0 s，easeInOutSine），不再是 0.3 s 的甩镜；时刻按段数据算（静场时间的纯函数，
+ * CameraRig.onSegment），跳到静场中间（goto）也对。
+ * 镜头位置直线平移；朝向按 turn 的方向（+1 向左、−1 向右，按镜头自己的朝向）绕竖直轴转，俯仰、注视距离、视角线性插值。
+ * pos / look 相对锚点（主角朝 −z）。「减少晃动」时直接切。
+ *   reveal（labBoard，2-9）：这里的机位是转之前的：镜头在他左后方的高处低头看他和地上的影子（「我低头看着自己的影子」），
+ *     影子的第三只手从 4.4 s 伸出来指向黑板（actors/PlanarShadow.ts 的 POINT_BACK），黑板在画面外；5.2 s 起顺着那只手
+ *     慢慢抬头、转到 SET_SHOTS.labBoard（越过左肩看黑板）并停在那里，6.0 s 的粉笔字就是转过来看见的。WP3 的 set 把黑板放在
+ *     主角正前方，所以「转向身后的黑板」只能按镜头算（DESIGN §10.4 建议条目）。以前反过来：开场就看着空黑板，5.2 s 顺着
+ *     指向右后方的手转过去，身后空无一物，0.2 s 后甩回来，字在镜头转回来时写出。
+ *   hold（bathroomMirror，3-10）：这里的机位是转过去之后的：从他右后方转过去看身后的门和门旁边滴水的毛巾（「只有我背后的卫生间门，
+ *     和门旁边墙上挂着的一条毛巾」），一直停到下一次静场机位切换（10.4 s 关门前最后一眼）。「你想让我站起来？」「站起来之后呢？」
+ *     是对着门问的（「我慢慢地转过身。门还是那扇门。」）。以前 1.0 s 后转回空镜子。
+ * 没有专门机位的静场：原地向左转 160°，TURN_RAMP 秒转过去、到 cue 结束前 TURN_RAMP 秒转回来（与跑段的 turnBack 同速）。
  */
-export const STILL_TURN_BACK: Partial<Record<ShotId, SetShot & { turn: 1 | -1 }>> = {
-  labBoard: { pos: [-0.5, 0.5, 0.95], look: [0.75, 0.85, 2.9], fov: 60, turn: -1 },
-  bathroomMirror: { pos: [0.5, 1.45, 0.6], look: [-0.25, 1.35, 1.65], fov: 66, turn: 1 },
+export interface StillTurnShot extends SetShot { turn: 1 | -1; mode: 'reveal' | 'hold' }
+export const STILL_TURN_BACK: Partial<Record<ShotId, StillTurnShot>> = {
+  labBoard: { mode: 'reveal', pos: [-0.55, 1.7, 0.8], look: [0.45, 0, -0.7], fov: 45, turn: 1 },
+  bathroomMirror: { mode: 'hold', pos: [0.5, 1.45, 0.6], look: [-0.25, 1.35, 1.65], fov: 66, turn: 1 },
 };
 /** 静场 turnBack 的缺省：原地向左转（弧度）。转过去、转回来各用多少秒。 */
 export const STILL_TURN_DEFAULT_YAW = Math.PI * 160 / 180;

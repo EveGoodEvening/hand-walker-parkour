@@ -93,6 +93,7 @@ export function playStill(w: Scene, segId: string, tEnd: number): SimSnapshot {
   const seg = w.ch.segments.find((s) => s.def.id === segId)!;
   const evs = [...((seg.def as { events?: Ev[] }).events ?? [])].sort((a, b) => a.at - b.at);
   let prev = stillSnap(seg, 0);
+  w.cam.onSegment(seg);                                // 与 View 一致：先 onSegment，再 segment 事件
   w.cam.onEvent({ type: 'segment', tick: 0, data: {} } as never);
   w.actor.onEvent({ type: 'segment', tick: 0, data: {} } as never);
   w.dbl.onSegment(seg);

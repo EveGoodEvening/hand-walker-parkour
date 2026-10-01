@@ -5,7 +5,8 @@
 // 横向跟随：临界阻尼弹簧 ω = 12，换道滚转 1.5°；撑跃高度 +0.35 × 抬升；伏低 −0.10；受击震动 0.12 s / 0.03，视角脉冲 +1.5°；
 // 梦中高速（> 7 m/s）视角 +8°；回头 0.25 s 绕玩家转 160°、停 0.4 s、0.25 s 转回；站立 (0, 1.62, +1.9) 注视 (0, 1.5, −8)，
 // 1.2 s 过渡，滚转 = θ × 0.6；摔倒 (0.2, 0.18, +1.0)，0.35 s，滚转 0.2 rad；静场按 ShotId 固定机位（相对主角锚点）。
-// 静场里的 turnBack cue（2-9、3-10，修复轮 B3）：从静场机位转到看身后的机位（shots.ts 的 STILL_TURN_BACK），0.3 s 转过去、0.3 s 转回来。
+// 静场里的 turnBack cue（2-9、3-10，修复轮 B3）：shots.ts 的 STILL_TURN_BACK。第三轮：用 cue 的整段 seconds 慢慢转，按段数据定时刻；
+// 2-9 从低头看影子转到黑板并停住（reveal），3-10 转过去看门、停到下一次静场机位切换（hold）。
 // 步态晃动：高度 1.2 cm、俯仰 0.3°，与掌根触地同步；落地下沉 1 cm。
 // 停拍里如果镜中 / 水洼里有替身（WP5.focus），镜头慢慢看过去（「我停下来，看了一眼。镜子里的人也停了下来。」）。
 // 「减少晃动」：没有晃动、滚转、震动和视角变化；回头、推近直接切镜头。
@@ -16,10 +17,11 @@ import type { GameEvent } from '../../core/events';
 import { clamp, DEG, easeInOutSine, frac, lerp, springStep } from '../../core/math';
 import type { Settings } from '../../core/settings';
 import type { ShotId, SimSnapshot } from '../../core/types';
+import type { CompiledSegment, StillSegmentDef } from '../../levels/schema';
 import { WP5 } from '../actors/shared';
 import {
   FOLLOW, PUDDLE_GAZE, RUN_SHOT_OFFSETS, SEGMENT_SHOTS, SET_DEFAULT_SHOT, SET_SHOT_LATE, SET_SHOT_RETURN, SET_SHOTS, STAND_SHOTS, STILL_TURN_BACK,
-  STILL_TURN_DEFAULT_YAW, THROUGH_GLASS_SHOT, TURN_RAMP, DEFAULT_SET_SHOT, type SetShot,
+  STILL_TURN_DEFAULT_YAW, THROUGH_GLASS_SHOT, TURN_RAMP, DEFAULT_SET_SHOT, type SetShot, type StillTurnShot,
 } from './shots';
 
 export interface CamPose { pos: THREE.Vector3; look: THREE.Vector3; roll: number; fov: number }
@@ -52,6 +54,11 @@ export class CameraRig implements ViewSystem {
   /** 本段里每个静场机位被切到的次数（第二次起用 SET_SHOT_RETURN）。 */
   private readonly stillCuts = new Map<ShotId, number>();
   private standShot: 'standEye' | 'trackSky' | null = null;
+  /**
+   * 本静场的回头时间表（修复轮 B3 第三轮）：按段数据里第一个 turnBack camera cue 算（静场时间，秒）；until = 它之后下一个 camera cue
+   * 的时刻（hold 停到那里）。没有段数据时（单元测试直接发 cue）退回按 cue 的模拟时间。
+   */
+  private stillTurnPlan: { at: number; seconds: number; until: number } | null = null;
   private fallBlend = 0;
   private gazeBlend = 0;
   /** 段内专门追尾机位（SEGMENT_SHOTS）的权重。 */
@@ -74,11 +81,26 @@ export class CameraRig implements ViewSystem {
 
   /** camera cue。seconds = 0 表示一直保持到下一次切换（静场）。 */
   setShot(id: ShotId, seconds: number, t: number): void {
-    if (SET_SHOTS[id]) { this.stillShot = id; this.stillCuts.set(id, (this.stillCuts.get(id) ?? 0) + 1); return; }
+    if (SET_SHOTS[id]) {
+      this.stillShot = id; this.stillCuts.set(id, (this.stillCuts.get(id) ?? 0) + 1);
+      if (this.shot?.id === 'turnBack') this.shot = null;          // 静场机位切换结束回头（hold）
+      return;
+    }
     if (id === 'standEye' || id === 'trackSky') { this.standShot = id; return; }
     if (id === 'follow') { this.shot = null; return; }
     const min = RUN_SHOT_OFFSETS[id]?.minSec ?? 0;
     this.shot = { id, t0: t, until: seconds > 0 ? t + Math.max(seconds, min) : Infinity };
+  }
+
+  /** 静场的回头时间表（View 在 segment 事件、重来 / 跳段时先调 onSegment，再调 onEvent / onReset）。 */
+  onSegment(seg: CompiledSegment): void {
+    this.stillTurnPlan = null;
+    if (seg.def.kind !== 'still') return;
+    const cams = ((seg.def as StillSegmentDef).events ?? []).filter((e) => e.type === 'camera')
+      .map((e) => e as unknown as { at: number; shot: ShotId; seconds: number }).sort((a, b) => a.at - b.at);
+    const i = cams.findIndex((e) => e.shot === 'turnBack');
+    const c = cams[i];
+    if (c) this.stillTurnPlan = { at: c.at, seconds: Math.max(0, c.seconds), until: cams[i + 1]?.at ?? Infinity };
   }
 
   onEvent(e: GameEvent): void {
@@ -154,15 +176,8 @@ export class CameraRig implements ViewSystem {
         _gl.set(late.shot.look[0], late.shot.look[1], late.shot.look[2]).applyMatrix4(M);
         o.pos.lerp(_g, k); o.look.lerp(_gl, k); fov = lerp(fov, late.shot.fov, k);
       }
-      // 回头（turnBack cue，修复轮 B3）：从这个机位转过去看身后，再转回来
-      const tb = this.shot;
-      if (tb && tb.id === 'turnBack') {
-        if (next.t > tb.until) this.shot = null;
-        else if (next.t >= tb.t0) {
-          const k = rm ? 1 : easeInOutSine(clamp(Math.min(next.t - tb.t0, tb.until - next.t) / TURN_RAMP, 0, 1));
-          if (k > 0) fov = stillTurn(o, STILL_TURN_BACK[id], M, k, fov);
-        }
-      }
+      // 回头（turnBack，修复轮 B3；第三轮按段数据定时刻、慢慢转、reveal / hold）
+      fov = this.stillTurnBack(o, id, sh, M, st?.t ?? 0, next.t, rm, fov);
       o.fov = portrait ? Math.min(80, fov * 1.3) : fov;
       this.fallBlend = 0; this.gazeBlend = 0; this.standBlend = 0;
       return o;
@@ -329,34 +344,81 @@ export class CameraRig implements ViewSystem {
       && Math.abs(yaw) < CHASE_MAX_TURN && Math.abs(pan) < CHASE_MAX_TURN;
     return o;
   }
+
+  /**
+   * 静场回头（shots.ts 的 STILL_TURN_BACK）。o 已经是这个静场机位 sh（相对锚点 M）；按回头的进度改写 o，返回视角。
+   * 时刻：有段数据时按静场时间 st（stillTurnPlan），否则按 cue 的模拟时间 simT（this.shot）。
+   */
+  private stillTurnBack(o: CamPose, id: ShotId, sh: SetShot, M: THREE.Matrix4, st: number, simT: number, rm: boolean, fov: number): number {
+    const spec: StillTurnShot | undefined = STILL_TURN_BACK[id];
+    let tt: number, at: number, seconds: number, until: number;
+    const plan = this.stillTurnPlan;
+    if (plan) {
+      if (this.shot?.id === 'turnBack') this.shot = null;            // cue 与段数据是同一件事
+      tt = st; at = plan.at; seconds = plan.seconds; until = plan.until;
+    } else {
+      const tb = this.shot;
+      if (!tb || tb.id !== 'turnBack') return fov;
+      tt = simT; at = tb.t0; seconds = Math.max(0, tb.until - tb.t0);
+      // 只有 cue 时，hold / reveal 一直保持到下一次静场机位切换（setShot 清掉 this.shot）
+      until = spec ? Infinity : tb.until;
+      if (!spec && simT > tb.until) { this.shot = null; return fov; }
+    }
+    if (spec?.mode === 'reveal') {
+      // 转之前是 spec 的机位，转到这个静场机位 sh 并停住（只在有段数据时：没有回头的静场直接是 sh）
+      if (!plan) return fov;
+      const k = turnK(tt, at, seconds, rm);
+      if (k >= 1) return fov;
+      o.pos.set(spec.pos[0], spec.pos[1], spec.pos[2]).applyMatrix4(M);
+      o.look.set(spec.look[0], spec.look[1], spec.look[2]).applyMatrix4(M);
+      return k > 0 ? stillTurn(o, sh, M, k, spec.fov, spec.turn) : spec.fov;
+    }
+    if (spec?.mode === 'hold') {
+      if (tt >= until) return fov;
+      const k = turnK(tt, at, seconds, rm);
+      return k > 0 ? stillTurn(o, spec, M, k, fov, spec.turn) : fov;
+    }
+    // 缺省：原地向左转 160°，TURN_RAMP 转过去、cue 结束前 TURN_RAMP 转回来
+    if (tt < at || tt > at + seconds) return fov;
+    const k = rm ? 1 : easeInOutSine(clamp(Math.min(tt - at, at + seconds - tt) / TURN_RAMP, 0, 1));
+    return k > 0 ? stillTurn(o, undefined, M, k, fov, 1) : fov;
+  }
+}
+
+/** 静场回头的进度：时间表 [at, at + seconds] 里 easeInOutSine 从 0 到 1；「减少晃动」时直接跳。 */
+function turnK(tt: number, at: number, seconds: number, rm: boolean): number {
+  if (tt < at) return 0;
+  if (rm || seconds <= 1e-6) return 1;
+  return easeInOutSine(clamp((tt - at) / seconds, 0, 1));
 }
 
 const _tp = new THREE.Vector3(), _tl = new THREE.Vector3();
 
 /**
- * 静场回头（修复轮 B3）：把机位 o 朝回头机位 to（相对锚点 M）转过去 k（0..1）。镜头位置直线平移；朝向按 to.turn 的方向绕竖直轴转
- * （不对注视点插值：前后两个注视点的连线会穿过镜头，朝向会在中途翻转），俯仰和注视距离线性插值。to 缺省 = 原地向左转 160°。
- * 返回插值后的视角。
+ * 静场回头（修复轮 B3）：把机位 o 朝机位 to（相对锚点 M）转过去 k（0..1）。镜头位置直线平移；朝向按 turn 的方向（+1 向左、−1 向右）
+ * 绕竖直轴转（不对注视点插值：前后两个注视点的连线会穿过镜头，朝向会在中途翻转），俯仰、注视距离、视角线性插值（fov → to.fov）。
+ * to 缺省 = 原地向左转 160°（视角不变）。返回插值后的视角。
  */
-export function stillTurn(o: CamPose, to: (SetShot & { turn: 1 | -1 }) | undefined, M: THREE.Matrix4, k: number, fov: number): number {
+export function stillTurn(o: CamPose, to: SetShot | undefined, M: THREE.Matrix4, k: number, fov: number, turn: 1 | -1): number {
   _d.subVectors(o.look, o.pos);
   const L0 = Math.max(1e-3, _d.length());
   const a0 = Math.atan2(_d.x, _d.z), p0 = Math.asin(clamp(_d.y / L0, -1, 1));
-  let a1: number, p1 = p0, L1 = L0, turn = 1, fov1 = fov;
+  let a1: number, p1 = p0, L1 = L0, fov1 = fov;
   if (to) {
     _tp.set(to.pos[0], to.pos[1], to.pos[2]).applyMatrix4(M);
     _tl.set(to.look[0], to.look[1], to.look[2]).applyMatrix4(M);
     _d.subVectors(_tl, _tp);
     L1 = Math.max(1e-3, _d.length());
     a1 = Math.atan2(_d.x, _d.z); p1 = Math.asin(clamp(_d.y / L1, -1, 1));
-    turn = to.turn; fov1 = to.fov;
+    fov1 = to.fov;
   } else {
     _tp.copy(o.pos);
     a1 = a0 + STILL_TURN_DEFAULT_YAW;
   }
   let da = a1 - a0;
   const TAU = Math.PI * 2;
-  if (turn > 0) { while (da <= 0) da += TAU; while (da > TAU) da -= TAU; } else { while (da >= 0) da -= TAU; while (da < -TAU) da += TAU; }
+  // 只按 turn 的方向转（同一个朝向不转整圈）
+  if (turn > 0) { while (da < -1e-9) da += TAU; while (da >= TAU) da -= TAU; } else { while (da > 1e-9) da -= TAU; while (da <= -TAU) da += TAU; }
   const a = a0 + da * k, p = lerp(p0, p1, k), L = lerp(L0, L1, k);
   o.pos.lerp(_tp, k);
   o.look.set(Math.sin(a) * Math.cos(p), Math.sin(p), Math.cos(a) * Math.cos(p)).multiplyScalar(L).add(o.pos);
