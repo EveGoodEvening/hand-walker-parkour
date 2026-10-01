@@ -5,6 +5,9 @@
 //   · 3-4 水洼停拍里「倒影不抬头 → 慢慢站起来 → 嘘」写成**一个**组合 doubleMod（headDownHold → clip → thirdHand.at），
 //     它是同一个主异常的连续演出；拆成三个 doubleMod 会被 R6 当作 1–3 s 内的三个主异常（附录 A-11）。
 //     组合 doubleMod 的播放顺序约定见 docs/contract-requests/WP2.md。
+//   · 3-4 静音段 hush 写 18 拍（表中 16 拍）。hush 按触发时的步频换成秒，而停拍之后要从 0 加速：写 16 拍在 Sim 里只静到
+//     @127.5，正好是 @127 那一行的接触时刻；18 拍静到 @129.5，盖住表中「停拍之后 16 拍」的范围，三个必需动作都在里面。
+//   · 3-2「我们之间隔着半层楼梯，像隔着一层很薄的玻璃。」在 @22（表中 @24）：22 个字要显示 2.78 s，从 @24 开始会超出段末 0.1 s。
 import type { ChapterDef } from '../schema';
 
 export default {

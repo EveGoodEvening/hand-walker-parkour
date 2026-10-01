@@ -4,13 +4,17 @@
 // tests/unit/content/anomalies.test.ts 检查。其余照表）：
 //   · 2-5 第三只手贴玻璃（静场 5.0 s）→ 2-6 加速 ≥ 20 s：2-6 从 90 拍加长到 110 拍，玻璃里的它 @52 出现、@66 加速
 //     （表中 @30、@44），「玻璃里的它走得比我快。」@74，@80 走出画面；窗墙 @40–92。
-//   · 2-6 加速 → 2-7 回声回来 ≥ 20 s：回声 @54（表中 @20），停拍 @68、检查点 @78、「不是回音。」@82、「回音不会在我停的时候停。」@88，
-//     之后的障碍整体前移 4 拍，段长 136 拍（表中 140）。
+//   · 2-6 加速 → 2-7 回声回来 ≥ 20 s：回声 @54（表中 @20）。停拍在 @82，离回声 28 拍（约 5.6 s，表中约 7 s），
+//     检查点 @92、「不是回音。」@96、「回音不会在我停的时候停。」@102，加密的障碍从 @108 开始；段长 136 拍（表中 140）。
 //   · 2-9 黑板上的问题（静场 6.0 s）→ 2-10 影子指向碎角镜 ≥ 20 s → 第三只手穿过玻璃 ≥ 20 s：2-10 从 40 拍加长到 140 拍，
-//     影子 @56，碎角镜里的替身 @114，停拍 @137（第三只手在停拍 2.6 s，表中 2.2 s；冷色渐变、替身消失随之后移 0.4 s），镜子在 @140。
-//     纸条 n2-b 仍在 @16 左道。
+//     影子 @56，碎角镜里的替身 @114，停拍 @139（停在镜前 1 m；第三只手在停拍 2.6 s，表中 2.2 s；冷色渐变、替身消失随之后移
+//     0.4 s），镜子在 @140。纸条 n2-b 仍在 @16 左道。
+//   · 2-10 加长只是为了时间，它仍是减速的叙事收束（§2.8）：只有 @10 一个障碍（中道的地面管线），另外 5 行只占边道，
+//     待在中道不用动。密度 0.43 行 / 10 拍，去掉纸条后求解器只需要 1 次输入。本章最密的跑段是 2-8（1.63 行 / 10 拍）；
+//     2-7 是 1.25。tests/unit/content/chapters.test.ts 的「§2.8 难度曲线」检查最后一个跑段不比高潮密。
 //   · 为了让全章合计不超过 §4.6 的 +15%：2-2 从 150 拍缩到 136 拍（第三道人墙 @124 之后只留两行），2-8 从 96 拍缩到 86 拍。
-//   · 2-2 加了一个走动的腿（@46 右道，1.2 m/s，约 @62 被追上），对应表中的「走动的腿」。
+//   · 2-2 加了一个走动的腿（@46 右道，1.2 m/s，约 @62 被追上），对应表中的「走动的腿」。人墙 2 前面 @95 那一行只挡左道：
+//     @94 中道合上、右道打开时，中道的玩家往右换一次道就进了缝。
 import type { ChapterDef } from '../schema';
 
 export default {
@@ -67,7 +71,7 @@ export default {
         [71, ['.', 'longTable', 'longTable']],
         [74, ['longTable', '.', '.']],
         [92, ['.', 'bag', '.']],
-        [95, ['.', 'legs', 'legs']],
+        [95, ['legs', '.', '.']],                    // 人墙 2 之前只挡左道：@94 中道合上后往右一步就到缝里
         [106, ['footOut', 'legs', '.']],
         [113, ['chairBar', 'bag', '.']],
         [130, ['longTable', '.', 'legs']],
@@ -178,7 +182,7 @@ export default {
     /* 2-7 实验楼走廊：回声回来了；停拍——我停，它也停 */
     {
       id: '2-7', kind: 'run', kit: 'corridor', variant: 'labNorth', atmosphere: 'labNorth', surface: 'terrazzo',
-      beats: 136, stride: 1.0, cadence: [4.8, 5.2], checkpoints: [78],
+      beats: 136, stride: 1.0, cadence: [4.8, 5.2], checkpoints: [92],
       follower: { mode: 'absent' },
       rows: [
         [10, ['.', 'pipe', '.']],                    // 地面管线
@@ -190,17 +194,13 @@ export default {
         [41, ['books', '.', '.']],
         [46, ['.', '.', 'locker']],
         [74, ['pipe', '.', '.']],
-        [94, ['mopAcross', 'locker', '.']],
-        [97, ['mopAcross', '.', '.']],
-        [101, ['mopAcross', 'mopAcross', '.']],
-        [104, ['cart', 'locker', '.']],
-        [108, ['.', 'cart', 'pipe']],
-        [111, ['locker', '.', '.']],
-        [115, ['pipe', 'pipe', '.']],
-        [118, ['cart', '.', '.']],
-        [122, ['.', '.', 'mopAcross']],
-        [125, ['mopAcross', '.', '.']],
-        [129, ['.', '.', 'cart']],
+        [108, ['mopAcross', 'locker', '.']],         // 检查点、两句文字之后才开始加密
+        [111, ['mopAcross', '.', '.']],
+        [115, ['mopAcross', 'mopAcross', '.']],
+        [118, ['cart', 'locker', '.']],
+        [122, ['.', 'cart', 'pipe']],
+        [125, ['locker', '.', '.']],
+        [129, ['pipe', 'pipe', '.']],
         [132, ['cart', '.', '.']],
       ],
       events: [
@@ -208,15 +208,15 @@ export default {
         { at: 54, type: 'follower', def: { mode: 'behind', steady: 3 }, id: 'echoReturns' },
         { at: 54, type: 'hud', op: 'show' },
         { at: 54, type: 'text', line: 'c2.sameRoute' },
-        { at: 68, type: 'stop', seconds: 2.4, timeline: [
+        { at: 82, type: 'stop', seconds: 2.4, timeline: [                 // 回声回来 5.6 s 之后
           { at: 0.2, type: 'text', line: 'c2.iStop' },
           { at: 0.9, type: 'text', line: 'c2.echoStops', id: 'echoStops' },
           { at: 1.7, type: 'text', line: 'c2.iStep' },
           { at: 1.7, type: 'autoCrawl', speed: 2.0, seconds: 0.5 },
           { at: 2.2, type: 'text', line: 'c2.echoSteps' },
         ] },
-        { at: 82, type: 'text', line: 'c2.notEcho' },
-        { at: 88, type: 'text', line: 'c2.echoRule' },
+        { at: 96, type: 'text', line: 'c2.notEcho' },
+        { at: 102, type: 'text', line: 'c2.echoRule' },
       ],
     },
     /* 2-8 化学教室：灰色的森林；腿自主抬起，一次 ↓ 同时按住和伏低（R9） */
@@ -276,39 +276,21 @@ export default {
       beats: 140, stride: 1.0, cadence: 4.6,
       follower: { mode: 'behind' },
       surfaces: [{ id: 'chipMirror', kind: 'endMirror', side: 'end', from: 140, to: 140, y: [0.1, 1.9], chipped: true, backdrop: 'darkRoom' }],
+      // 减速的叙事收束（§2.8）：只有 @10 一个障碍、@16 左道的纸条，其余都是只占边道的被动行，待在中道不用动
       rows: [
-        [10, ['.', '.', 'cart']],
-        [14, ['locker', '.', 'cart']],
-        [18, ['mopAcross', 'mopAcross', '.']],
-        [21, ['locker', '.', '.']],
-        [25, ['cart', 'mopAcross', '.']],
-        [28, ['.', 'locker', 'pipe']],
-        [32, ['.', 'books', 'locker']],
-        [35, ['mopAcross', '.', '.']],
-        [39, ['books', '.', '.']],
-        [42, ['mopAcross', '.', '.']],
-        [46, ['books', 'cart', '.']],
-        [49, ['mopAcross', 'locker', '.']],
-        [70, ['.', '.', 'cart']],
-        [74, ['locker', '.', 'cart']],
-        [78, ['mopAcross', 'mopAcross', '.']],
-        [81, ['locker', '.', '.']],
-        [85, ['cart', 'mopAcross', '.']],
-        [88, ['.', 'locker', 'pipe']],
-        [92, ['.', 'books', 'locker']],
-        [95, ['mopAcross', '.', '.']],
-        [99, ['books', '.', '.']],
-        [102, ['mopAcross', '.', '.']],
-        [106, ['books', 'cart', '.']],
-        [126, ['.', '.', 'locker']],
-        [130, ['mopAcross', '.', '.']],
+        [10, ['.', 'pipe', '.']],                    // 「@10 一个障碍」：地面管线
+        [30, ['locker', '.', '.']],
+        [46, ['.', '.', 'cart']],
+        [78, ['.', '.', 'locker']],
+        [96, ['cart', '.', '.']],
+        [124, ['.', '.', 'locker']],
       ],
       notes: [{ at: 16, lane: -1, note: 'n2-b' }],
       events: [
         { at: 0, type: 'ambience', amb: 'labWind', level: 1, seconds: 1.5 },
         { at: 56, type: 'shadow', mode: 'pointMirror', seconds: 18 },
         { at: 114, type: 'double', spec: { id: 'chip', surface: 'chipMirror', source: 'history', delay: 0 } },
-        { at: 137, type: 'stop', seconds: 8, timeline: [
+        { at: 139, type: 'stop', seconds: 8, timeline: [            // 停在镜前 1 m：掌心贴掌心
           { at: 0.0, type: 'camera', shot: 'mirrorClose', seconds: 1.0 },
           { at: 0.3, type: 'actor', clip: 'palmToGlass', seconds: 4.0 },
           { at: 1.2, type: 'text', line: 'c2.whatTell', style: 'self' },

@@ -8,6 +8,11 @@
 //     第三只手摸脖子）；手势 hold 结束后它自己继续走过你身边（约定见 docs/contract-requests/WP2.md）。
 //   · 停拍、静场略短于表格（5-1 7.5 s、5-3 停拍 2.0 s、5-5 8 s），让非跑动占比 ≤ 25%。5-8 取 13 s（表中 ≤ 15 s）：
 //     起身后每 0.9 s 一步，第 7 步之后 +3.0 s 的「不是。是它们在练习。」也要显示完（等输入的时间不计入 duration）。
+//   · 5-11 门牌「高二（7）班」在 @215（表中 @200–212）。@208 翻转时它还在玩家前方 7.7 m，横屏时离镜头 10 m，竖屏 11.5 m，
+//     翻转之后以反字经过画面。玩家在最远的右道时，横屏约 1.2 s 后出画，竖屏约 0.85 s。如果放在 @206，翻转时它已经在镜头旁边，
+//     反字根本看不见。tests/unit/content/chapters.test.ts 的「5-11 门牌」检查。
+//   · 5-11 翻转之后是减速的收束：@208–@218 不放障碍，之后每 8–12 拍一行。全段 1.32 行 / 10 拍，低于高潮 5-3 的 1.36
+//     （§2.8 表中 5-11 是「2.0」、5-3 是「2.0 → 3.0」）。
 import type { ChapterDef } from '../schema';
 
 export default {
@@ -64,7 +69,7 @@ export default {
       // pressure，但 @44 之前 hud / voice 都是 none、上限 3：见文件头
       follower: { mode: 'pressure', voice: 'none', hud: 'none', steadyMax: 3, steady: 3 },
       rows: [
-        [12, 'HHH'],                                 // 电子栏杆
+        [10, 'HHH'],                                 // 电子栏杆
         [24, ['.', '.', 'curb']],
         [56, ['bin', '.', '.']],
         [60, ['.', '.', 'curb']],
@@ -303,7 +308,8 @@ export default {
       id: '5-11', kind: 'run', kit: 'corridor', variant: 'void', atmosphere: 'voidDark', surface: 'terrazzo',
       beats: 280, stride: 1.1, cadence: [5.0, 5.4], checkpoints: [140],
       follower: { mode: 'ahead', steady: 3 },
-      surfaces: [{ id: 'plate7b', kind: 'doorPlate', side: 'L', from: 206, to: 206, y: [1.9, 2.1], text: '高二（7）班' }],
+      // 门牌在翻转那一拍还在玩家前方 7.7 m：翻转之后它以反字经过画面（见文件头）
+      surfaces: [{ id: 'plate7b', kind: 'doorPlate', side: 'L', from: 215, to: 215, y: [1.9, 2.1], text: '高二（7）班' }],
       rows: [
         [16, ['.', '.', 'deskBar']],                 // 课桌（前四章的回声）
         [22, ['mopBucket', '.', '.']],               // 拖把桶
@@ -337,18 +343,11 @@ export default {
         [196, ['deskBar', 'mopBucket', '.']],
         [200, ['deskBar', '.', '.']],
         [204, ['.', '.', 'longTable']],
-        [208, ['chairBar', '.', '.']],
-        [212, ['legs', 'legs', '.']],
-        [216, ['.', '.', 'mopBucket']],
+        // @208 翻转之后是减速的收束（§2.8）：门牌前后不放障碍，之后每 8–12 拍一行
         [220, ['.', '.', 'mopBucket']],
-        [224, ['.', '.', 'chairBar']],
         [228, ['mopBucket', '.', 'longTable']],
-        [232, ['.', '.', 'legs']],
-        [236, ['deskBar', '.', '.']],
         [240, ['.', 'legs', '.']],
-        [244, ['cart', '.', '.']],
         [248, ['bag', 'mopBucket', '.']],
-        [252, ['cart', '.', '.']],
         [256, ['mopBucket', '.', 'longTable']],
       ],
       events: [
@@ -366,8 +365,8 @@ export default {
         { at: 150, type: 'text', line: ['c5.stillCrawling', 'c5.rhythm'] },
         { at: 208, type: 'flip', on: true, id: 'mirrorFlip' },                             // 门牌成了反字，墙和影子换到另一侧
         { at: 260, type: 'leader', op: 'recede' },                                        // 它渐渐走远，光圈一个个淡进雾里
-        { at: 264, type: 'slow', speed: 1.8, seconds: 6, ramp: 1.5 },                     // 你减速停下
-        { at: 274, type: 'overlay', op: 'black', seconds: 1.8 },
+        { at: 270, type: 'slow', speed: 1.8, seconds: 6, ramp: 1.5 },                     // 你减速停下（段在减速里结束，不再加速）
+        { at: 276, type: 'overlay', op: 'black', seconds: 1.8 },
       ],
     },
   ],

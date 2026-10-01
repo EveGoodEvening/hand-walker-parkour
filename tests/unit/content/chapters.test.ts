@@ -1,7 +1,8 @@
 // tests/unit/content/chapters.test.ts —— 五章数据（DESIGN.md §4、§8.10 WP2 验收 1–4、6，附录 B.1、B.3、附录 C）。归 WP2。
 import { describe, expect, it } from 'vitest';
-import { LIMITS } from '../../../src/core/constants';
+import { CORRIDOR_WIDTH, LANE_WIDTH, LIMITS } from '../../../src/core/constants';
 import { FALLBACK_ATMOSPHERES } from '../../../src/core/fallbacks';
+import { QUALITY } from '../../../src/core/quality';
 import type { ChapterId, ObstacleClass } from '../../../src/core/types';
 import { availableChapters, getChapter, nextChapterOf } from '../../../src/levels/chapters/index';
 import { compile } from '../../../src/levels/compile';
@@ -9,8 +10,8 @@ import { KIT_VARIANTS, SET_VARIANTS } from '../../../src/levels/kitSymbols';
 import { lineText } from '../../../src/levels/lines';
 import { segmentEvents } from '../../../src/levels/lint';
 import { OBSTACLES } from '../../../src/levels/obstacles';
-import type { ChapterDef, RunSegmentDef, SegmentDef, StillSegmentDef } from '../../../src/levels/schema';
-import { nominalTimeline, validateChapter } from '../../../src/levels/validate';
+import type { ChapterDef, CompiledSegment, RunSegmentDef, SegmentDef, StillSegmentDef } from '../../../src/levels/schema';
+import { nominalTimeline, timeAtS, validateChapter } from '../../../src/levels/validate';
 import { solver } from '../../../src/sim/Solver';
 
 const IDS = ['ch1', 'ch2', 'ch3', 'ch4', 'ch5'] as const;
@@ -275,6 +276,79 @@ describe('画面上不穿模', () => {
       }
     }
     expect(problems).toEqual([]);
+  });
+});
+
+/** 跑段的密度：必需类别（low / bar / block）的行数 / 10 拍、任意 20 拍里的峰值（行 / 10 拍）、
+ *  求解器最少输入次数 / 10 拍（§2.8「必需动作密度」；去掉纸条，免得为了捡纸条多出来的换道算进去）。 */
+function density(seg: CompiledSegment): { rows: number; peak: number; inputs: number } {
+  const REQ: ReadonlySet<ObstacleClass> = new Set(['low', 'bar', 'block']);
+  const d = seg.def as RunSegmentDef;
+  const rows = [...new Set(seg.obstacles.filter((o) => REQ.has(o.cls)).map((o) => o.beat))];
+  let peak = 0;
+  for (let b = 0; b <= d.beats; b++) peak = Math.max(peak, rows.filter((x) => x >= b && x < b + 20).length);
+  const plan = solver.solve({ ...seg, obstacles: seg.obstacles.filter((o) => o.cls !== 'pickup') }, { noAsk: d.crowd === true });
+  const inputs = plan ? plan.steps.filter((p) => p.action === 'left' || p.action === 'right' || p.action === 'jump' || p.action === 'duck').length : NaN;
+  return { rows: (rows.length / d.beats) * 10, peak: peak / 2, inputs: (inputs / d.beats) * 10 };
+}
+
+describe('§2.8 难度曲线：最后一个跑段是减速的叙事收束，不比技巧高潮密', () => {
+  // 规则：高潮在倒数第二或第三个跑段（取两者里更密的）。§2.8 表格单独点名的两章按表格：
+  // 第四章只有三个跑段，高潮就是最后的 4-5（「2.2 → 3.0（4-5）」），这时检查它是本章最密的跑段；
+  // 第五章的高潮是 5-3（「2.0 → 3.0（5-3）/ 2.0（5-11）」），5-6 课间、5-7 体育课按设计就很稀。
+  const CLIMAX: Partial<Record<(typeof IDS)[number], string>> = { ch4: '4-5', ch5: '5-3' };
+  it.each(IDS)('%s', (id) => {
+    const runs = compile(ch(id)).segments.filter((s) => s.kind === 'run');
+    const last = runs[runs.length - 1]!;
+    const climaxIds = CLIMAX[id] ? [CLIMAX[id]!] : runs.slice(-3, -1).map((s) => s.def.id);
+    const m = new Map(runs.map((s) => [s.def.id, density(s)]));
+    const problems: string[] = [];
+    for (const k of ['rows', 'peak', 'inputs'] as const) {
+      for (const [sid, v] of m) expect(Number.isFinite(v[k]), `${sid} ${k}`).toBe(true);
+      if (climaxIds.includes(last.def.id)) {
+        for (const [sid, v] of m) if (v[k] > m.get(last.def.id)![k] + 1e-9) problems.push(`${k}: ${sid} ${v[k].toFixed(2)} > climax ${last.def.id}`);
+      } else {
+        const top = Math.max(...climaxIds.map((c) => m.get(c)![k]));
+        const mine = m.get(last.def.id)![k];
+        if (mine > top + 1e-9) problems.push(`${k}: last ${last.def.id} ${mine.toFixed(2)} > climax ${climaxIds.join('/')} ${top.toFixed(2)}`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+  it('2-10 碎角镜只有 @10 一个要处理的障碍（§4.2），其余行都只占边道', () => {
+    const seg = compile(ch('ch2')).segments.find((s) => s.def.id === '2-10')!;
+    const REQ = new Set(['low', 'bar', 'block']);
+    const centre = seg.obstacles.filter((o) => REQ.has(o.cls) && o.lanes.includes(0));
+    expect(centre.map((o) => o.beat)).toEqual([10]);
+    expect(density(seg).inputs * 14).toBeLessThanOrEqual(1 + 1e-9);   // 140 拍里求解器只需要 1 次输入
+  });
+});
+
+describe('5-11 门牌（§4.5「@208 画面水平翻转（门牌成了反字）」）', () => {
+  // 机位按 §5.4：横屏在玩家身后 2.35 m、横向 0.7·x、水平视角 76°；竖屏在身后 3.8 m、横向 0.6·x、竖直视角 80°，
+  // 按 9:20 的手机算水平视角。最坏情况是玩家在右道（离左墙最远）。门牌贴在左墙 x = −走廊半宽。
+  const CAMS = [
+    { name: 'landscape', back: 2.35, k: 0.7, halfH: (76 / 2) * (Math.PI / 180) },
+    { name: 'portrait', back: 3.8, k: 0.6, halfH: Math.atan(Math.tan((80 / 2) * (Math.PI / 180)) * (9 / 20)) },
+  ];
+  it('翻转那一拍：门牌在两种机位前方 ≥ 4 m、在雾的远端以内；翻转之后还在画面里 ≥ 0.8 s', () => {
+    const seg = compile(ch('ch5')).segments.find((s) => s.def.id === '5-11')!;
+    const plate = seg.surfaces.find((s) => s.kind === 'doorPlate');
+    expect(plate?.side).toBe('L');
+    const flip = seg.events.find((e) => e.body.type === 'flip');
+    expect(flip?.at).toBe(208);
+    const tl = nominalTimeline(seg);
+    const sFlip = seg.s0 + flip!.at * seg.stride;
+    const tFlip = timeAtS(tl, sFlip);
+    const fogFar = FALLBACK_ATMOSPHERES[seg.def.atmosphere].fog.far * QUALITY.low.fogMul;
+    for (const c of CAMS) {
+      const ahead = plate!.s0 - (sFlip - c.back);
+      expect(ahead, `${c.name}: ahead of the camera at the flip`).toBeGreaterThanOrEqual(4);
+      expect(ahead, `${c.name}: inside the fog at the flip`).toBeLessThanOrEqual(fogFar);
+      const lateral = CORRIDOR_WIDTH / 2 + c.k * LANE_WIDTH;
+      const sExit = plate!.s0 + c.back - lateral / Math.tan(c.halfH);   // 玩家走到这里时门牌出画
+      expect(timeAtS(tl, sExit) - tFlip, `${c.name}: seconds in frame after the flip`).toBeGreaterThanOrEqual(0.8);
+    }
   });
 });
 
