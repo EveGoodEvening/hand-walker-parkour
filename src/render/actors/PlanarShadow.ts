@@ -141,7 +141,11 @@ export class PlanarShadowSystem implements ViewSystem {
       this.dirK = clamp(this.dirK + sdt / this.dirDur, 0, 1);
       this.dir.lerpVectors(this.dirFrom, this.dirTo, this.dirK).normalize();
     }
-    const mode = WP5.poseTest === 'shadowThreeHands' ? 'threeHands' : this.mode;
+    // lead 集成（WP2 的数据约定）：5-3 只在 @30 发一次 shadow reversed；追随者是 pressure 且 HUD 为 shadow（@44 起）时，
+    // 反向的影子离开你、在身后按 follower.distance 追来（同 chase）。按快照判断，所以从段中检查点重来后也照样在。
+    const shadowFollower = next.segKind === 'run' && next.follower.mode === 'pressure' && next.follower.hud === 'shadow';
+    const mode = WP5.poseTest === 'shadowThreeHands' ? 'threeHands'
+      : shadowFollower && (this.mode === 'normal' || this.mode === 'reversed') ? 'chase' : this.mode;
     const event = mode !== 'normal' && mode !== 'blob';
     const q = this.ctx.quality.planarShadow;
     const still = next.segKind === 'still';
