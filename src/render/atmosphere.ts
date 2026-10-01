@@ -16,6 +16,8 @@ const DEFAULT_PLANAR: V3 = [0.3, -1, -0.55];
 const NIGHT_SKY = 0x3a4650, NIGHT_GROUND = 0x0b0f12;
 /** 平行光没写颜色的几行（noon、labNorth、nightIndoor、overcast 以外有平行光的）沿用 morning 的 #E9EEF0。 */
 const DIR_WHITE = 0xe9eef0;
+/** 雨夜照到人和物体的灯色、逆光色（冷灰蓝，U6）。 */
+export const RAIN_LAMP = 0x8fa0ac;
 
 function P(fog: [number, number, number], hemi: [number, number, number], dir: { color: number; intensity: number; dir: V3 } | null,
   planarDir: V3, lampGain: number, chalkMin: number, dark: boolean, lampColor = 0xeef6ff): AtmospherePreset {
@@ -31,7 +33,11 @@ export const ATMOSPHERES: Record<AtmosphereId, AtmospherePreset> = {
   noon:        P([0xb5bcbc, 12, 50], [0xe4e8e6, 0x6a706c, 1.3], { color: DIR_WHITE, intensity: 1.4, dir: [0.15, -1, -0.3] }, [0.15, -1, -0.3], 0.4, 0, false),
   labNorth:    P([0x8e9ca3, 8, 38], [0x9fb0b8, 0x4b5559, 1.0], { color: DIR_WHITE, intensity: 0.6, dir: [0.3, -1, -0.55] }, [0.3, -1, -0.55], 0.8, 0, false),
   nightIndoor: P([0x0f151a, 6, 30], [NIGHT_SKY, NIGHT_GROUND, 0.35], { color: DIR_WHITE, intensity: 0.15, dir: [0.3, -1, -0.55] }, [0.3, -1, -0.55], 1.4, 0.35, true),
-  rainNight:   P([0x0e1419, 4, 26], [NIGHT_SKY, NIGHT_GROUND, 0.25], null, [0.2, -1, -0.4], 1.2, 0.35, true, 0xc8a15a),
+  // U6 修订（建议 §10.3）：LampField 照到人和物体的颜色改为冷色 RAIN_LAMP；路灯碎金 #C8A15A 只用于地面光池贴花（ATMO_EXTRA.poolColor）
+  // 与水洼里的倒影（WP4 kit 的发光体）。半球光 0.25 → 0.45，另加一盏 0.2 的冷色逆光：从前方高处照向镜头，
+  // 顶面和朝前的面受光、朝镜头的面不受光，剪影上沿镶一道冷边。平面影子方向仍按 planarDir（WP5 读预设）。
+  // 以前整个画面（主角、障碍）都被路灯色染成赭黄：躯干色相 46–49°，3-3 到 3-7 的亮度中位 0.008–0.07。
+  rainNight:   P([0x0e1419, 4, 26], [NIGHT_SKY, NIGHT_GROUND, 0.45], { color: RAIN_LAMP, intensity: 0.2, dir: [0.15, -0.65, 0.75] }, [0.2, -1, -0.4], 1.2, 0.35, true, RAIN_LAMP),
   // §5.2 表里 busNight、homeDark 没有标 dark（描边最低亮度 0）；LampField 的底亮度仍按暗场景给 0.15（ATMO_EXTRA）
   busNight:    P([0x0b1014, 3, 14], [NIGHT_SKY, NIGHT_GROUND, 0.2], null, DEFAULT_PLANAR, 0.8, 0, false),
   homeDark:    P([0x0b1014, 3, 14], [NIGHT_SKY, NIGHT_GROUND, 0.15], null, DEFAULT_PLANAR, 0.5, 0, false),
@@ -58,13 +64,18 @@ export const ATMO_RAMPS: Partial<Record<AtmosphereId, AtmoRamp>> = {
   dreamGray: { far1: DREAM_GRAY_END.far, fog: DREAM_GRAY_END.fog, hemi: DREAM_GRAY_END.hemi },
 };
 
+/** 第三章路灯的碎金（§5.1 限用暖色）：只画在地面光池贴花上，不再照到人和物体。 */
+export const STREET_GOLD = 0xc8a15a;
+
 /**
  * 预设之外的 LampField 参数（AtmospherePreset 冻结，额外的放这里）。
  * lampFloor：LampField 的最低亮度。暗色预设 ≥ 0.15（R12）；voidDark「底亮度 0.15，另加掌光」。
+ * rainNight 0.3（U6：路灯每 12 m 一盏，两灯之间全靠这个底亮度，0.15 时主角和障碍只剩剪影）。
+ * poolColor：路灯（street）地面光池贴花的颜色；缺省 = 预设的 lampColor（灯照到哪里就是什么颜色）。
  */
-export const ATMO_EXTRA: Record<AtmosphereId, { lampFloor: number }> = {
+export const ATMO_EXTRA: Record<AtmosphereId, { lampFloor: number; poolColor?: number }> = {
   morning: { lampFloor: 0 }, noon: { lampFloor: 0 }, labNorth: { lampFloor: 0 },
-  nightIndoor: { lampFloor: 0.15 }, rainNight: { lampFloor: 0.15 }, busNight: { lampFloor: 0.15 }, homeDark: { lampFloor: 0.15 },
+  nightIndoor: { lampFloor: 0.15 }, rainNight: { lampFloor: 0.3, poolColor: STREET_GOLD }, busNight: { lampFloor: 0.15 }, homeDark: { lampFloor: 0.15 },
   dream: { lampFloor: 0 }, dreamGray: { lampFloor: 0 }, dawn: { lampFloor: 0 }, overcast: { lampFloor: 0 },
   fluorescent: { lampFloor: 0 }, voidDark: { lampFloor: 0.15 },
 };
@@ -84,13 +95,15 @@ export interface AtmoState {
   dirColor: THREE.Color; dir: number; dirVec: THREE.Vector3;
   bg: THREE.Color;
   lampGain: number; lampColor: THREE.Color; chalkMin: number; lampFloor: number; dark: boolean;
+  /** 路灯地面光池贴花的颜色（rainNight 是碎金，其余 = lampColor）。 */
+  poolColor: THREE.Color;
 }
 
 export function newState(): AtmoState {
   return {
     fog: new THREE.Color(), near: 10, far: 48, farRaw: 48, gap: MIN_FAR_OVER_NEAR, sky: new THREE.Color(), ground: new THREE.Color(), hemi: 1,
     dirColor: new THREE.Color(), dir: 0, dirVec: new THREE.Vector3(0.3, -1, -0.55).normalize(), bg: new THREE.Color(),
-    lampGain: 0.6, lampColor: new THREE.Color(0xeef6ff), chalkMin: 0, lampFloor: 0, dark: false,
+    lampGain: 0.6, lampColor: new THREE.Color(0xeef6ff), chalkMin: 0, lampFloor: 0, dark: false, poolColor: new THREE.Color(0xeef6ff),
   };
 }
 
@@ -125,6 +138,7 @@ export function presetToState(id: AtmosphereId, p: AtmospherePreset, fogMul: num
   out.bg.setHex(p.background);
   out.lampGain = p.lampGain; out.lampColor.setHex(p.lampColor); out.chalkMin = p.chalkMin;
   out.lampFloor = ATMO_EXTRA[id]?.lampFloor ?? 0; out.dark = p.dark;
+  out.poolColor.setHex(ATMO_EXTRA[id]?.poolColor ?? p.lampColor);
   return applyRamp(id, p, out);
 }
 
@@ -134,6 +148,7 @@ export function copyState(src: AtmoState, out: AtmoState): AtmoState {
   out.dirColor.copy(src.dirColor); out.dir = src.dir; out.dirVec.copy(src.dirVec);
   out.bg.copy(src.bg);
   out.lampGain = src.lampGain; out.lampColor.copy(src.lampColor); out.chalkMin = src.chalkMin; out.lampFloor = src.lampFloor; out.dark = src.dark;
+  out.poolColor.copy(src.poolColor);
   return out;
 }
 
@@ -149,6 +164,7 @@ export function mixState(a: AtmoState, b: AtmoState, k: number, out: AtmoState):
   out.lampGain = lerp(a.lampGain, b.lampGain, k); out.lampColor.copy(a.lampColor).lerp(b.lampColor, k);
   out.chalkMin = lerp(a.chalkMin, b.chalkMin, k); out.lampFloor = lerp(a.lampFloor, b.lampFloor, k);
   out.dark = k < 0.5 ? a.dark : b.dark;
+  out.poolColor.copy(a.poolColor).lerp(b.poolColor, k);
   return out;
 }
 

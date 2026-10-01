@@ -717,8 +717,9 @@ export class World implements ViewSystem {
           }
         } else if (kind === 'street' || kind === 'bulb') {
           const r = kind === 'street' ? 5.5 : 2.6;
-          // 路灯的光池用当前氛围的灯色（rainNight 是碎金 #C8A15A；别的氛围里是冷白，不会把暖色带出第三章，附录 A-9）
-          this.decals.add('pool', this.lamps.lampX(k), floorY + 0.01, ls, r, r, kind === 'street' ? this.atmo.cur.lampColor.getHex() : 0xcfd8de, kind === 'street' ? 0.35 : 0.22, ls);
+          // 路灯的光池用当前氛围的 poolColor（rainNight 是碎金 #C8A15A，照到人和物体的灯色是冷色；
+          // 别的氛围里 = 灯色，冷白，不会把暖色带出第三章，附录 A-9）
+          this.decals.add('pool', this.lamps.lampX(k), floorY + 0.01, ls, r, r, kind === 'street' ? this.atmo.cur.poolColor.getHex() : 0xcfd8de, kind === 'street' ? 0.35 : 0.22, ls);
         }
       }
     }
