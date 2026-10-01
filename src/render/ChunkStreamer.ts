@@ -204,7 +204,7 @@ export class World implements ViewSystem {
     };
     const atmo = (): AtmosphereMixer => this.atmo;
     ext.atmosphere = {
-      get id() { return atmo().id; }, get dark() { return atmo().cur.dark; }, get planarDir() { return atmo().cur.dirVec; },
+      get id() { return atmo().id; }, get dark() { return atmo().cur.dark; }, get planarDir() { return atmo().cur.planarVec; },
       get fogNear() { return atmo().cur.near; }, get fogFar() { return atmo().cur.far; }, get fogColor() { return atmo().cur.fog; },
       get lampGain() { return atmo().cur.lampGain; }, get chalkMin() { return atmo().cur.chalkMin; },
     };

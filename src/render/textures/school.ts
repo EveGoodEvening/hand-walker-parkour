@@ -173,6 +173,9 @@ function paintPlate(g: G, x0: number, y0: number, w: number, h: number, text: st
   if (!text) return;
   g.fillStyle = hex(0x2a3136); g.font = `bold ${Math.round(h * 0.56)}px ${CJK_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText(text, x0 + w / 2, y0 + h * 0.54, w * 0.9);
+  // 再描一遍边把笔画加粗（U6）：远处取低几级 mip 时细笔画会和底色平均成浅灰，翻转后的反字更难认
+  g.strokeStyle = hex(0x2a3136); g.lineWidth = Math.max(1, h * 0.035); g.lineJoin = 'round';
+  g.strokeText(text, x0 + w / 2, y0 + h * 0.54, w * 0.9);
 }
 
 function paintRoster(g: G, x0: number, y0: number, w: number, h: number, rng: Rng): void {

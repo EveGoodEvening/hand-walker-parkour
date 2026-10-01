@@ -54,6 +54,9 @@ describe('rainNight：冷色受光（U6）', () => {
     expect(ATMO_EXTRA.rainNight.lampFloor).toBeGreaterThanOrEqual(0.25);
     expect(ATMO_EXTRA.rainNight.poolColor).toBe(STREET_GOLD);
     const st = presetToState('rainNight', RAIN, 1, newState());
+    // 平面影子的方向仍是预设的 planarDir（逆光是另一个方向）
+    expect(st.planarVec.toArray().map((v) => +v.toFixed(4))).toEqual(new THREE.Vector3(...RAIN.planarDir).normalize().toArray().map((v) => +v.toFixed(4)));
+    expect(st.dirVec.z).toBeGreaterThan(0);
     const pool = hexHsl(st.poolColor.getHex());
     expect(pool.h).toBeGreaterThanOrEqual(30); expect(pool.h).toBeLessThanOrEqual(55);
     // 其他氛围的光池 = 灯色（暖色不出第三章，附录 A-9）

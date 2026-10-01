@@ -97,6 +97,8 @@ export interface AtmoState {
   lampGain: number; lampColor: THREE.Color; chalkMin: number; lampFloor: number; dark: boolean;
   /** 路灯地面光池贴花的颜色（rainNight 是碎金，其余 = lampColor）。 */
   poolColor: THREE.Color;
+  /** 平面影子的投射方向（预设的 planarDir，单位向量）。rainNight 的平行光（逆光）方向与它不同（U6），别的预设两者相同。 */
+  planarVec: THREE.Vector3;
 }
 
 export function newState(): AtmoState {
@@ -104,6 +106,7 @@ export function newState(): AtmoState {
     fog: new THREE.Color(), near: 10, far: 48, farRaw: 48, gap: MIN_FAR_OVER_NEAR, sky: new THREE.Color(), ground: new THREE.Color(), hemi: 1,
     dirColor: new THREE.Color(), dir: 0, dirVec: new THREE.Vector3(0.3, -1, -0.55).normalize(), bg: new THREE.Color(),
     lampGain: 0.6, lampColor: new THREE.Color(0xeef6ff), chalkMin: 0, lampFloor: 0, dark: false, poolColor: new THREE.Color(0xeef6ff),
+    planarVec: new THREE.Vector3(0.3, -1, -0.55).normalize(),
   };
 }
 
@@ -139,6 +142,7 @@ export function presetToState(id: AtmosphereId, p: AtmospherePreset, fogMul: num
   out.lampGain = p.lampGain; out.lampColor.setHex(p.lampColor); out.chalkMin = p.chalkMin;
   out.lampFloor = ATMO_EXTRA[id]?.lampFloor ?? 0; out.dark = p.dark;
   out.poolColor.setHex(ATMO_EXTRA[id]?.poolColor ?? p.lampColor);
+  out.planarVec.set(p.planarDir[0], p.planarDir[1], p.planarDir[2]).normalize();
   return applyRamp(id, p, out);
 }
 
@@ -148,7 +152,7 @@ export function copyState(src: AtmoState, out: AtmoState): AtmoState {
   out.dirColor.copy(src.dirColor); out.dir = src.dir; out.dirVec.copy(src.dirVec);
   out.bg.copy(src.bg);
   out.lampGain = src.lampGain; out.lampColor.copy(src.lampColor); out.chalkMin = src.chalkMin; out.lampFloor = src.lampFloor; out.dark = src.dark;
-  out.poolColor.copy(src.poolColor);
+  out.poolColor.copy(src.poolColor); out.planarVec.copy(src.planarVec);
   return out;
 }
 
@@ -165,6 +169,9 @@ export function mixState(a: AtmoState, b: AtmoState, k: number, out: AtmoState):
   out.chalkMin = lerp(a.chalkMin, b.chalkMin, k); out.lampFloor = lerp(a.lampFloor, b.lampFloor, k);
   out.dark = k < 0.5 ? a.dark : b.dark;
   out.poolColor.copy(a.poolColor).lerp(b.poolColor, k);
+  out.planarVec.copy(a.planarVec).lerp(b.planarVec, k);
+  if (out.planarVec.lengthSq() < 1e-6) out.planarVec.copy(b.planarVec);
+  out.planarVec.normalize();
   return out;
 }
 
