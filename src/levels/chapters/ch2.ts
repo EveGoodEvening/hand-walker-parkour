@@ -128,6 +128,7 @@ export default {
         [20, ['.', '.', 'legs']],
         [24, ['cart', '.', '.']],
         [28, ['.', 'chairBar', '.']],
+        [36, ['cart', '.', '.']],                    // 第二轮加密：左道也有推车
         [40, ['.', '.', 'chairBar']],
         [44, ['.', 'longTable', '.']],
         [48, ['.', '.', 'chairBar']],
@@ -173,11 +174,11 @@ export default {
         [10, ['.', '.', 'chairBar']],               // 拉出来的椅子
         [16, ['legs', '.', '.']],
         [22, ['.', 'bag', '.']],                     // 地上的餐盘和书包
-        [30, ['.', '.', 'legs']],
+        [30, ['.', 'legs', 'legs']],                 // 第二轮加密：只留左道
         [36, ['chairBar', '.', '.']],
         [80, ['.', 'chairBar', '.']],
         [86, ['legs', '.', '.']],
-        [92, ['.', '.', 'bag']],
+        [92, ['.', 'bag', 'bag']],
         [98, ['chairBar', '.', '.']],
         [104, ['.', 'legs', '.']],
       ],
@@ -202,15 +203,16 @@ export default {
         [34, ['mopAcross', 'mopAcross', 'mopAcross']],
         [40, ['cart', '.', 'cart']],                 // 器材推车
         [46, ['locker', 'locker', '.']],
+        [49.5, ['mopAcross', 'mopAcross', 'mopAcross']],
         [60, ['mopAcross', 'mopAcross', 'mopAcross']],
         [65, ['.', 'cart', 'locker']],
         [70, ['mopAcross', 'locker', 'locker']],
         [75, ['cart', '.', 'locker']],               // 停拍（@82）之前最后一个动作
         [108, ['mopAcross', 'locker', '.']],         // 检查点、两句文字之后才开始加密
         [113, ['mopAcross', 'mopAcross', 'mopAcross']],
-        [118, ['cart', '.', 'locker']],
+        [118, ['mopAcross', 'mopAcross', 'mopAcross']],
         [123, ['mopAcross', 'mopAcross', 'mopAcross']],
-        [128, ['.', 'cart', 'locker']],
+        [128, ['cart', '.', 'locker']],
       ],
       events: [
         { at: 0, type: 'ambience', amb: 'labWind', level: 1, seconds: 2 },
