@@ -9,6 +9,7 @@ import type { SimAPI, SolverAPI } from '../core/contracts';
 import { TICK_DT } from '../core/constants';
 import type { GameEvent, GameEventName, GameEvents } from '../core/events';
 import { Hasher } from '../core/hash';
+import { hashState } from './stateHash';
 import { createRng, type Mulberry32 } from '../core/rng';
 import type {
   AABB, Action, ChapterId, ContactPart, FollowerSnap, Hand, HintId, InputEvent, Lane, PlayerMode, RunStats, SimSnapshot, Surface,
@@ -44,6 +45,8 @@ const SPILL_COUNT = 3;
 const DREAM_DOWN_TEXT = '我的手垂在身侧，不听使唤。';
 
 interface Timed { t: number; seq: number; id?: string; body: EventBody; fromStop: boolean }
+/** hash() 跳过的字段：只读编译数据的引用、输出缓冲、每 tick 重算的临时对象。 */
+const HASH_SKIP: ReadonlySet<string> = new Set(['ch', 'seg', 'solver', 'paceEvs', 'out', 'nearTmp', 'dueTmp', 'tmp', 'box', 'ob', 'ost', 'gate']);
 
 /** 「干脆」判定（§2.2）：意图时刻距最近一次掌根触地（刚发生的或下一次）≤ window 秒。 */
 export function crispDelta(tIntent: number, lastHeelT: number, nextHeelT: number): number {
@@ -234,21 +237,14 @@ export class Sim implements SimAPI {
   /** 机器人统计（测试与难度报告用）。 */
   get botStats() { return this.autopilot.human.stats; }
 
+  /**
+   * 模拟状态哈希（§8.3）：对 Sim 自身和它持有的全部运行时对象做反射式 FNV-1a（stateHash.ts），覆盖全部数值——
+   * 玩家（含换道预排、跳跃 / 伏低缓冲、绊 / 撞计时）、Pace、稳度、追随者（含回放队列与滑变）、步态待发子事件、timed 队列、
+   * 翻转 / 静音 / 放慢一点 / 辅助 / 无敌、检查点、静场与站立段、回头、让一下、领跑者、自动驾驶与机器人（含 rng 状态）。
+   * 只跳过指向只读编译数据的引用（章、段、求解器、段内 Pace 事件表）和输出缓冲 / 每 tick 重算的临时对象。
+   */
   hash(): string {
-    const h = new Hasher();
-    const P = this.P;
-    h.num(this.tick).num(this.t).num(this.segIndex).num(this.pace?.s ?? 0).num(this.pace?.tSeg ?? 0).num(this.pace?.base ?? 0);
-    h.num(P.x).num(P.y).num(P.laneTarget).num(P.airT).num(P.air ? 1 : 0).num(P.duck).num(P.ducking ? 1 : 0).num(P.hitMul).num(P.graceT);
-    h.num(P.twPhase).num(P.twT).num(P.twHeld).num(P.drPhase).num(P.drT).num(P.drDir).num(P.drift);
-    h.num(this.steady.value).num(this.steady.max).num(this.steady.regen).num(this.follower.lag).str(this.follower.mode);
-    h.num(this.stats.falls).num(this.stats.stumbles).num(this.stats.crashes).num(this.stats.lookBacks).str(this.stats.notes.join(','));
-    h.str(this.modePrev).num(this.rngSim.state).num(this.look.t).num(this.still.clock).bool(this.ended);
-    h.num(this.askRt.used).str(Array.from(this.askRt.partAt).join(';'));
-    const st = this.stand;
-    h.str(st.phase).num(st.steps).num(st.stepT).num(st.theta).num(st.held).num(st.x);
-    h.num(this.leader.s ?? -1).num(this.leader.lane);
-    for (const id of Array.from(this.track.knocked).sort((a, b) => a - b)) h.num(id);
-    return h.digest();
+    return hashState(new Hasher(), this, HASH_SKIP).digest();
   }
 
   obstaclesAhead(meters: number) {

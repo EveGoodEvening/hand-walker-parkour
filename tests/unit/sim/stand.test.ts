@@ -91,6 +91,22 @@ describe('七步（5-8）', () => {
     d.until(() => d.snap.player.stand?.phase === 'walking', 120 * 6);
     expect(d.snap.still!.t).toBeCloseTo(SEVEN.input!.at, 1);  // 等待不计入时间线
   });
+  it('「8 s 不按」从上一次松手算起：按过又松手，8 s 时不再提示，松手后满 8 s 才提示（仍在 12 s 自动站起之前）', () => {
+    const d = new Driver(sevenCh());
+    d.until(() => d.snap.still?.prompt === 'rise', 240);
+    const before = d.of('prompt').length;
+    d.step(Math.round(0.5 / TICK_DT));
+    d.press('up'); d.step(Math.round(1.0 / TICK_DT)); d.release('up');   // 等待 1.5 s 时松手（没满 3 s，沉回去）
+    d.step(Math.round((8.1 - 1.5) / TICK_DT));                             // 等待 8.1 s：只空闲了 6.6 s
+    expect(d.of('prompt').length).toBe(before);
+    d.step(Math.round(1.6 / TICK_DT));                                     // 等待 9.7 s：空闲 8.2 s
+    expect(d.of('prompt').length).toBe(before + 1);
+    expect(d.of('prompt').at(-1)!.data.hint).toBe('rise');
+    d.step(Math.round(2 / TICK_DT));                                       // 只提示一次
+    expect(d.of('prompt').slice(before).filter((e) => e.data.hint === 'rise').length).toBe(1);
+    d.until(() => d.snap.player.stand?.phase === 'walking', 120 * 3);
+    expect(d.snap.player.stand?.phase).toBe('walking');                    // 12 s 自动站起
+  });
   it('按步事件（atStep / delay）在对应的步触发；onDone 在站起之后', () => {
     const d = new Driver(sevenCh());
     d.sim.setAutopilot('perfect');
@@ -176,6 +192,22 @@ describe('静场输入（§8.5 StillInput）', () => {
     expect(d.of('contact').map((c) => `${c.data.part}:${c.data.surface}`)).toEqual(['heel:sheet', 'knuckle:sheet', 'pad:sheet']);
     d.until(() => d.snap.still?.prompt === 'anyKey', 120 * 5);
     d.tap('left'); d.step(2);
+    expect(d.snap.still?.prompt).toBe(null);
+  });
+  it('§2.2「其余键都无效」：Enter（confirm）、跳过、暂停、返回不算 tap / taps3 / any 的输入', () => {
+    const d = new Driver(MECH_STILL, { segment: 'q-tap', beat: 0 });
+    d.until(() => d.snap.still?.prompt === 'kneel', 240);
+    for (const k of ['confirm', 'skip', 'pause', 'back', 'up'] as Action[]) { d.tap(k); d.step(3); }
+    expect(d.snap.still?.prompt).toBe('kneel');
+    d.tap('down'); d.step(2);
+    d.until(() => d.snap.still?.prompt === 'taps3', 120 * 5);
+    for (let i = 0; i < 3; i++) { d.tap('confirm'); d.step(5); }
+    expect(d.snap.still?.prompt).toBe('taps3');
+    for (let i = 0; i < 3; i++) { d.tap('down'); d.step(5); }
+    d.until(() => d.snap.still?.prompt === 'anyKey', 120 * 5);
+    for (const k of ['confirm', 'skip', 'pause', 'back'] as Action[]) { d.tap(k); d.step(3); }
+    expect(d.snap.still?.prompt).toBe('anyKey');
+    d.tap('ask'); d.step(2);
     expect(d.snap.still?.prompt).toBe(null);
   });
   it('超时自动完成，不罚', () => {

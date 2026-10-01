@@ -52,6 +52,43 @@ describe('确定性（验收 3）：20 个种子，同一输入脚本跑 3000 ti
       expect(hashes.size).toBeGreaterThan(1);
     });
   }
+  it('hash() 覆盖全部数值（§8.3）：只改一个以前漏掉的字段，哈希也会变；hash() 本身不改状态', () => {
+    const mk = () => {
+      const sim = new Sim(solver);
+      sim.load(compile(MECH_RUN, 1), undefined, 1);
+      for (let i = 0; i < 300; i++) sim.step([], new Set());
+      sim.drain();
+      return sim;
+    };
+    const base = mk().hash();
+    const again = mk();
+    expect(again.hash()).toBe(base);
+    expect(again.hash()).toBe(base);
+    // 私有字段直接改（测试用）：每一项都是旧的手写 hash() 没覆盖的
+    const tweaks: Array<[string, (s: Record<string, any>) => void]> = [
+      ['flip', (s) => { s.flip = true; }],
+      ['hushUntil', (s) => { s.hushUntil = 99; }],
+      ['slowOption', (s) => { s.setSlowOption(true); }],
+      ['assist', (s) => { s.setAssist(true); }],
+      ['invincible', (s) => { s.setInvincible(true); }],
+      ['checkpoint', (s) => { s.checkpoint.beat = 7; }],
+      ['laneQueue', (s) => { s.P.laneQueue = 1; }],
+      ['jumpBuffer', (s) => { s.P.jumpBuffer = 0.1; }],
+      ['stumbleT', (s) => { s.P.stumbleT = 0.3; }],
+      ['crashT', (s) => { s.P.crashT = 0.2; }],
+      ['stillBeat', (s) => { s.stillBeat = 3; }],
+      ['stillCrawl', (s) => { s.stillCrawl = { until: 5, speed: 2 }; }],
+      ['timed queue', (s) => { s.timed.push({ t: 9, seq: 99, body: { type: 'hush', seconds: 1 }, fromStop: false }); }],
+      ['gait pending', (s) => { s.gait.pending.push({ t: 1.5, part: 'pad', hand: 'L' }); }],
+      ['follower queue', (s) => { s.follower.queue.push({ t: 2, part: 'heel' }); }],
+      ['bot rng', (s) => { s.autopilot.human.rng.next(); }],
+    ];
+    for (const [name, f] of tweaks) {
+      const sim = mk();
+      f(sim as unknown as Record<string, any>);
+      expect(sim.hash(), name).not.toBe(base);
+    }
+  });
   it('human 机器人：同一种子同一结果', () => {
     for (const seed of [1, 2, 3]) expect(run(MECH_RUN, seed, true)).toBe(run(MECH_RUN, seed, true));
   });

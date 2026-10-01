@@ -400,8 +400,24 @@ function buildPlan(end: Node, startLane: Lane): SolverPlan {
     const i = laneMarks.findIndex((m) => m.s >= (st.s ?? 0) - 1e-9);
     if (i > 0) (laneMarks[i] as { s: number }).s = st.s ?? (laneMarks[i] as { s: number }).s;
   }
-  const acts: Array<{ s: number; a: 'jump' | 'duck' }> = [];
-  for (const st of steps) if (st.action === 'jump' || st.action === 'duck') acts.push({ s: st.s ?? 0, a: st.action });
+  // 动作的里程**区间**：撑跃从起跳到落地，伏低从按下到起身（按路线上逐节点的实际状态）。actionAt(s) 返回覆盖 s 的那一个
+  // （重叠时取较晚开始的：伏低中按 ↑ 立即起跳）。按区间而不是按点：领跑者 5.4 m/s、30 fps 时每帧移动约 0.18 m，
+  // 逐帧采样也不会漏掉动作（WP5 画面用）。
+  const spans: Array<{ s0: number; s1: number; a: 'jump' | 'duck' }> = [];
+  for (const st of steps) {
+    if (st.action !== 'jump' && st.action !== 'duck') continue;
+    const s0 = st.s ?? 0;
+    let s1 = s0;
+    let k = chain.findIndex((n) => n.pace.s > s0 + 1e-9);
+    for (; k >= 0 && k < chain.length; k++) {
+      const n = chain[k] as Node;
+      s1 = n.pace.s;
+      const on = st.action === 'jump' ? n.p.air : n.p.ducking || n.p.duck > 0.5 || n.p.fastFall || n.p.duckAfterLandBeats > 0;
+      if (!on) break;
+    }
+    spans.push({ s0, s1: Math.max(s1, s0 + 0.1), a: st.action });
+  }
+  spans.sort((x, y) => x.s0 - y.s0);
   return {
     steps,
     asks,
@@ -411,8 +427,9 @@ function buildPlan(end: Node, startLane: Lane): SolverPlan {
       return l;
     },
     actionAt(s: number) {
-      for (const a of acts) if (Math.abs(a.s - s) < 0.05) return a.a;
-      return 'none';
+      let a: 'none' | 'jump' | 'duck' = 'none';
+      for (const sp of spans) { if (sp.s0 > s + 1e-9) break; if (s < sp.s1) a = sp.a; }
+      return a;
     },
   };
 }

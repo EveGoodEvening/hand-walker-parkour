@@ -2,11 +2,15 @@
 // 时间线按秒推进；到 input.at 时暂停，等待单一输入，超时自动完成、不罚；完成后按 onDone 的相对时刻继续。
 // 等待时间不计入 duration（R13）。输入方式：
 //   hold  ：连续按住 ↓ 满 holdSeconds 秒（松手清零、重新计时）；按住期间满 progress[i].at 秒时出字（每次重新按住都重新出）。
-//   tap   ：按一下 ↓。
+//   tap   ：按一下 ↓（触屏轻点也映射成 ↓）。
 //   taps3 ：按三下 ↓（每一下发一个触地子事件：掌根、指节、指腹，§4.4 结尾「床单上响一声」）。
-//   any   ：任意游玩键（←→↑↓、Q、E；Game 只把这些交给模拟）。
+//   any   ：任意游玩键（←→↑↓、Q、E）。
+// §2.2「其余键都无效」：Enter（confirm，长按 0.6 s 是跳过）、跳过、暂停、返回一律不算，免得长按 Enter 跳过时先被当成一次输入。
 // 站立段（Stand.ts）把输入交给外部处理（external = true）：到 input.at 时照样暂停时间线，由 Stand 调 completeInput()。
 import type { Action, HintId, InputEvent } from '../core/types';
+
+/** 静场里算数的游玩键（§2.2）。 */
+const PLAY_KEYS: ReadonlySet<Action> = new Set(['left', 'right', 'up', 'down', 'look', 'ask']);
 import type { CompiledSegment, EventBody, StillInput, StillSegmentDef, StandSegmentDef, TimedEventDef } from '../levels/schema';
 
 export interface StillFire { id?: string; body: EventBody }
@@ -98,7 +102,7 @@ export class StillRunner {
       } else {
         for (const e of events) {
           if (e.phase !== 'down') continue;
-          const counts = inp.mode === 'any' ? e.action !== 'pause' : e.action === 'down' || e.action === 'confirm';
+          const counts = inp.mode === 'any' ? PLAY_KEYS.has(e.action) : e.action === 'down';
           if (!counts) continue;
           this.taps++;
           if (inp.mode === 'taps3' && this.taps <= 3) onTap?.(this.taps);

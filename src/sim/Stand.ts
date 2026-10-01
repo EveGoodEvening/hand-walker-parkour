@@ -2,7 +2,8 @@
 //
 // 七步（sevenSteps，5-8）：
 //   · 起身：到 input.at 时开始等待。按住 ↑（触屏：按住屏幕）逐秒出字（progress），满 holdSeconds（缺省 3 s）站起；
-//     提前松手沉回去、计时重来（出字也重来）；hintRepeat（8 s）还没按过就再提示一次；input.timeout（缺省 12 s）后腿自己站起来。
+//     提前松手沉回去、计时重来（出字也重来）；连续 hintRepeat（8 s）没有按 ↑（从开始等待或上一次松手算起）就再提示一次，
+//     只提示一次；input.timeout（缺省 12 s）后腿自己站起来。
 //   · 站起后每 stepPeriod（0.9 s）自动迈一步。第 2 步之后 0.3 s 必定失衡一次：双手撑地 0.6 s（planted），稳住后继续；
 //     **第 7 步必定摔倒**（fallen）。步数永远是七，不早也不晚，与玩家输入无关。
 //   · ← → 只影响晃动角 θ（画面的晃动与镜头滚转，§5.4 滚转 = θ × 0.6）：θ 不参与任何判定，也不改变步点的时刻。
@@ -46,6 +47,8 @@ export class StandController {
   x = 0;
   /** 开始等待起身以来的秒数。 */
   waitT = 0;
+  /** 连续没有按 ↑ 的秒数（开始等待或上一次松手起算）。 */
+  idleT = 0;
   private hintRepeated = false;
   private riseT = 0;
   private plantDelay = -1;
@@ -61,7 +64,7 @@ export class StandController {
     this.rng = rng;
     this.script = def.script;
     this.input = def.input;
-    this.held = 0; this.steps = 0; this.stepT = 0; this.theta = 0; this.omega = 0; this.x = 0; this.waitT = 0;
+    this.held = 0; this.steps = 0; this.stepT = 0; this.theta = 0; this.omega = 0; this.x = 0; this.waitT = 0; this.idleT = 0;
     this.hintRepeated = false; this.riseT = 0; this.plantDelay = -1; this.plantT = 0; this.progressFired = []; this.downSaid = false;
     if (def.script === 'dream') { this.phase = 'rising'; return [{ phase: 'rise' }]; }
     this.phase = 'wait';
@@ -85,6 +88,7 @@ export class StandController {
    */
   stepWait(dt: number, held: ReadonlySet<Action>, out: StandEvent[], onLine: (line: string) => void): 'risen' | 'hint' | null {
     this.waitT += dt;
+    if (held.has('up')) this.idleT = 0; else this.idleT += dt;
     if (held.has('up')) {
       if (this.held === 0) { this.phase = 'rising'; out.push({ phase: 'rise' }); }
       this.held += dt;
@@ -95,7 +99,7 @@ export class StandController {
       this.held = 0; this.progressFired = []; this.phase = 'wait';   // 沉回去，计时重来
     }
     if (this.held >= this.holdNeed - 1e-9 || this.waitT >= this.autoAfter - 1e-9) { this.rise(out); return 'risen'; }
-    if (!this.hintRepeated && this.held === 0 && this.waitT >= ST.hintRepeat - 1e-9) { this.hintRepeated = true; return 'hint'; }
+    if (!this.hintRepeated && this.held === 0 && this.idleT >= ST.hintRepeat - 1e-9) { this.hintRepeated = true; return 'hint'; }
     return null;
   }
 
