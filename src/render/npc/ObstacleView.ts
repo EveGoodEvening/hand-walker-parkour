@@ -11,13 +11,21 @@
 // 段内时间：每段记下它在模拟时钟上的开始时刻（segment 事件 / onReset）。已经过去的段照常计时（路边的人、爬行的人、
 // 门和脚在段界上不跳回原位），拍号取 +∞（让开的陈默、移动过的人墙保持最终状态）；还没到的段时间为 0、拍号 −1。
 // cue：crowd（turnShoes / centerShoes / silent / applaud / crawlOvertake / normal），由 index.ts 注册。
+// 越过的障碍（U6）：镜头在主角身后 2.35 m 以上，越过的障碍会在镜头和主角之间停留，形成横跨画面下部的暗条
+// （3-4 静音段里整屏被挡）。障碍远端落到玩家碰撞盒后沿之后 0.3 m（s1 < s − PASS_BEHIND）起，在 PASS_FADE 秒内
+// 以底面中心为原点缩小到 0（之后不画）；回头（lookBack > 0）或镜头转向身后（turnBack 机位）时照常画，身后保留 14 m。
+// 人墙（U6）：人群段（2-2、5-6，数据注释里的「人墙」）里站着的人（路边的组和人腿障碍）每个画质都画上身和没有五官的头
+// （isWallSegment，读章时定）；梦里（plaza）的人中、高画质本来就有上身，低画质也画。
+// 站立段（4-3、5-8）只显示紧挨着的前一个跑段（4-2、5-7）的组（§10.2）：这些组里站着的人只在站立段进行时画上身（每个画质；
+// 按组和当前段的种类定，不按远近）。爬行的时候它们和别处一样只到腰带（5-7 是「排队同学的腿」，§4）；进站立段时镜头正在升起，
+// 这些人在站立机位的身后（审查 r2 验收）。别处的路边的人、障碍，以及所有坐着的人、伸脚的人只到腰带。
 import * as THREE from 'three';
 import type { ArchetypeId, QualityProfile, ViewContext, ViewSystem } from '../../core/contracts';
 import { LANE_WIDTH } from '../../core/constants';
 import type { GameEvent } from '../../core/events';
-import { clamp01, easeInOutSine, lerp } from '../../core/math';
+import { clamp01, easeInOutSine, lerp, smoothstep } from '../../core/math';
 import { createRng } from '../../core/rng';
-import type { AABB, ChapterId, CrowdOp, KitId, SimSnapshot } from '../../core/types';
+import type { AABB, AtmosphereId, ChapterId, CrowdOp, KitId, SimSnapshot } from '../../core/types';
 import { urlParams } from '../../core/urlParams';
 import { OBSTACLES } from '../../levels/obstacles';
 import type { CompiledChapter, CompiledObstacle, CompiledSegment, RunSegmentDef } from '../../levels/schema';
@@ -29,12 +37,14 @@ import {
 import { CRAWL, Crawlers, type Crawler } from './Crawlers';
 import { expandChapter, lowerBound, type Decor, type GroupInfo } from './crowds';
 import { HitboxDebug } from './hitboxDebug';
+import type { InstPool } from './InstPool';
 import { BODY, LegForest, STAND_HIP, newPerson, type Person } from './LegForest';
 import { KNEELER_BOY, KNEELER_CROWD } from './archetypes/kneeler';
 import { footSeat } from './archetypes/footOut';
 import { MAX_EXPAND } from './archetype';
 import { obstacleState, type ObstacleState } from './simBridge';
 import { HIPS, crowdOfKit, emberGlow, itemIdOf, lookFor, specialLook, specialOfObstacle, type Look, type SpecialId } from './specials';
+import { OUTDOOR_KITS } from './tone';
 
 const DEG = Math.PI / 180;
 /**
@@ -52,6 +62,10 @@ export const CHEN_SQUAT: { hipH: number; hip: number; knee: number; legYaw: numb
 export const WALK_GAZE_MAX = 50 * DEG;
 /** 「进入 3 m」的凝视记录多久之后清掉（秒）：人早已在身后、被裁掉，不再遍历到。 */
 const GAZE_MEMO_TTL = 20;
+/** 越过的障碍：远端 s1 < 玩家 s − PASS_BEHIND（碰撞盒后沿之后 0.3 m）起，PASS_FADE 秒内缩为 0（U6）。 */
+export const PASS_BEHIND = 0.55, PASS_FADE = 0.12;
+/** 画身后多远的障碍和人（米）：平时 5，回头或镜头转向身后时 14。 */
+export const BEHIND_FORWARD = 5, BEHIND_LOOK = 14;
 /** 4-3「从两侧超过你」的爬行者最多持续多久（秒）；离开本段也清掉。 */
 export const OVERTAKE_LIFE = 16;
 const wrapPi = (a: number) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
@@ -100,8 +114,19 @@ export class ObstacleView implements ViewSystem {
   private gazeEvents: GazeEvent[] = [];
   private silences: number[] = [];
   private gazeMemo = new Map<number, number>();
+  /** 越过的障碍：障碍 id → 远端越过 s − PASS_BEHIND 的时刻（模拟时钟，按速度往回推到真正越过的那一刻）。 */
+  private passedAt = new Map<number, number>();
+  /** 全部实例池（越过的障碍缩小时按放置前后的实例数找到它的实例）；init 之后填。 */
+  private fadePools: InstPool[] = [];
+  private fadeMarks: number[] = [];
   private decor: Decor[] = [];
   private groups: GroupInfo[] = [];
+  /** 人墙段（U6）：段 → 这一段里站着的人（路边的组、人腿障碍）一直画上身（人群段 2-2、5-6）。读章时定。 */
+  private wallSegs: boolean[] = [];
+  /** 段 → 显示这一段的组的站立段下标（4-2 → 4-3、5-7 → 5-8；没有 = −1）。这一段里站着的人只在那个站立段进行时画上身。 */
+  private standOf: number[] = [];
+  /** 重来 / 读章之后的第一帧把衣服色调直接切到当前氛围（那时 World 已经按检查点重放过 atmosphere）。 */
+  private toneSnap = true;
   private groupState: Array<{ gaze: Decor['gaze'] | null; applaud: number; overtake: number; overtakeS: number }> = [];
   private globalOp: { applaud: number; overtake: number; overtakeS: number } = { applaud: -1, overtake: -1, overtakeS: 0 };
   private chenFoot = new Map<number, CompiledObstacle>();   // chenMo 障碍 id → 他留在过道里的脚
@@ -125,7 +150,7 @@ export class ObstacleView implements ViewSystem {
   private readonly target = new THREE.Vector3();
   private readonly box: AABB = { x0: 0, x1: 0, y0: 0, y1: 0, s0: 0, s1: 0 };
   private readonly m = new THREE.Matrix4();
-  private readonly fctx: FrameCtx = { s: 0, px: 0, t: 0, tAnim: 0, beat: 0, tSeg: 0, speed: 0, bps: 5, ahead: 40, behind: 5, hush: 0, stand: false };
+  private readonly fctx: FrameCtx = { s: 0, px: 0, t: 0, tAnim: 0, beat: 0, tSeg: 0, speed: 0, bps: 5, ahead: 40, behind: BEHIND_FORWARD, hush: 0, reveal: 0, standSeg: -1 };
   private readonly fallbackLook: Look = lookFor('student', 1, 'fallback');
   private readonly sway: Sway = { dx: 0, knee: 0, side: 1 };
   private readonly trem: Tremble = { roll: 0, pitch: 0 };
@@ -154,6 +179,8 @@ export class ObstacleView implements ViewSystem {
     }
     this.forest.init(ctx);
     this.crawlers.init(ctx);
+    this.fadePools = [...Array.from(this.pools.values(), (p) => p.pool), ...this.forest.instPools(), ...this.crawlers.instPools()];
+    this.fadeMarks = this.fadePools.map(() => 0);
     if (urlParams().debug.has('hitbox')) this.enableHitbox(true);
   }
 
@@ -168,6 +195,8 @@ export class ObstacleView implements ViewSystem {
     this.chapter = ch;
     const { decor, groups } = expandChapter(ch.seed, ch.segments);
     this.groups = groups;
+    this.wallSegs = ch.segments.map((_, i) => isWallSegment(ch.segments, i));
+    this.standOf = ch.segments.map((_, i) => standRevealOf(ch.segments, i));
     this.groupState = groups.map(() => ({ gaze: null, applaud: -1, overtake: -1, overtakeS: 0 }));
     this.specials.clear(); this.looks.clear(); this.chenFoot.clear(); this.chenFootIds.clear(); this.chenDest.clear();
     this.segStart = ch.segments.map(() => Number.NaN);
@@ -218,7 +247,7 @@ export class ObstacleView implements ViewSystem {
   }
 
   private resetState(): void {
-    this.knocked.clear(); this.asks.clear(); this.gazeEvents = []; this.silences = []; this.gazeMemo.clear();
+    this.knocked.clear(); this.asks.clear(); this.gazeEvents = []; this.silences = []; this.gazeMemo.clear(); this.passedAt.clear();
     this.fallT = null;
     for (const g of this.groupState) { g.gaze = null; g.applaud = -1; g.overtake = -1; }
     this.globalOp.applaud = -1; this.globalOp.overtake = -1;
@@ -274,6 +303,9 @@ export class ObstacleView implements ViewSystem {
 
   onReset(snap: SimSnapshot): void {
     this.resetState();
+    this.forest.tone.snap(this.atmosphereId(snap.segIndex));
+    // 与 World 的 onReset 谁先谁后无关：下一帧再按那时的氛围（检查点重放过的 atmosphere）切一次
+    this.toneSnap = true;
     const segs = this.chapter?.segments ?? [];
     const i0 = snap.segIndex;
     const seg = segs[i0];
@@ -288,6 +320,11 @@ export class ObstacleView implements ViewSystem {
       this.segStart[i] = (this.segStart[i + 1] as number) - dur;
     }
     for (let i = i0 + 1; i < segs.length; i++) this.segStart[i] = Number.NaN;
+  }
+
+  /** 当前氛围：WP3 的 World 挂在 ctx 上的插值器目标（含 atmosphere cue）；没有时按段的数据。 */
+  private atmosphereId(segIndex: number): AtmosphereId {
+    return this.ctx?.atmosphere?.id ?? this.chapter?.segments[segIndex]?.def.atmosphere ?? 'morning';
   }
 
   /** 第 i 段此刻的段内时间（秒，模拟时钟 t）。还没开始的段为 0。 */
@@ -384,10 +421,14 @@ export class ObstacleView implements ViewSystem {
     const bps = next.segKind === 'run' ? Math.max(0.5, N.cadence || speed / Math.max(0.3, N.stride)) : 4.8;
     this.lastT = t;
     this.pruneGazeMemo(t);
+    if (this.toneSnap) { this.forest.tone.snap(this.atmosphereId(next.segIndex)); this.toneSnap = false; }
+    else this.forest.tone.update(this.atmosphereId(next.segIndex), t);
     const fog = this.ctx.scene.fog as THREE.Fog | null;
     const fogFar = fog && 'far' in fog ? fog.far : 60;
     const ahead = Math.min(this.ctx.quality.chunksAhead * 12 + 6, fogFar + 4);
-    const behind = N.lookBack > 0 ? 14 : 5;
+    // 身后的东西什么时候看得见：回头（lookBack 0..1）或镜头转向身后（turnBack 机位；读上一帧的镜头朝向）
+    const reveal = Math.max(N.lookBack > 0 ? smoothstep(0, 0.35, N.lookBack) : 0, cameraBackness(this.ctx.camera));
+    const behind = N.lookBack > 0 || reveal > 0 ? BEHIND_LOOK : BEHIND_FORWARD;
     const tAnim = silenceClock(t, this.silences);
     const hush = silenceLevel(t, this.silences);
     const pc = this.pc;
@@ -395,7 +436,8 @@ export class ObstacleView implements ViewSystem {
     pc.chapter = this.stage ? 'stage' : (this.chapter?.def.id ?? 'ch1') as ChapterId;
     const ctx = this.fctx;
     ctx.s = s; ctx.px = px; ctx.t = t; ctx.tAnim = tAnim; ctx.beat = beat; ctx.tSeg = tSeg; ctx.speed = speed; ctx.bps = bps;
-    ctx.ahead = ahead; ctx.behind = behind; ctx.hush = hush; ctx.stand = next.segKind === 'stand';
+    ctx.ahead = ahead; ctx.behind = behind; ctx.hush = hush; ctx.reveal = reveal;
+    ctx.standSeg = next.segKind === 'stand' ? next.segIndex : -1;
 
     // —— 障碍 ——
     if (this.stage) {
@@ -433,17 +475,50 @@ export class ObstacleView implements ViewSystem {
       st.ds += shift;
       const floorY = seg.floorY(Math.min(Math.max(s0, seg.s0), seg.s1));
       pc.o = o; pc.floorY = floorY; pc.knockedAt = this.knocked.get(o.id) ?? null;
-      const ask = this.asks.get(o.id);
-      pc.partX = ask && ask.part ? this.partDir(o, st) * partOffset(f.t - ask.t) : 0;
       if (this.hitbox) this.hitbox.obstacle(o, st, floorY, this.box, pc.knockedAt !== null);
-      if (this.chenFootIds.has(o.id)) continue;               // 陈默的脚由陈默自己画
-      if (o.archetype === 'legs') { this.legsObstacle(o, st, seg, f, cur, kit, variant, floorY); continue; }
-      if (o.archetype === 'crawler') { this.crawlerObstacle(o, st, f, tSeg, floorY); continue; }
-      const pool = this.pools.get(o.archetype);
-      if (!pool) continue;
-      if (o.archetype === 'kneeler' && this.kneelerSpecial(pool, o, f)) continue;
-      pool.placeEx(pc);
+      // 越过的障碍：缩小到 0 后不再画（回头时照常画）
+      const k = this.passScale(o.id, s1, f);
+      if (k <= 0) continue;
+      if (k < 1) {
+        this.markFade();
+        this.placeObstacle(o, st, seg, f, cur, kit, variant, floorY, tSeg);
+        this.applyFade(k, (st.x0 + st.x1) / 2, floorY, -(s0 + s1) / 2);
+        continue;
+      }
+      this.placeObstacle(o, st, seg, f, cur, kit, variant, floorY, tSeg);
     }
+  }
+
+  /**
+   * 越过的障碍的缩放：1 = 照常；远端越过 s − PASS_BEHIND 之后 PASS_FADE 秒内降到 0。越过的时刻按当前速度往回推，
+   * 帧率低（无头 SwiftShader 每帧 0.1 s 以上）时也不会多停一帧。回头时取 reveal（身后看得见的程度）。
+   */
+  private passScale(id: number, s1: number, f: FrameCtx): number {
+    const over = f.s - PASS_BEHIND - s1;
+    if (over <= 0) { if (this.passedAt.size > 0) this.passedAt.delete(id); return 1; }
+    let t0 = this.passedAt.get(id);
+    if (t0 === undefined || t0 > f.t) { t0 = f.t - over / Math.max(0.5, f.speed); this.passedAt.set(id, t0); }
+    const k = 1 - clamp01((f.t - t0) / PASS_FADE);
+    return Math.max(k, f.reveal);
+  }
+
+  private markFade(): void { for (let i = 0; i < this.fadePools.length; i++) this.fadeMarks[i] = (this.fadePools[i] as InstPool).n; }
+  private applyFade(k: number, x: number, y: number, z: number): void {
+    for (let i = 0; i < this.fadePools.length; i++) (this.fadePools[i] as InstPool).scaleFrom(this.fadeMarks[i] as number, k, x, y, z);
+  }
+
+  /** 按原型把一个障碍放进对应的实例池（人腿 → 腿的森林，爬行者 → Crawlers，其余 → 原型池）。 */
+  private placeObstacle(o: CompiledObstacle, st: ObstacleState, seg: CompiledSegment, f: FrameCtx, cur: boolean, kit: KitId, variant: string, floorY: number, tSeg: number): void {
+    const pc = this.pc;
+    const ask = this.asks.get(o.id);
+    pc.partX = ask && ask.part ? this.partDir(o, st) * partOffset(f.t - ask.t) : 0;
+    if (this.chenFootIds.has(o.id)) return;                 // 陈默的脚由陈默自己画
+    if (o.archetype === 'legs') { this.legsObstacle(o, st, seg, f, cur, kit, variant, floorY); return; }
+    if (o.archetype === 'crawler') { this.crawlerObstacle(o, st, f, tSeg, floorY); return; }
+    const pool = this.pools.get(o.archetype);
+    if (!pool) return;
+    if (o.archetype === 'kneeler' && this.kneelerSpecial(pool, o, f)) return;
+    pool.placeEx(pc);
   }
 
   /** 让开的方向：多车道时由各人自己决定（见 legsObstacle），单车道朝离中间远的一侧。 */
@@ -545,7 +620,11 @@ export class ObstacleView implements ViewSystem {
       if (shiftTurn !== 0) { const turn = shiftTurn * 70 * DEG; p.footYawL += turn; p.footYawR += turn; p.legYawL += turn * 0.3; p.legYawR += turn * 0.3; }
       // 障碍里的人只转鞋尖和腿（上身扭过去会让垂着的手伸出碰撞盒）
       this.applyGaze(p, o.id * 8 + i, (o.s0 + o.s1) / 2 + st.ds, f, 'turnShoes', -1, b.type === 'walk', OBSTACLE_GAZE_MAX, 0);
-      p.upper = look.upper || f.stand;
+      // 人群段里的人腿障碍（2-2、5-6 的「两侧车道的人墙」）和路边的人一样画上身，梦里的人本来就有上身：每个画质都画（U6）。
+      // 站立段要显示的那一段（5-7「排队同学的腿」）只在站立段进行时画；别处只到腰带
+      p.wall = kit === 'plaza' || this.wallAt(seg.index, f);
+      p.upper = look.upper || p.wall;
+      p.outdoor = OUTDOOR_KITS.has(kit);
       if (p.upper && this.globalOp.applaud >= 0) p.clap = clapClosed(f.tAnim, hash01(o.id + i)) ? 2 : 1;
       if (sp === 'directorZhou') p.glow = emberGlow(f.t, this.reducedFlicker);
       this.forest.add(p);
@@ -600,10 +679,19 @@ export class ObstacleView implements ViewSystem {
     void st; void seg; void cur;
   }
 
+  /**
+   * 第 seg 段里站着的人这一帧画不画上身（U6）：人群段一直画；站立段要显示的组所在的段（4-2、5-7）只在那个站立段进行时画。
+   * 只看段和当前段的种类，与玩家远近、画面上还有谁无关。调试舞台不算。
+   */
+  private wallAt(seg: number, f: FrameCtx): boolean {
+    if (this.stage || seg < 0) return false;
+    return this.wallSegs[seg] === true || (f.standSeg >= 0 && this.standOf[seg] === f.standSeg);
+  }
+
   private resetPerson(p: Person, look: Look): void {
     p.look = look; p.yaw = 0; p.hipH = STAND_HIP; p.stance = BODY.stance;
     p.hipL = p.hipR = p.kneeL = p.kneeR = 0; p.legYawL = p.legYawR = 0; p.footYawL = p.footYawR = 0;
-    p.lean = 0; p.roll = 0; p.dx = 0; p.bob = 0; p.turn = 0; p.upper = false; p.clap = 0; p.glow = 0; p.targetL = null; p.seated = false; p.squat = false;
+    p.lean = 0; p.roll = 0; p.dx = 0; p.bob = 0; p.turn = 0; p.upper = false; p.wall = false; p.outdoor = false; p.clap = 0; p.glow = 0; p.targetL = null; p.seated = false; p.squat = false;
     p.arms = false;
   }
 
@@ -665,6 +753,7 @@ export class ObstacleView implements ViewSystem {
     if (t - this.lastPrune < 2 && t >= this.lastPrune) return;
     this.lastPrune = t;
     for (const [k, tt] of this.gazeMemo) if (t - tt > GAZE_MEMO_TTL || tt > t) this.gazeMemo.delete(k);
+    for (const [k, tt] of this.passedAt) if (t - tt > GAZE_MEMO_TTL || tt > t) this.passedAt.delete(k);
   }
 
   // ——— 路边的人、模仿者、爬行的人 ———
@@ -718,7 +807,10 @@ export class ObstacleView implements ViewSystem {
       } else this.applyIdle(p, f.tAnim, d.phase);
       this.applyGaze(p, -1 - i, sN, f, d.gaze, gi, d.pose === 'walk');
       const kit = groups[gi]?.kit;
-      p.upper = d.look.upper || f.stand || kit === 'plaza';
+      // 人墙（U6）：按组所在的段和当前段的种类决定（梦里的人一律算），坐着的人不算（与别处坐着的人、伸脚的人一样只到腰带）
+      p.wall = d.pose !== 'seat' && (kit === 'plaza' || this.wallAt(groups[gi]?.seg ?? -1, f));
+      p.upper = d.look.upper || kit === 'plaza' || p.wall;
+      p.outdoor = kit !== undefined && OUTDOOR_KITS.has(kit);
       const applaud = (gs && gs.applaud >= 0) || this.globalOp.applaud >= 0;
       if (applaud && p.upper) p.clap = clapClosed(f.tAnim, d.phase) ? 2 : 1;
       this.forest.add(p);
@@ -772,8 +864,8 @@ export class ObstacleView implements ViewSystem {
   /** 当前帧线框的全部顶点（测试用）。 */
   hitboxLines(): number[] { return this.hitbox ? this.hitbox.allPositions() : []; }
   /** 内部表的大小（测试用：长时间运行不增长）。 */
-  internalSizes(): { gazeMemo: number; gazeEvents: number; knocked: number; asks: number; silences: number } {
-    return { gazeMemo: this.gazeMemo.size, gazeEvents: this.gazeEvents.length, knocked: this.knocked.size, asks: this.asks.size, silences: this.silences.length };
+  internalSizes(): { gazeMemo: number; gazeEvents: number; knocked: number; asks: number; silences: number; passed: number } {
+    return { gazeMemo: this.gazeMemo.size, gazeEvents: this.gazeEvents.length, knocked: this.knocked.size, asks: this.asks.size, silences: this.silences.length, passed: this.passedAt.size };
   }
   get currentSegment(): number { return this.segIndex; }
   get obstacleSpec(): typeof OBSTACLES { return OBSTACLES; }
@@ -828,6 +920,59 @@ const OVERTAKE: OvertakeCrawler[] = (() => {
   return out;
 })();
 
-interface FrameCtx { s: number; px: number; t: number; tAnim: number; beat: number; tSeg: number; speed: number; bps: number; ahead: number; behind: number; hush: number; stand: boolean }
+interface FrameCtx {
+  s: number; px: number; t: number; tAnim: number; beat: number; tSeg: number; speed: number; bps: number; ahead: number; behind: number; hush: number;
+  /** 身后看得见的程度（0..1）：回头或镜头转向身后时越过的障碍照常画。 */
+  reveal: number;
+  /** 当前的站立段下标（不在站立段 = −1）：只有这时它要显示的组（前一个跑段的组）画上身。 */
+  standSeg: number;
+}
+
+/** 人群段（crowd: true，2-2、5-6）：绊倒触发「安静的一秒」的那几段，两侧车道的人墙在这里。 */
+export function isCrowdSegment(seg: Pick<CompiledSegment, 'kind' | 'def'>): boolean {
+  return seg.kind === 'run' && (seg.def as RunSegmentDef).crowd === true;
+}
+
+/**
+ * 人墙段（U6）：人群段（2-2、5-6）。这些段里站着的人（路边的组和人腿障碍）每个画质都画上身和没有五官的头，
+ * 从出现到消失都一样：不按离玩家的远近（r1 在近处 6–7.5 m 内从腰里长出来，像是冲着你来的）。
+ */
+export function isWallSegment(segments: ReadonlyArray<Pick<CompiledSegment, 'kind' | 'def'>>, i: number): boolean {
+  const seg = segments[i];
+  return !!seg && isCrowdSegment(seg);
+}
+
+/**
+ * 显示第 i 段的组的站立段（U6）：站立段只显示紧挨着的前一个跑段的组（§10.2），所以 4-2 → 4-3、5-7 → 5-8；没有 = −1。
+ * 这一段里站着的人只在那个站立段进行时画上身（§5.4「世界突然『正常』了」、§5.7「躯干和头只在站立段……显示」）；
+ * 爬行经过时只到腰带（5-7 是「排队同学的腿」）。审查 r2：以前整段都画，站立段就没有什么可「突然正常」的了。
+ */
+export function standRevealOf(segments: ReadonlyArray<Pick<CompiledSegment, 'kind'>>, i: number): number {
+  return segments[i]?.kind === 'run' && segments[i + 1]?.kind === 'stand' ? i + 1 : -1;
+}
+
+/** 人墙的组：组所在的段是人墙段（一直画上身）。 */
+export function isWallGroup(g: Pick<GroupInfo, 'seg'>, segments: ReadonlyArray<Pick<CompiledSegment, 'kind' | 'def'>>): boolean {
+  return isWallSegment(segments, g.seg);
+}
+
+/** 站立段要显示的组：组所在的段紧挨着一个站立段（只在那个站立段进行时画上身）。 */
+export function isStandGroup(g: Pick<GroupInfo, 'seg'>, segments: ReadonlyArray<Pick<CompiledSegment, 'kind'>>): boolean {
+  return standRevealOf(segments, g.seg) >= 0;
+}
+
+/**
+ * 镜头转向身后的程度（0..1）：按镜头的水平朝向，偏航 32° 以内为 0，80° 以上为 1（turnBack 机位、回头）。
+ * 读的是上一帧渲染时的 matrixWorld（CameraRig 在本系统之后更新），差一帧没有关系。
+ */
+export function cameraBackness(cam: THREE.Camera | null | undefined): number {
+  if (!cam) return 0;
+  const e = cam.matrixWorld.elements;
+  const fx = -(e[8] as number), fz = -(e[10] as number);
+  const h = Math.hypot(fx, fz);
+  if (h < 1e-6) return 0;
+  const cosYaw = -fz / h;                              // 朝前（−z）= 1
+  return 1 - smoothstep(0.17, 0.85, cosYaw);
+}
 
 const _e = new THREE.Euler();

@@ -98,6 +98,30 @@ export function patchLambert(mat: THREE.MeshLambertMaterial, u: LampFieldUniform
 }
 
 /**
+ * Lambert 的「自发光面」（U6，接在 patchLambert 之后）：顶点属性 aSteady = 1 的面再加一份「自己的颜色」
+ * （贴图 × 顶点色）作为自发光，不跟灯走、在暗场景里也看得清（数据里的门牌：5-11 voidDark 的「高二（7）班」）。
+ * 没有这个属性的几何体按 0 处理（与原来完全一样）。glow = 自发光的倍率。
+ */
+export function patchSteadyGlow(mat: THREE.MeshLambertMaterial, glow = 1): void {
+  const prev = mat.onBeforeCompile;
+  const prevKey = mat.customProgramCacheKey;
+  mat.onBeforeCompile = (sh, r) => {
+    prev.call(mat, sh, r);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aSteady;\nvarying float vHwSteady;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vHwSteady = aSteady;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vHwSteady;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        totalEmissiveRadiance += diffuseColor.rgb * vHwSteady * ${glow.toFixed(3)};`);
+  };
+  const base = prevKey === THREE.Material.prototype.customProgramCacheKey ? '' : prevKey.call(mat);
+  mat.customProgramCacheKey = () => `${base}|hwSteady${glow.toFixed(3)}`;
+  const m = mat as unknown as { defaultAttributeValues: Record<string, number[]> };
+  m.defaultAttributeValues = { ...(m.defaultAttributeValues ?? {}), aSteady: [0] };
+}
+
+/**
  * Basic（发光体，lampLit）：按 G 通道（灯自身的亮度）明灭，闪烁时灯管本身也跟着暗。
  * 顶点属性 aSteady = 1 的部分（窗）不受影响；没有这个属性时按 0 处理（整件跟着灯走）。
  */

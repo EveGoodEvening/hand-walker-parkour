@@ -26,12 +26,14 @@ import { Board, BOARDS, boardMaterial } from './boards';
 import { Decals, type DecalKind } from './decals';
 import type { Rect } from './geom';
 import { floorHints, usesSchoolAtlas, type HwKitChunkContext, type HwKitExt } from './kitContext';
-import { LampField } from './lampField';
+import { LampField, patchSteadyGlow } from './lampField';
 import { ATLAS, paintSchoolAtlas } from './textures/school';
 import { makeCanvas } from './textures/common';
 import type { HwTextureBank } from './textureBank';
 
 const OPENING_KINDS = new Set<SurfaceDef['kind']>(['mirror', 'window', 'endMirror', 'carMirror']);
+/** 校园贴图集的最小边长（px）：数据门牌占图集宽度的一半（textures/school.ts ATLAS.plates[0]），低画质也 ≥ 256 px。 */
+export const ATLAS_MIN_SIZE = 512;
 const GENERIC_VARIANTS = 4;
 /** 预览段放在很远的地方，与章节内容互不相干。 */
 export const PREVIEW_S0 = 20000;
@@ -204,24 +206,28 @@ export class World implements ViewSystem {
     };
     const atmo = (): AtmosphereMixer => this.atmo;
     ext.atmosphere = {
-      get id() { return atmo().id; }, get dark() { return atmo().cur.dark; }, get planarDir() { return atmo().cur.dirVec; },
+      get id() { return atmo().id; }, get dark() { return atmo().cur.dark; }, get planarDir() { return atmo().cur.planarVec; },
       get fogNear() { return atmo().cur.near; }, get fogFar() { return atmo().cur.far; }, get fogColor() { return atmo().cur.fog; },
       get lampGain() { return atmo().cur.lampGain; }, get chalkMin() { return atmo().cur.chalkMin; },
     };
     // 材质：地面按贴图缓存；static 分「有 uv（校园贴图集）」与「纯顶点色」；发光体跟灯走
-    const size = ctx.quality.texSize;
+    // 校园贴图集不按低画质减半（U6）：数据门牌在图集里要 ≥ 256 px 宽，5-11 翻转后的反字在低画质下也读得出（多 0.75 MB 显存）
+    const size = Math.max(ATLAS_MIN_SIZE, ctx.quality.texSize);
     if (typeof document !== 'undefined') {
       this.atlasCanvas = makeCanvas(size, size);
       paintSchoolAtlas(this.atlasCanvas, {});
       this.atlasTex = new THREE.CanvasTexture(this.atlasCanvas);
       this.atlasTex.name = 'hw:schoolAtlas';
-      this.atlasTex.anisotropy = (ctx.tex as HwTextureBank).anisotropy ?? 1;
     } else {
       this.atlasTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
       this.atlasTex.needsUpdate = true;
     }
+    // 门牌、值日表这些字常被斜着看：贴图集至少 4 倍各向异性过滤（three 按设备上限截断；U6）
+    this.atlasTex.anisotropy = Math.max(4, (ctx.tex as HwTextureBank).anisotropy ?? 1);
     this.atlasTex.colorSpace = THREE.SRGBColorSpace;
     this.staticAtlasMat = ctx.mat.lambert({ vertexColors: true, map: this.atlasTex, flat: true });
+    // 数据里的门牌（shell.ts DATA_PLATE，aSteady = 1）自发光：在 voidDark 里也读得出（U6）
+    patchSteadyGlow(this.staticAtlasMat, 1);
     this.staticPlainMat = ctx.mat.lambert({ vertexColors: true, flat: true });
     this.staticWhiteMat = ctx.mat.lambert({ flat: true });
     this.emissiveMat = ctx.mat.basic({ color: 0xffffff, lampLit: true });
@@ -717,8 +723,9 @@ export class World implements ViewSystem {
           }
         } else if (kind === 'street' || kind === 'bulb') {
           const r = kind === 'street' ? 5.5 : 2.6;
-          // 路灯的光池用当前氛围的灯色（rainNight 是碎金 #C8A15A；别的氛围里是冷白，不会把暖色带出第三章，附录 A-9）
-          this.decals.add('pool', this.lamps.lampX(k), floorY + 0.01, ls, r, r, kind === 'street' ? this.atmo.cur.lampColor.getHex() : 0xcfd8de, kind === 'street' ? 0.35 : 0.22, ls);
+          // 路灯的光池用当前氛围的 poolColor（rainNight 是碎金 #C8A15A，照到人和物体的灯色是冷色；
+          // 别的氛围里 = 灯色，冷白，不会把暖色带出第三章，附录 A-9）
+          this.decals.add('pool', this.lamps.lampX(k), floorY + 0.01, ls, r, r, kind === 'street' ? this.atmo.cur.poolColor.getHex() : 0xcfd8de, kind === 'street' ? 0.35 : 0.22, ls);
         }
       }
     }

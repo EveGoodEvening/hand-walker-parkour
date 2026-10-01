@@ -173,6 +173,9 @@ function paintPlate(g: G, x0: number, y0: number, w: number, h: number, text: st
   if (!text) return;
   g.fillStyle = hex(0x2a3136); g.font = `bold ${Math.round(h * 0.56)}px ${CJK_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText(text, x0 + w / 2, y0 + h * 0.54, w * 0.9);
+  // 再描一遍边把笔画加粗（U6）：远处取低几级 mip 时细笔画会和底色平均成浅灰，翻转后的反字更难认
+  g.strokeStyle = hex(0x2a3136); g.lineWidth = Math.max(1, h * 0.035); g.lineJoin = 'round';
+  g.strokeText(text, x0 + w / 2, y0 + h * 0.54, w * 0.9);
 }
 
 function paintRoster(g: G, x0: number, y0: number, w: number, h: number, rng: Rng): void {
@@ -309,23 +312,37 @@ function paintChalkText(g: G, w: number, h: number, size: number, p: Params, rng
 // ——————————————————— 校园贴图集（chunk static 共用） ———————————————————
 /** 贴图集布局：16 × 16 个单位（每单位 size/16 px），矩形用 uv（v 向上）。 */
 const U = (x0: number, y0: number, x1: number, y1: number) => [x0 / 16, 1 - y1 / 16, x1 / 16, 1 - y0 / 16] as const;
+/**
+ * 布局（单位；U6 为放大数据里的门牌重排了下半部分，各矩形互不重叠，见 tests/unit/render/plates.test.ts）：
+ *   0–10 × 0–10：灰泥 / 墙裙 / 天花板；10–16 × 0–9：瓷砖、两块通用班牌；
+ *   0–16 × 10–12.4：两块数据门牌（各 8 × 2.4，与 0.95 × 0.285 m 的牌子同比例；中画质 512 px 的贴图集里宽 256 px）；
+ *   12.4–16 行：值日表、告示、黑板、海报、白色区（值日表、告示、黑板、海报的长宽比不变）。
+ */
 export const ATLAS = {
   /** 灰泥：3.2 m × 1.6 m 的墙面灰度细节。 */
   plaster: U(0, 0, 10, 5),
   /** 墙裙：3.2 m 宽，下沿 = 地面，高 1.1 m。 */
   wainscot: U(0, 5, 10, 8),
-  /** 天花板：3.2 m × 0.96 m。 */
-  ceiling: U(0, 8, 10, 11),
+  /** 天花板：沿 s 一个周期 3.2 m，横向铺满走廊宽（U6 起 10 × 2 单位，以前 10 × 3；横向的纹理密度低三分之一，只有低频的噪声和水渍）。 */
+  ceiling: U(0, 8, 10, 10),
   /** 墙面瓷砖：0.9 m × 0.9 m，6 × 6 块。 */
   tile: U(10, 0, 16, 6),
-  /** 门牌（4 个，4:1）：0、1 给关卡数据里的门牌，2、3 是通用班牌（空白：原文只有高二（7）班和「隔壁班」，不自创班名）。 */
-  plates: [U(10, 6, 16, 7.5), U(10, 7.5, 16, 9), U(10, 9, 16, 10.5), U(10, 10.5, 16, 12)] as const,
-  roster: U(0, 11, 4, 16),
-  notice: U(4, 11, 7, 16),
-  board: U(7, 11, 13, 14),
-  poster: U(10, 14, 13, 16),
-  white: U(13, 12, 16, 16),
+  /**
+   * 门牌：0、1 给关卡数据里的门牌（U6：8 × 2.4 单位，贴在 0.95 × 0.285 m 的牌子上，比例 10:3），
+   * 2、3 是通用班牌（6 × 1.5，4:1，空白：原文只有高二（7）班和「隔壁班」，不自创班名）。
+   */
+  plates: [U(0, 10, 8, 12.4), U(8, 10, 16, 12.4), U(10, 6, 16, 7.5), U(10, 7.5, 16, 9)] as const,
+  roster: U(0, 12.4, 2.88, 16),
+  notice: U(2.88, 12.4, 5.04, 16),
+  board: U(5.04, 12.4, 11.04, 15.4),
+  poster: U(11.04, 12.4, 14.04, 14.4),
+  white: U(11.04, 14.4, 16, 16),
 } as const;
+/** 数据门牌在贴图集里的宽（px）：贴图集边长 size。 */
+export function platePx(size: number, i = 0): { w: number; h: number } {
+  const r = ATLAS.plates[i] ?? ATLAS.plates[0];
+  return { w: (r[2] - r[0]) * size, h: (r[3] - r[1]) * size };
+}
 export const ATLAS_WHITE_UV: readonly [number, number] = [(ATLAS.white[0] + ATLAS.white[2]) / 2, (ATLAS.white[1] + ATLAS.white[3]) / 2];
 /** 墙面贴图的平铺周期（米）。 */
 export const WALL_PERIOD = 3.2;

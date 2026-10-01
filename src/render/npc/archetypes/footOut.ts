@@ -8,7 +8,8 @@
 // 人坐在哪一侧：左道的人坐在 −x 侧、右道坐在 +x 侧；中道按 id 奇偶选一侧，椅子落在两条车道之间的空当里
 // （椅子和人的外沿 ≤ 0.86 m，不伸进相邻车道玩家碰撞盒的 0.88 m）。
 // 收回：人在椅子上转过身，两条腿绕髋部转 80°，朝 +s（教室前方）伸着，离开车道。被碰到（hit）也会缩回去。
-// 两个变体：seated（人：两条腿 + 胯，收回时整体转动）、chair（椅子，不动）。实例坐标系：+x 指向坐着的人；
+// 两个变体：seated（人：两条腿 + 胯，收回时整体转动；U6：腰带只有侧面是黑的，上面是校服下摆）、chair（椅子，不动）。
+// 坐着的人只建到腰带（「视线里只有膝盖和腰带」，与路边坐着的人一样）。实例坐标系：+x 指向坐着的人；
 // side = −1 时整个实例绕 y 转 180°（几何体关于 z = 0 对称，所以等于左右镜像，三角形绕向不变）。
 import * as THREE from 'three';
 import { defineArchetype, knockProgress, type PlaceCtx } from '../archetype';
@@ -70,10 +71,11 @@ function leg(b: PartBuilder, z: number): void {
   b.segment([ANKLE.x + 0.02, 0.035, za], [ANKLE.x - 0.2, 0.13, za], 0.1, 0.075, C.shoe, { colors: { '-y': C.sole } });
 }
 
-/** 胯部与腰带：只建到腰带（「视线里只有膝盖和腰带」）。 */
+/** 胯部与腰带：腰带只有四个侧面是黑的，上面 12 cm 校服下摆（U6：以前腰带顶面是黑的，像带盖的桶）。 */
 function pelvis(b: PartBuilder): void {
-  b.box([FOOT_HIP.x + 0.02, FOOT_HIP.y + 0.03, 0], [0.2, 0.16, 0.38], C.trousers, { colors: { '+y': 0x33466a }, faces: '+x-x+z-z-y+y' });
-  b.box([FOOT_HIP.x + 0.02, FOOT_HIP.y + 0.125, 0], [0.208, 0.04, 0.39], C.hair);
+  b.box([FOOT_HIP.x + 0.02, FOOT_HIP.y + 0.03, 0], [0.2, 0.16, 0.38], C.trousers, { faces: '+x-x+z-z-y' });
+  b.box([FOOT_HIP.x + 0.02, FOOT_HIP.y + 0.125, 0], [0.208, 0.04, 0.39], C.hair, { faces: '+x-x+z-z' });
+  b.box([FOOT_HIP.x + 0.02, FOOT_HIP.y + 0.205, 0], [0.19, 0.12, 0.37], C.uniform, { faces: '+x-x+z-z+y' });
 }
 
 /** 椅子：朝 −x（人面朝过道），椅背在 +x 一侧。 */
