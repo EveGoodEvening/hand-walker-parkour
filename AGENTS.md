@@ -35,3 +35,49 @@
 - 标题背景在读章时也会发 `checkpoint`。存档里「继续」的位置只在 play 或 intro 屏幕下写，否则第一次打开就会冒出「继续」。
 - 资源上限（2026-10-01 曾因 OOM 整个会话被杀）：本机 8 核 15 GB，且与他人共用。并行 agent 同时最多 3 个；`vitest` 已在配置里限 `maxWorkers: 2`；不要在同一个 agent 里并发跑多个重命令（verify、e2e、build 依次跑）；无头浏览器一律经 browser-lock，用完立即关闭；结束前确认没有遗留的 chrome 进程（`pgrep -f chrome-linux64`）。
 - 本机有全局内存闸门（见 `~/.claude/CLAUDE.md`）：任何会启动浏览器的命令都必须经 `~/.claude/bin/heavy-gate -l '<标签>' -- <命令>`，并用 `run_in_background` 运行（闸门可能等好几分钟，不要套 `timeout`）。本项目里会启动浏览器的有：`npm run verify`（最后一步是 e2e:smoke）、`npm run e2e:*`、`node scripts/shot.mjs`、`tests/e2e-touch.mjs`、`bot:difficulty`（如果它开浏览器）。例：`cd <repo> && ~/.claude/bin/heavy-gate -l hw-verify -- npm run verify`。只跑静态检查时用 `npm run typecheck`、`npm test`、`npm run validate`，它们不开浏览器、不需要闸门。项目自带的 `scripts/browser-lock.mjs` 仍然保留（在闸门之内再排队），不要再加新的锁。
+- 集成（2026-10-01，lead 汇总八个工作包的 `docs/lessons/WP*.md`，原文件保留作历史）。以下按主题分组，只留可复用的经验。
+- **校验与数据**：
+  - 规格里写了「≤ / ≥ 某值」的边界一律带 1e-9 容差，并用精确边界值写单元测试（`0.55 − 0.43 > 0.12`）。步态跨整数拍时判定两头要用同一个容差，否则同一拍发两次掌根。
+  - 引用了别处公式的量（字幕停留 = 字数 × 90 ms + 800 ms 等）直接调用同一个函数，不要用常数凑。
+  - 静态检查和运行时用同一口径：校验器认定「必定触发」的 id 都要有一条「perfect 跑完后进 `beatsFired`」的测试；只在可选操作（按 Q）时触发的 id 不能列进 `requiredBeats`。perfect 会主动回头，测不出这类问题，要用不按键的 Driver。
+  - 工作包不能把 lead 要求报 error 的规则自行降成 warning。豁免只认 DESIGN §10 里的书面批准（`WAIVERS[].approval` 逐字出现在 §10，有单元测试）。别的包的数据让自己变红时，用 `git show wp/WPx:path` 取对方最新数据复现，找出最小改法并验证余量（休息窗各放宽 0.3 s 仍有解），写进 contract-requests。
+  - A-11（20 s 一个主异常）按 Sim 时间轴、连同静场一起数（`tests/unit/content/anomalyTimeline.ts`）；同一个异常的连续演出写成一个事件（组合 `doubleMod`）。每拉开一次 20 s 都要加长跑段，先算全章会不会超过 §4.6 的 +15%；为时间加长的段只能放边道的被动行，最后一个跑段不能比高潮段密（`chapters.test.ts`「§2.8 难度曲线」）。
+  - R7 / R8：`KIT_SYMBOLS` 的轮换起点随种子变，「新种类首次出现这一行只有它」要写显式种类（`['cart', '.', 'cart']`）并用种子 1–20 检查；段首、检查点 1.6 s 内不能要求动作，前两行别放中道。
+  - 静场 / 站立段等输入时时钟暂停；最后一句文字触发后要留出显示时间。`hush` 的拍数按触发时的步频换成秒，放在停拍里要多写约 2 拍；段末的 `slow` 要在段末之后才结束。
+  - 墙上要在某一拍被看见的东西（门牌、涂鸦）至少放在玩家前方约 7 拍（追尾镜头在身后 2.35 m，竖屏 3.8 m）。
+  - 静场反光面 / 黑板的 id 必须与 set 的 `surfaces()` 一致（`canteenGlass`、`labBoard`、`busWindow`/`window`、`bathMirror`/`mirror`、`water`）。validate 不查这些跨包 id，由 `tests/unit/core/integration.test.ts` 检查（静场 cue 的 surface、跑段 double 的 surface、camera 机位、crowd 组）。
+  - 非暗色氛围没有粉笔描边：声控灯、关灯区间里的必需障碍会被 R4 判为不可读。§4 标「暗」的段要用暗色预设（5-2 用 `nightIndoor`）。
+  - 原文核对：`src/levels/sourceQuotes.ts` 由 `tests/unit/content/tools/gen-source.mjs` 生成；`npm run validate` 把原文传给 `lintContent`，原文和 lint 都不能进产物（`isolation.test.ts`、`tools/leak-check.mjs`）。台词不带引号存，界面按样式加，显示前去掉原文自带的 ASCII 引号。
+- **模拟与求解器**：
+  - 输入在本 tick 推进之前处理，此刻的 `segBeat()` 对应 `t − TICK_DT`。检查点之后 Pace 只补放持续的段中换挡（cadence），不补放临时的减速 / 停拍。重来要恢复到检查点时的按章累计状态（如回头收益）。
+  - 求解器去重键只编码会影响未来的状态，里程按 0.2 m 分桶；节点复制用手写 `copyFrom()`（配一条测试核对字段齐全）；热循环里不要建闭包（tsx 的 keepNames 会给每个闭包调 `__name`）。`hash()` 用反射递归（`sim/stateHash.ts`），不要手写字段清单。
+  - 站立段的按步事件（`atStep`）不进 `CompiledSegment.events`，Sim 直接读 `def.events`；跳过静场时要补发还没到的按步事件。画面按帧查询的 `Plan.actionAt(s)` 按区间回答。
+  - vitest 只按文件并行：重的扫描按章拆成多个测试文件；测试里用 `sim.isEnded`，不要每 tick 扫全部事件。`__game.events()` 跨章不清空，e2e 判断「本章结束」只认最后一次 `chapter:start` 之后、`data.id` 是本章的 `chapter:end`，并带自检（同一章跑两遍结果相同）。
+- **渲染（three r186）**：
+  - §5.1 色板是画面上看到的颜色，不是反照率：Lambert 对半球光、平行光都除以 π，`NeutralToneMapping` 的 toe 让暗色又暗又饱和（裤子 #2A3A52 会变成 #04213D）。顶点色写入前按氛围反推（`render/wallTone.ts` 的 `propAlbedo` / `kitPropTone`、`kits/outside/lib/tone.ts`），先在 Node 里用「Lambert ÷ π + Neutral + sRGB」小模拟器对色，再上浏览器。Neutral 有解析逆。
+  - `renderer.info.memory.geometries` 在几何体第一次被画时才加一：读章后要预热（`View.warmUp`），判断泄漏要同一章跑两遍比第二遍。灯光数量变化会让所有材质重编译：没有平行光的预设也保留那盏 `DirectionalLight`，强度设 0。
+  - 负行列式（镜像）矩阵会翻转三角形绕向，被背面剔除；累积器要自动翻转绕向，烘焙光照时法线也要取反。单面光带按法线定绕序。
+  - 地面层先画、不写深度：地面以下的东西放进 floor 几何体，绘制顺序就是覆盖顺序。低画质下墙根接缝会漏背景色，贴地的墙往地下多伸 6 cm、相邻面多搭 5 cm。跨 chunk 的长物件按 chunk 裁剪。
+  - 实例化贴花按「格子号」取图集时，在顶点着色器里 `floor(x + 0.5)` 取整后再传偏移，不要在片元里对插值过的 varying 做 `mod`/`floor`；互不相干的形状拼成的图集不生成 mip。一次 draw call 里同时加亮和压暗用预乘 alpha（`ONE` / `ONE_MINUS_SRC_ALPHA`）。
+  - 在别人的 `onBeforeCompile` 补丁（LampField）上叠补丁：先调原来的，再改自己的片段，`customProgramCacheKey` 串接。`Material.clone()` 不复制 `onBeforeCompile`。`MaterialsAPI.lambert()/basic()` 每次返回新实例，可以直接改。
+  - 自定义 `ShaderMaterial` 要在片元末尾 `#include <colorspace_fragment>`。天穹：`fog: false`、`toneMapped: false`，颜色 = 雾色 × 灰度纹理（纹理里写线性乘数的 sRGB 编码）。跟着镜头走的东西在 `onBeforeRender` 里摆（ViewSystem 的 order 早于镜头）。
+  - ClampToEdge 的贴图 UV 不要超出 [0, 1]；图案只占中间时在生成器里缩到画布中间，四周留空。
+  - 暗场景的 set 把光源烘进顶点色（LampField 只覆盖跑道附近，到不了 `STILL_ORIGIN`）。发光体带 `aSteady` 顶点属性：1 = 不跟灯明灭（窗、镜中的雾），缺省跟灯走。
+  - `q.slerpQuaternions(qa, qb, t)` 在 `this === qb` 时结果永远是 qa；原地混合先进临时四元数。姿势高度要移动根（骨盆），单元测试按蒙皮后的网格量最高 / 最低点。改父骨骼后做两骨 IK 之前先 `fk()`。
+  - 一个原型一个 `InstancedMesh` 画多种变体（顶点属性标变体，着色器把别的变体收成一点）时，每个实例都要处理全部顶点，三角形也按全量计：低画质用单独的小几何体。`color_vertex` 的补丁要有单元测试断言那一行还在。
+  - NPC、替身、过渡一律是模拟时间的纯函数（test 模式下 `step` 不渲染，截图只画最后一帧）：段内时间按每段在模拟时钟上的开始时刻算，已经过去的段照常计时，失败后冻结；弹簧类在间隔 > 0.25 s 时直接吸附。
+  - 镜头在主角眼睛里的静场（`palmEye`、`waterDown`）不画主角身体，否则身体挡满整个画面；静场替身的位置可以由 set 的 `surfaces()[i].at` 指定。用 `__game.goto(seg, beat)` 截图时，beat 之前的 cue（替身出现等）不会重放，要从段首跑过去再截。
+  - 调试用的东西（画廊、调试反光面、调试 ViewSystem）只在 `urlParams().debugEnabled` 时注册，不进活动候选列表，不往真实总线发伪造的 cue。
+- **声音（WebAudio）**：
+  - Chromium 的 `DynamicsCompressor` 每级 6 ms 前瞻（两级 12 ms 固定延迟），补偿增益要约 0.3 s 才到稳态：校准渲染至少 0.6 s。峰值上限靠限幅器后面的 `WaveShaperNode` 软削波保证。`ConvolverNode.buffer` 赋值在主线程做 FFT（3 s 混响约 14 ms）：读章时在空闲任务里预装。
+  - 同一个一次性声音从两条路径各排一次、相隔 1 tick（8.33 ms）会让 60 Hz 主体相互抵消：按 §8.7 的唯一处理者表对照，并加 0.1 s 去重。依赖另一个 cue 先到的状态一律锁存（同一 tick 里 cue 的先后由关卡数据决定）。`cancelScheduledValues(now)` 连恰好在 now 的事件也取消。门掉一条总线时连它的混响发送一起门。
+  - Game 只把 `screen` 发到 EventBus，不经过 `AudioAPI.onEvent`；按屏幕做事要 `bus.on('screen')`。`requestIdleCallback` 的 timeout 每次重新请求都从头算，要自己记入队时间。
+  - Node 里测 WebAudio 用 `tests/unit/audio/offline/mini.ts`（`BufferSource.start` 的 offset 取整到样本；方波等用带限波表）。
+- **界面与输入**：
+  - 界面切换时丢掉上一个界面里按下、还没被 Game 取走的键（`Input.dropPending()`），否则选章的回车会跳过开场卡。最后一次输入的设备要在 window 捕获阶段的 `pointerdown` 里记（按钮带 `data-ui-control`，不发动作），初始值按 `(pointer: coarse)` 猜。
+  - 「每帧 DOM 写入最多一次」要连 Input 一起算：情境按钮的显隐经 `UI.frame()` 的 DomBatch 写。e2e 读 DOM 或 `__game.ext.ui()` 之前先 `__game.render()`；章节、设置、纸条界面只由 UI 切换，读 `__game.ext.ui().screen`。
+  - 窄屏字幕用 `text-wrap: balance`，≤ 520 px 缩字号让 24 字一行。附录 B.2 / B.4 的文字逐字照抄，`tests/unit/ui/strings.test.ts` 直接解析 DESIGN 的 B.2 表格，改文字先改设计文档。
+- **工具与测试**：
+  - `.mjs` 脚本用 `tsx` 跑时可以直接 import 带扩展名的 `.ts`；scratchpad 里带顶层 await 的 tsx 脚本要用 `.mts`。`import.meta.glob` 在 tsx 里不存在（各包 `index.ts` 用它），Node 探针直接 import 具体模块，或写成临时 vitest 文件。vitest 5 对通过的用例不打印 `console.log`。
+  - 先在 Node 里把能算的都算完（kit 逐变体 build、姿势用软件光栅器、人群路径间距、声音离线渲染），浏览器只用来确认「看上去对」。截图清单里的数值验收要在同一页里自带断言（条件不满足就 `throw`）。
+  - 量「修复前」的数字不必切分支：`git archive HEAD src tests tsconfig.json package.json | tar -x -C <scratch>/old`，再软链 `node_modules`。

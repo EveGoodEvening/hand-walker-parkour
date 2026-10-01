@@ -2307,3 +2307,49 @@ export const QUALITY: Record<QualityTier, Omit<QualityProfile, 'pixelRatio'> & {
 - **「放慢一点」**：离开本段即重置。
 - **失败慢放**：`FixedLoop.slowMul`，失败后 0–0.3 s 取 0.3（lead 已实现于 `Game.ts`）。`__game.plan()` 对静场和站立段返回 null；`poseTest` 在非调试模式下同样抛 `debug disabled`。
 - `.ts` 脚本统一用 `tsx` 运行（Node 24 自带的类型剥离解析不了不带扩展名的 import）。
+
+### 10.2 八个工作包集成后的回写（2026-10-01）
+
+按 WP1 → WP3 → WP5 → WP6 → WP4 → WP7 → WP8 → WP2 的顺序合并进 `feat/parkour-game`，每合并一个跑一次 `npm run verify`。各包的 `docs/contract-requests/WP*.md` 按下面处理；`WAIVERS` 仍为空，没有任何豁免。
+
+**契约变更（已合并，全部向后兼容）**
+
+- `core/contracts.ts`：`Plan.asks?`（求解器开口「让一下」的里程）；`ViewContext.decals?`、`ViewContext.atmosphere?`（类型 `DecalSink`、`ViewAtmosphere`，WP3 的 World 在 init 时挂上）；`GameCommands.outroInput?(id, n)`。`StillSet.surfaces()` 的每一项可带可选的 `at`（静场替身站的位置，set 局部坐标；缺省 = 主角锚点的倒影）。注释写明：`MaterialsAPI.lambert()/basic()` 每次返回新实例；`TextureBank.get` 按 id + 全部参数缓存；World 每帧调用当前静场 set 的 `update(t, snap)`。
+- `core/constants.ts`：`END_MIRROR_HALF_W = 0.95`，CORE 占位 kit、WP3 的 `endWalls`、WP5 的 `END_HALF_W` 都引用它。
+- `core/Game.ts`：输入情境的 `ask` 读 `prompt` 事件的 `context.ask`（触屏「让一下」按钮）；先把设备交给界面再画界面；暂停菜单的「从检查点重来」「回到标题」恢复声音；结尾卡输入（`OutroDef.lines` 的 `{ input, id }`）由界面经 `outroInput` 报给 Game，每一下在床单上响一声（sfx `cloth`），有 id 时记为本章已触发的节拍（`__game.beats()` 含结尾卡节拍，日志里写一条 `beat` 事件）。
+- `core/debugHook.ts`：`goto` 与 `retry` 一样清掉失败状态和失败慢放。
+- `render/kits/placeholder.ts`：端墙镜的镜框只画四条边（以前是一整块实心面，挡住开口）。
+- `package.json`：`npm run e2e:audio`（WP7 的真实 Chromium WebAudio 验收，经 browser-lock）。
+- `npm run validate`：校验全部章节时调用 WP2 的 `lintContent`（原文由脚本传入，不进产物），并对 `ui/strings.ts` 跑 `lintStrings`（附录 B.8）。
+- `tests/unit/core/integration.test.ts`：章节数据引用的跨包 id（静场 cue 的反光面 / 黑板、跑段替身与回忆的 surface、静场机位、crowd 组）必须在画面包的注册表里存在。
+
+**不合并的申请（理由）**
+
+- `StandSegmentDef.npcs?`、`DoubleSpec.fadeIn?`、`StandSegmentDef.downLine?`：没有消费方，加了字段反而让数据作者以为写了会生效。站立段只引用**紧挨着的前一个跑段**的 NPC 组（WP6 把那一段的组保留到站立段结束）；WP5 对所有 world 替身一律 ≥ 0.6 s 淡入（附录 A-1）；梦中站立按 ↓ 的字由 Sim 取 `c4.handsLimp`（`LINE_HOOKS.dreamDownPress`）。
+- `EnvKit.isSpecial?`：ChunkStreamer 只复用 WP3 自己的 kit，户外 kit 一律按真实位置逐个 build，不需要。`EnvKit.floorMap?`：推迟（P2），户外地面维持顶点色。
+- `SimSnapshot.tSeg?`：WP6 按每段在模拟时钟上的开始时刻反推段内时间（含失败冻结），与 Sim 逐 tick 一致并有单元测试。以后 Sim 改变段内时钟时再加。
+- `obstacleState` / `swingOpen` 留在 `sim/Track.ts`；WP6 只经 `render/npc/simBridge.ts` 一处引用，作为允许的跨包只读依赖。同样允许：WP7 经 `getChapter` 读章节定义、注册一个不画东西的探针 ViewSystem 拿 LampField；WP3 的 ChunkStreamer、Game、UI 读 `levels/lines.ts` 的 `lineText`。
+- `rainAt` 不挪进 core：WP4（画面）与 WP7（`soundStateAt`）各按章节数据复原，暂不共享。
+- `SaveData.completed` / `habitShown`：不改冻结的存档结构，WP8 用自己的键 `hw-parkour:v1:ui`（同样 try/catch）。
+- `OutroDef.set` 作为结尾卡背景（第四章卧室天花板的裂缝）：推迟（P2），结尾卡维持不透明的墨色。
+
+**数据裁定**
+
+- 第一章（取代 §8.6 的对应数值）：1-5 回头窗口 @124–133，1-6 停拍 @23（第三只手停拍 +1.8 s，自动爬行 3.4 s），1-2 @36 清洁车那一行写显式种类；lead 另把 1-5 @113 的 L 挪到左道、@161 的 L 挪到右道，从检查点 @104 起才有合规路线（R5-R10），三个休息窗各放宽 0.3 s 仍然有解。
+- 5-2 的氛围改为 `nightIndoor`：§4.5 标为「暗」、声控灯晚 0.5 s，而 `dawn` 不是暗色预设、没有粉笔描边，R4 判声控区间里的障碍不可读。5-3 出楼道再进 `dawn`。
+- 静场反光面 / 黑板的 id 以 set 的 `surfaces()` 为准：`canteenGlass`（2-5）、`labBoard`（2-9 的 board cue）、`busWindow`（别名 `window`）、`bathMirror`（别名 `mirror`）、`water`。
+- A-11 按 WP2 的 Sim 时间轴规则执行（`tests/unit/content/anomalyTimeline.ts`）：一个静场或站立段里的主异常算一个场景，相邻场景相隔 ≥ 20 s；静场的 `follower: absent` 不算静音，不构成一次登场；按剧本出现的镜子、窗户替身（`source: 'script'`）不单独计数。因此 2-10 保持 140 拍，但只能是稀疏的叙事收束（只有 @10 一个障碍、@16 纸条和边道的被动行），第二章合计 199.9 s（§4.6 的 +14.2%）。
+- 5-3：段首就是 `pressure`，但 `hud` / `voice` 为 none、`steadyMax` 3，@44 起 `hud: 'shadow'`，@52 起上限 2。批准；回稳按 pressure 的 24 拍。追随者 HUD 为 none 时界面不加稳度暗角。影子只在 @30 发一次 `shadow: 'reversed'`（A-11 只算一次）；追随者是 pressure 且 HUD 为 shadow 时，WP5 按 `chase` 画身后按 `follower.distance` 追来的第二个影子（按快照判断，段中检查点重来后也在）。
+- 各章相对 §4 的时间调整写在各章节文件头的注释里（2-2、2-6、2-7、2-8、2-10、3-2、3-3、3-4、5-1、5-3、5-5、5-8、5-11 等），以文件为准。
+- 镜头在主角眼睛里的静场（4-4 `palmEye`、4-6 `waterDown`）不画主角身体（`SET_DEFAULT_CLIP` 为 null；4-4 的手由 WP4 的 set 画），锚点照常更新，镜头和静场替身都相对它摆。4-6 水里站着的「我」站在 WP4 的爬行人群中间（`water` 的 `at = (0, 0, −1.9)`），面朝镜头。
+- `e2e:chapters` 在第四章结尾卡上先等输入提示出现（约 1.8 s），再用真实键盘按 ↓ 三下。
+- 段中检查点重来不重放检查点之前的替身 cue：数据里挂在反光面上的 `double` 放在段中检查点之后（或之后再发一次）。
+
+**解释确认（写进 WP1 / WP3 / WP4 / WP5 / WP6 / WP7 的文件头，以代码为准）**
+
+- 校验器（WP1 契约申请 ①–⑯）：R6 的 20 s 只统计跑段（静场与跨段由 WP2 的时间轴测试补上）；「跟随者登场」只指从 hidden 变成有声音 / HUD 的模式；R7 的「新类别首次出现」按整部作品算，第二章起只查新种类（warning）；R9 抬起时刻到横档接触 0.4 ± 0.15 s；腿自主抬起在抬起之后按住 ↓ 也能压回去；R4 对迎面走来的人按相对速度、对 `fallInto` 从出现时刻算，非暗色氛围里关灯 / 声控区间的必需障碍按不可读报 error；R10 休息窗 = [窗口开始, 窗口结束 + then 里最后一句字幕消失 + 0.8 s]；`shift` / `yield` / `fallInto` 按玩家的段内拍号触发；七步「8 s 不按再提示」从开始等待或上一次松手算起，只提示一次；静场 tap / taps3 只认 ↓，any 只认游玩键；`Plan.actionAt(s)` 按区间回答；rest / ask 窗口在段内拍号到达 `from` 时触发窗口 id，非 auto 回头窗口上的必备节拍报 error；`bot:difficulty` 按检查点区间判定，低于目标只记 `below`；回头收益「每章第一次」重来时恢复到检查点时的值。
+- 画面约定：§5.1 的色值是画面上看到的颜色（Lambert ÷ π、NeutralToneMapping 之后），各包按氛围反推反照率（WP3 `wallTone.ts`、WP4 `kits/outside/lib/tone.ts`）。kit 几何体的 `userData`：`hwFloorMap`、`hwDepthWrite`（楼梯）、`hwGloss`、`hwAtlas`（用校园贴图集）；`emissive` 顶点属性 `aSteady = 1` 表示不跟 LampField 明灭。WP3 的 kit 的 chunk 长度取最接近 12 m 的偶数拍。墙镜、窗、端墙镜的镜中房间由 kit 画进 chunk（WP3、WP4），WP5 另画一层稍浅的暗色内壳和玻璃叠加层，两层同色、不穿帮，暂时都保留。静场里主角由 WP5 画在 `STILL_ORIGIN × playerAnchor`（骨盆正下方的地面，朝 −z），set 不画主角身体。户外天穹由 WP4 画。
+- `lights` cue：`from` / `to` 是段内拍号（可以为负，表示段起点之后方），`every = N` 每 N 盏选一盏，`delay` 为秒，`sound` 让区间内的灯变成声控，`palmRings` 让每一掌激起光环；重来时 WP3 重放检查点之前的 lights / atmosphere / fog。`dreamGray` 的渐变由 `fog` cue 的 far（60 → 28）驱动。
+- WP5 与 §5.4 / §5.6 字面数值的偏差批准：摔倒机位横向让到 x + 0.6；爬姿肩高 0.43 m、两腿 V 字拖在身后；伏低时胸盒下沿离地 0.06–0.1 m（保证过 0.36 m 的最低横档）。
+- WP6：`legs` 的碰撞盒高 1.70 m 只是线框，模型只建到腰带（玩家盒最高 0.85 m，不影响判定）；走路的人沿 s 的外沿随摆腿变化，只要求横向 ≤ 5 cm；远处路边的人加躯干和头推迟（P2）；crowd cue 的 `group` 找不到时只警告，作用于全部组写 `'*'`；`aChalk` 是连续值。
+- WP7：§2.6 表里的增益就是追随者相对自己掌声的总增益；心跳靠四个周期的渐强满足起音 ≥ 150 ms；撞到实物的 `crashThud`、`bucketKnock` 保留（附录 A-2 的「不加一声咚」只管异常）。
