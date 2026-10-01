@@ -245,11 +245,12 @@ export function rmsEnvelope(chs: readonly Float32Array[], sampleRate: number, wi
 }
 
 /**
- * 起音时间（秒）：10 ms RMS 包络从峰值的 1% 升到 90% 所用的时间。
- * 异常类声音要求 ≥ 150 ms（§6.1、§8.10 WP7 验收 2）。
+ * 起音时间（秒）：RMS 包络（缺省 20 ms 窗）从峰值的 1% 升到 90% 所用的时间。
+ * 异常类声音要求 ≥ 150 ms（§6.1、§8.10 WP7 验收 2）。窄带噪声（低语的共振峰带通 Q 4–5）在 10 ms 窗里起伏很大，
+ * 包络的最大值会落在一次随机起伏上，所以窗取 20 ms；对瞬态声音（咔、笃）量出来仍只有十几毫秒。
  */
-export function attackTime(chs: readonly Float32Array[], sampleRate: number): number {
-  const { env, hop } = rmsEnvelope(chs, sampleRate, 0.01, 0.001);
+export function attackTime(chs: readonly Float32Array[], sampleRate: number, win = 0.02): number {
+  const { env, hop } = rmsEnvelope(chs, sampleRate, win, 0.001);
   let max = 0;
   for (let i = 0; i < env.length; i++) if ((env[i] as number) > max) max = env[i] as number;
   if (max <= 0) return 0;

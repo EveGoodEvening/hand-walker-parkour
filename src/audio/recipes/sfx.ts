@@ -125,7 +125,7 @@ export const SFX: Readonly<Record<OneShotId, OneShot>> = {
     times.forEach((t, i) => {
       const lp = filt(r.ctx, 'lowpass', lps[i] as number, 0.7071);
       lp.connect(r.out);
-      heelStep(r, r.t0 + t + rr(r.rng, -0.01, 0.01), lp, Math.pow(10, (gains[i] as number) / 20));
+      heelStep(r, r.t0 + t + (i ? rr(r.rng, -0.01, 0.01) : 0), lp, Math.pow(10, (gains[i] as number) / 20));   // 自动化时间不能早于 t0（负时间会抛 RangeError）
     });
   }, { send: 0.6, tau: 0.4 }),
   // 3-1：班长的脚步声「先轻后重」，渐远
@@ -344,7 +344,7 @@ export const SFX: Readonly<Record<OneShotId, OneShot>> = {
     const g = nz(r, r.t0, 0.01, [filt(r.ctx, 'highpass', 1000, 0.7071)], r.out);
     ahr(g.gain, r.t0, 1, 0.0002, 0.0006, 0.0002);
   }, { tau: 0.002, variants: 2 }),
-  // 低语：400 ms 的共振峰噪声（带通 600 / 1800 Hz），−40 dBFS；不合成人声
+  // 低语：400 ms 的共振峰噪声（带通 600 / 1800 Hz），−40 dBFS；不合成人声。起音 220 ms（「声音不大」，从安静里浮出来）
   whisper: S('whisper', 0.5, -40, 'npc', (r) => {
     const env = gain(r.ctx, 0);
     env.connect(r.out);
@@ -352,7 +352,7 @@ export const SFX: Readonly<Record<OneShotId, OneShot>> = {
     const g2 = nz(r, r.t0, 0.5, [filt(r.ctx, 'bandpass', 1800, 5)], env);
     g1.gain.value = nb((1.57 * 600) / 4, r.ctx.sampleRate);
     g2.gain.value = 0.7 * nb((1.57 * 1800) / 5, r.ctx.sampleRate);
-    ahr(env.gain, r.t0, 1, 0.18, 0.1, 0.12);
+    ahr(env.gain, r.t0, 1, 0.22, 0.06, 0.12);
   }, { anomaly: true, tau: 0.1, variants: 2 }),
   // 正常人的一步（NPC）
   stepPair: S('stepPair', 0.45, -16, 'npc', (r) => stepPair(r, r.t0, r.out, 1, 0.08 * jit(r.rng, 0.1), -16), { send: 0.3, tau: 0.06, variants: 4 }),

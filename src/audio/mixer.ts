@@ -3,7 +3,8 @@
 //   self / npc / sfx / ui ──(各自音量 → 门)──────────────────────────┐
 //   follower ── 音量 → 低通 → 回头静音 → 电平 → 门 ─────────────────────┤
 //                              └→ 混响量 → 混响 B                       ├→ master → 压缩(−14 dB, 4:1, 3 ms, 250 ms)
-//   ambience / floor ──(环境音量 → 门)──────────────────────────────────┤        → 限幅(−9 dB, 20:1, 1 ms) → destination
+//   ambience / floor ──(环境音量 → 门)──────────────────────────────────┤        → 限幅(−9 dB, 20:1, 1 ms)
+//                                                                             → 软削波保险（WaveShaper，≤ −8.1 dBFS）→ destination
 //   混响 A（self / sfx / ui 的发送）、混响 B（follower / npc 的发送）──门──┘
 //
 // 门（Gate）：每条总线一个 GainNode，按「若干个带起止时间的门」的乘积排程（静音段、安静的一秒、失败、回头、玻璃触碰、界面）。
@@ -87,6 +88,28 @@ export class Gate {
   }
 }
 
+/** 全作峰值上限（附录 A-2、LIMITS.peakDbfs = −8）留 0.1 dB 余量。 */
+export const CEIL_DB = -8.1;
+/** 软削波的拐点：这以下完全线性。 */
+export const KNEE_DB = -9.5;
+
+/**
+ * 最后一道保险：WaveShaperNode（原生节点）的静态曲线。|x| ≤ 拐点时 y = x（分段线性插值对直线是精确的，不染色）；
+ * 以上用 tanh 软拐点逼近上限，输入再大（WaveShaper 把输入截在 ±1）输出也不会超过 CEIL_DB。
+ * 限幅器是 1 ms 起音的压缩器：Chromium 有 6 ms 前瞻，大多数瞬态它自己就接住了；没有前瞻的实现（或者极端叠加）
+ * 会漏过第一毫秒，这道曲线保证「全作任何声音的峰值 ≤ −8 dBFS」不依赖压缩器的实现细节。
+ */
+export function safetyCurve(n = 8193, kneeDb = KNEE_DB, ceilDb = CEIL_DB): Float32Array<ArrayBuffer> {
+  const T = Math.pow(10, kneeDb / 20), C = Math.pow(10, ceilDb / 20), w = C - T;
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (2 * i) / (n - 1) - 1;
+    const a = Math.abs(x);
+    c[i] = Math.sign(x) * (a <= T ? a : T + w * Math.tanh((a - T) / w));
+  }
+  return c;
+}
+
 /** 音量设置（0–100）→ 线性增益：(v/100)^1.5（50 ≈ −9 dB）。 */
 export function volumeGain(v: number): number {
   const x = Math.max(0, Math.min(100, v)) / 100;
@@ -155,6 +178,8 @@ export class Mixer {
   readonly compFix: GainNode;
   readonly limiter: DynamicsCompressorNode;
   readonly limFix: GainNode;
+  /** 软削波保险（见 safetyCurve）。 */
+  readonly clip: WaveShaperNode;
   readonly revA: ReverbGroup;
   readonly revB: ReverbGroup;
   readonly rainIn: GainNode;
@@ -179,8 +204,11 @@ export class Mixer {
     this.limiter.threshold.value = -9; this.limiter.ratio.value = 20; this.limiter.knee.value = 0;
     this.limiter.attack.value = 0.001; this.limiter.release.value = 0.25;
     this.limFix = gain(ctx, Math.pow(10, -this.makeupDb.limiter / 20));
+    this.clip = ctx.createWaveShaper();
+    this.clip.curve = safetyCurve();
+    this.clip.oversample = 'none';
     this.master.connect(this.comp); this.comp.connect(this.compFix); this.compFix.connect(this.limiter);
-    this.limiter.connect(this.limFix); this.limFix.connect(dest);
+    this.limiter.connect(this.limFix); this.limFix.connect(this.clip); this.clip.connect(dest);
 
     this.revA = new ReverbGroup(ctx);
     this.revB = new ReverbGroup(ctx);

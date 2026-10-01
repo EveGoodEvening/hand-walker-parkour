@@ -44,9 +44,11 @@ export function createAudio(mute: boolean, g: AudioGlobals = globalThis as unkno
   return engine;
 }
 
-registerAudio((_bus, _settings, mute) => {
+registerAudio((bus, _settings, mute) => {
   const a = createAudio(mute);
   audioRef.current = a;
+  // Game 的屏幕切换只发到 EventBus（不经过 AudioAPI.onEvent）：界面音和结尾卡的静音要靠它
+  bus.on('screen', (d) => { if (audioRef.current === a) a.onScreen(d.name); });
   return a;
 });
 registerCueHandler('bell', 'WP7', (b, c) => audioRef.current?.onBell(b.kind, c.snap));

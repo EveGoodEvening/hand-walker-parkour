@@ -1,5 +1,5 @@
 // src/audio/graph.ts —— 搭建 WebAudio 节点的小工具（DESIGN.md §6）。WP7。
-// 只用原生节点（BufferSource、Oscillator、BiquadFilter、Gain、StereoPanner、Convolver、DynamicsCompressor），
+// 只用原生节点（BufferSource、Oscillator、BiquadFilter、Gain、StereoPanner、Convolver、DynamicsCompressor、WaveShaper），
 // 不用 ScriptProcessor / AudioWorklet（§8.10 WP7 验收 7）。所有配方既能在实时 AudioContext 上搭，也能在 OfflineAudioContext 上搭。
 import { brownNoise, makeLoopable, mulberry32, pinkNoise, qDb, whiteNoise, type BiquadType } from './dsp';
 

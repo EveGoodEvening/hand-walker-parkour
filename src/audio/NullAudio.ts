@@ -12,6 +12,8 @@ export interface AudioImpl extends AudioAPI {
   onSfx(sfx: SfxId, pan: number | undefined, gain: number | undefined, snap: SimSnapshot): void;
   onAmbience(amb: AmbienceId, level: number, seconds: number, snap: SimSnapshot): void;
   onSilence(seconds: number, snap: SimSnapshot): void;
+  /** 屏幕切换（Game 只发到 EventBus，index.ts 订阅后转过来）。 */
+  onScreen(name: string): void;
   /** 调试信息（__game.ext.audio）。 */
   stats(): Record<string, unknown>;
 }
@@ -44,5 +46,6 @@ export class NullAudio implements AudioImpl {
   onSfx(sfx: SfxId): void { this.log.record(`sfx:${sfx}`); }
   onAmbience(amb: AmbienceId): void { this.log.record(`ambience:${amb}`); }
   onSilence(seconds: number): void { this.log.record(`silence:${seconds}`); }
+  onScreen(_name: string): void { /* 静音：没有界面音 */ }
   stats(): Record<string, unknown> { return { enabled: false, context: false }; }
 }

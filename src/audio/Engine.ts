@@ -39,6 +39,8 @@ export interface EngineDeps {
   chapter?: (id: ChapterId) => ChapterDef | null;
   kitLookup?: KitLookup;
   perfNow?: () => number;
+  /** 已经渲染好的库（同一采样率）：跳过预渲染。测试里多个引擎共用一份；将来重建 AudioContext 时也可复用。 */
+  preload?: { palms: Map<string, AudioBuffer[]>; sfx: Map<string, AudioBuffer[]> };
 }
 
 const HUSH_BUSES: readonly GateBus[] = ['follower', 'npc', 'ambience', 'floor', 'revB'];
@@ -46,6 +48,10 @@ const SILENCE_BUSES: readonly GateBus[] = ['ambience', 'floor', 'npc', 'follower
 const FAIL_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'sfx', 'ui', 'revA', 'revB'];
 const GLASS_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'ambience', 'floor', 'ui', 'revB'];
 const MENU_SCREENS = new Set(['title', 'chapters', 'settings', 'notes', 'pause', 'outro', 'credits', 'fail']);
+/** 静音段的门：时间常数 35 ms，0.3 s 时已低于 −70 dB（验收 4 要求 ≤ −60 dB）。 */
+const HUSH_TAU = 0.035;
+/** 一次性的门（重来、换章时清掉）。 */
+const TRANSIENT_GATES = ['silence', 'quiet', 'glass'] as const;
 
 interface PlayOpts { key: string; bus: BusId; at: number; gainDb: number; peakDb: number; pan?: number; send?: number; tau: number; prio: number; rate?: number; dest?: AudioNode }
 
@@ -59,7 +65,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   ready: Promise<void> = Promise.resolve();
   libraryReady = false;
   /** 最近排程的一次性声音（测试与调试用，环形 512）。 */
-  readonly scheduled: Array<{ key: string; at: number; bus: BusId; gainDb: number; pan: number }> = [];
+  readonly scheduled: Array<{ key: string; at: number; bus: BusId; gainDb: number; pan: number; buf: AudioBuffer | null }> = [];
   screen = 'boot';
 
   private noise: NoiseBank | null = null;
@@ -94,6 +100,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   private width = { from: 0, to: 0, t0: 0 };
   private skipKnuckleUntil = -1;
   private crispUntil: Record<Hand, number> = { L: -1, R: -1 };
+  private palmJitter: Record<Hand, number> = { L: 0, R: 0 };
   private lastVariant = new Map<string, number>();
   private lastSnap: SimSnapshot | null = null;
   private lastTick = 0;
@@ -147,6 +154,8 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     const t0 = this.perf();
     try {
       this.lastSnap = snap;
+      // 离线（测试）：「现在」由模拟时间反推，第一帧就对齐时钟——否则没有触地声的场景（只有环境音）永远停在 0
+      if (this.deps.offline && this.ctx && this.clock.offset === null) this.clock.toAudio(snap.t, 0);
       this.observe(snap);
       if (this.ctx && this.mixer) {
         if (this.pendingAmb) this.flushPendingAmb(snap);
@@ -270,7 +279,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     this.mixer.setReverb(this.place?.reverb ?? 'corridor', now, 0);
     if (this.place) this.mixer.setRainExposure(this.place.rain, now);
     this.mixer.setFollower(this.folMix, now, 0);
-    if (this.hush) for (const b of HUSH_BUSES) this.mixer.gate(b).set('hush', 0, now, Infinity, 0.04, 0.3, now);
+    if (this.hush) for (const b of HUSH_BUSES) this.mixer.gate(b).set('hush', 0, now, Infinity, HUSH_TAU, 0.3, now);
     if (this.failing) this.applyFail(true, now);
     this.setAmbience(this.wantAmb.amb, this.wantAmb.level, 1.2, now);
     if (this.wantRain > 0) this.setRain(this.wantRain, 1.2, now);
@@ -281,6 +290,12 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     const ctx = this.ctx as BaseAudioContext;
     const mk = this.deps.makeOffline;
     try { await (this.mixer as Mixer).calibrate(mk); } catch (err) { this.error(err); }
+    if (this.deps.preload) {
+      this.palms = this.deps.preload.palms;
+      this.sfxLib = this.deps.preload.sfx;
+      this.libraryReady = true;
+      return;
+    }
     try {
       const palms = allPalmKeys().map((k) => this.recipe(palmKeyString(k), () => palmRecipe(k))).filter((r): r is OneShot => !!r);
       this.palms = (await renderOneShots(ctx, mk, palms, { seed: this.seed, batchSec: 12 })).buffers;
@@ -317,11 +332,13 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     switch (e.type) {
       case 'chapter:start':
         this.jump = true; this.segIndex = -1; this.skipKnuckleUntil = -1; this.crispUntil = { L: -1, R: -1 };
+        this.clock.reset();                       // 模拟时间从 0 重新开始
         this.setFail(false, snap);
+        this.clearTransient();
         if (e.data.id === 'ch4' && this.ctx) setTimeout(() => { this.loopBuffer('sparse'); this.loopBuffer('dense'); this.loopBuffer('aligned'); }, 0);
         return;
       case 'segment': this.onSegment(e.data, snap); return;
-      case 'retry': this.setFail(false, snap); return;
+      case 'retry': this.setFail(false, snap); this.clearTransient(); this.skipKnuckleUntil = -1; return;
       case 'screen': this.onScreen(e.data.name); return;
       default: break;
     }
@@ -368,7 +385,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
       if (this.mixer) {
         const now = this.now(), at = this.clock.peek(snap.t, now);
         for (const b of HUSH_BUSES) {
-          if (snap.hush) this.mixer.gate(b).set('hush', 0, at, Infinity, 0.04, 0.3, now);
+          if (snap.hush) this.mixer.gate(b).set('hush', 0, at, Infinity, HUSH_TAU, 0.3, now);
           else this.mixer.gate(b).clear('hush', at, 0.3, now);
         }
       }
@@ -389,7 +406,21 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     return w.from + (w.to - w.from) * x;
   }
 
-  private onScreen(name: string): void {
+  /** 重来 / 换章：清掉还没结束的一次性门（静默、安静的一秒、玻璃触碰）和回头静音。 */
+  private clearTransient(): void {
+    if (!this.mixer) return;
+    const now = this.now();
+    for (const b of ['ambience', 'floor', 'npc', 'follower', 'revB', 'self', 'ui'] as const) {
+      for (const id of TRANSIENT_GATES) if (this.mixer.gate(b).has(id)) this.mixer.gate(b).clear(id, now, 0.1, now);
+    }
+    if (this.mixer.followerMute.has('look')) this.mixer.followerMute.clear('look', now, 0.1, now);
+  }
+
+  /**
+   * 屏幕切换。Game 只把 'screen' 发到 EventBus，不经过 AudioAPI.onEvent，所以 index.ts 订阅总线后调用这里。
+   * 结尾卡和演职卡：所有声音 0.4 s 淡出（底噪也停）；菜单类屏幕：允许界面音。
+   */
+  onScreen(name: string): void {
     this.screen = name;
     const quiet = name === 'outro' || name === 'credits';
     if (quiet === this.screenQuiet) return;
@@ -397,7 +428,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     if (!this.mixer) return;
     const now = this.now();
     for (const b of ['self', 'follower', 'npc', 'sfx', 'ambience', 'floor', 'revA', 'revB'] as const) {
-      if (quiet) this.mixer.gate(b).set('screen', 0, now, Infinity, 0.4, 0.3, now);
+      if (quiet) this.mixer.gate(b).set('screen', 0, now, Infinity, 0.25, 0.3, now);   // 约 1.5 s 内淡到听不见
       else this.mixer.gate(b).clear('screen', now, 0.3, now);
     }
   }
@@ -532,9 +563,14 @@ export class AudioEngine implements AudioImpl, AudioAPI {
 
   private onContact(c: GameEvents['contact']): void {
     const part = c.part;
+    if (part === 'heel') {
+      // 一掌的随机化在掌根时抽一次，同一掌的指节、指腹沿用：时间 ±4 ms 整体平移，三段之间的 26 / 52 ms 间隔保持精确
+      // （「掌根，指节，指腹——依次」是这个声音的骨架）。干脆时严格对齐。
+      this.crispUntil[c.hand] = c.crisp ? c.t + 0.1 : -1;
+      this.palmJitter[c.hand] = c.crisp ? 0 : rr(this.rng, -0.004, 0.004);
+    }
     if (part === 'knuckle' && this.skipKnuckleUntil >= 0 && c.t <= this.skipKnuckleUntil) { this.skipKnuckleUntil = -1; return; }   // 绊：缺指节
     if (!partsOf(c.surface).includes(part)) return;
-    if (part === 'heel') this.crispUntil[c.hand] = c.crisp ? c.t + 0.1 : -1;
     const crisp = c.t <= this.crispUntil[c.hand];
     const heavy = c.heavy;
     const k: PalmKey = { voice: 'self', surface: c.surface, part, heavy: heavy && part === 'heel' };
@@ -544,7 +580,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     if (crisp && part === 'pad') gainDb += 2;                    // 干脆：指腹 +2 dB
     if (heavy) gainDb += part === 'heel' ? 2 : 3;                // 撑跃落地：整体加重
     gainDb = Math.min(gainDb, -9 - r.peakDb);                    // 单个声部永远不超过 −9 dBFS
-    const dt = crisp ? 0 : rr(this.rng, -0.004, 0.004);          // 时间 ±4 ms；干脆时严格对齐
+    const dt = crisp ? 0 : this.palmJitter[c.hand];
     const pan = (c.hand === 'L' ? -0.2 : 0.2) + rr(this.rng, -0.03, 0.03);
     this.palm(k, this.at(c.t) + dt, { bus: 'self', gainDb, pan, send: r.send });
   }
@@ -676,7 +712,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     }
     src.start(at);
     this.voices.add({ src, g, start: at, end: at + buf.duration / rate, peak: dbToGain(o.peakDb + o.gainDb), tau: o.tau, prio: o.prio });
-    this.logScheduled(o, at);
+    this.logScheduled(o, at, buf);
     return true;
   }
 
@@ -692,11 +728,11 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     if (o.pan) { const p = ctx.createStereoPanner(); p.pan.value = o.pan; g.connect(p); p.connect(dest); } else g.connect(dest);
     r.build({ ctx, out: g, t0: at, rng: this.rng, noise: this.noise as NoiseBank });
     this.voices.add({ src: null, g, start: at, end: at + r.dur, peak: dbToGain(o.peakDb + o.gainDb - 6), tau: o.tau, prio: o.prio });
-    this.logScheduled(o, at);
+    this.logScheduled(o, at, null);
   }
 
-  private logScheduled(o: PlayOpts, at: number): void {
-    this.scheduled.push({ key: o.key, at, bus: o.bus, gainDb: o.gainDb, pan: o.pan ?? 0 });
+  private logScheduled(o: PlayOpts, at: number, buf: AudioBuffer | null): void {
+    this.scheduled.push({ key: o.key, at, bus: o.bus, gainDb: o.gainDb, pan: o.pan ?? 0, buf });
     if (this.scheduled.length > 512) this.scheduled.splice(0, this.scheduled.length - 512);
   }
 

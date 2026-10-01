@@ -36,22 +36,20 @@ export class VoicePool {
 
   /**
    * 为一个 at 时刻开始、优先级 prio 的新声音腾出位置。返回 false 表示放弃这个新声音。
-   * 同一时刻（at）仍在响的声部数才是上限要管的；已经在 at 之前播完的声部不占位置。
+   * 「busy」= 在 at 之后还会响的全部声部（包括排在 at 之后才开始的），是新声音整个生命期里任何时刻在响的声部的超集。
+   * 把它压到上限以下再加入新声音，任何时刻同时发声都 ≤ 上限。事件不总是按时间顺序到达（触地抖动 ±4 ms、
+   * 环境颗粒提前 0.35 s 排程），所以可能要连抢好几个；抢不够就放弃新声音（不先抢一半）。
    */
   admit(now: number, at: number, prio: number): boolean {
     this.prune(now);
     const busy = this.list.filter((v) => v.end > at);
-    if (busy.length < this.max) return true;
+    const need = busy.length - this.max + 1;
+    if (need <= 0) return true;
     if (prio <= 0) { this.dropped++; return false; }
-    let victim: Voice | null = null;
-    let best = Infinity;
-    for (const v of busy) {
-      if (v.prio > prio) continue;
-      const l = VoicePool.level(v, at) * (v.prio === 0 ? 0.1 : 1);
-      if (l < best) { best = l; victim = v; }
-    }
-    if (!victim) { this.dropped++; return false; }
-    this.steal(victim, now, at);
+    const cands = busy.filter((v) => v.prio <= prio);
+    if (cands.length < need) { this.dropped++; return false; }
+    cands.sort((a, b) => VoicePool.level(a, at) * (a.prio === 0 ? 0.1 : 1) - VoicePool.level(b, at) * (b.prio === 0 ? 0.1 : 1));
+    for (let i = 0; i < need; i++) this.steal(cands[i] as Voice, now, at);
     return true;
   }
 
