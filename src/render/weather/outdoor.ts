@@ -51,13 +51,19 @@ export function atmosphereAt(ch: CompiledChapter | null, segIndex: number, segBe
   return a;
 }
 
-/** 这一段里出现过的全部氛围（段首 + 段中途的 cue），读章时据此预建天空纹理。 */
+/**
+ * 这一段里出现过的全部氛围（段首 + 段中途的 cue，含 stop / slow 的时间线和站立段 / 静场「按完之后」的 input.onDone），
+ * 读章时据此预建天空纹理（游戏过程中不建纹理）。
+ */
 export function atmospheresIn(seg: CompiledSegment): AtmosphereId[] {
   const out = new Set<AtmosphereId>([seg.def.atmosphere]);
-  for (const e of seg.events as ReadonlyArray<AtmoCueRef>) {
-    if (e.body.type === 'atmosphere' && e.body.id) out.add(e.body.id as AtmosphereId);
-    for (const t of e.body.timeline ?? []) if (t.type === 'atmosphere' && t.id) out.add(t.id as AtmosphereId);
-  }
+  const add = (b: AtmoCueRef['body']) => {
+    if (b.type === 'atmosphere' && b.id) out.add(b.id as AtmosphereId);
+    for (const t of b.timeline ?? []) if (t.type === 'atmosphere' && t.id) out.add(t.id as AtmosphereId);
+  };
+  for (const e of seg.events as ReadonlyArray<AtmoCueRef>) add(e.body);
+  const onDone = (seg.def as { input?: { onDone?: ReadonlyArray<AtmoCueRef['body']> } }).input?.onDone ?? [];
+  for (const e of onDone) add(e);
   return [...out];
 }
 

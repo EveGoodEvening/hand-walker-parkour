@@ -12,7 +12,7 @@ import {
   ambienceSpan, barrierS, gateSpan, graffitiCenter, obstacleSpan, shedSpan, streetKit,
 } from '../../../src/render/kits/outside/street';
 import { TRACK_LINES } from '../../../src/render/kits/outside/track';
-import { TIERS, chunkContexts, mirror, obstacle, segment, vertexColors } from './helpers';
+import { TIERS, chunkContexts, kitAtmosphere, mirror, obstacle, screenColors, segment, vertexColors } from './helpers';
 
 const TRI_MAX = { low: 6000, medium: 9000, high: 12000 } as const;
 
@@ -102,6 +102,12 @@ describe('确定性与 chunk 独立', () => {
   });
 });
 
+/** 一个 chunk 在画面上的全部颜色（floor / static 按 Lambert 受光，emissive 按 Basic；§5.1 是画面上的颜色）。 */
+function onScreen(kit: KitId, variant: string, chunk: KitChunk): number[] {
+  const a = kitAtmosphere(kit, variant);
+  return [...screenColors(chunk.floor, a, 'lambert'), ...screenColors(chunk.static, a, 'lambert'), ...screenColors(chunk.emissive, a, 'basic')];
+}
+
 describe('色彩克制（附录 A-9、§5.1）', () => {
   const allowedWarm = (hex: number, extra: number[]) => {
     const h = hsv(hex).h;
@@ -119,22 +125,24 @@ describe('色彩克制（附录 A-9、§5.1）', () => {
     expect(redIn('compound')).toBe(true);
     for (const v of ['schoolGate', 'alley', 'shopStreet', 'dawn']) expect(redIn(v)).toBe(false);
   });
-  it('第五章清晨（dawn）没有任何暖色：栏杆灯不亮、路灯是冷白', () => {
-    for (const tier of TIERS) for (const { chunk } of buildAll('street', 'dawn', tier)) for (const g of [chunk.floor, chunk.static, chunk.emissive]) {
-      for (const c of vertexColors(g)) expect(isWarm(c), c.toString(16)).toBe(false);
+  it('第五章清晨（dawn）在画面上没有任何暖色：栏杆灯不亮、路灯是冷白', () => {
+    for (const tier of TIERS) for (const { chunk } of buildAll('street', 'dawn', tier)) {
+      for (const c of onScreen('street', 'dawn', chunk)) expect(isWarm(c), c.toString(16)).toBe(false);
     }
   });
-  it('梦中广场：发白、几乎没有颜色（饱和度 < 0.12；段尾的水是 §5.1 的冷灰蓝 #5D6B73，饱和度 < 0.22）', () => {
-    for (const v of ['bright', 'gray']) for (const { chunk } of buildAll('plaza', v, 'high')) for (const g of [chunk.floor, chunk.static, chunk.emissive]) {
-      for (const c of vertexColors(g)) {
+  it('梦中广场在画面上发白、几乎没有颜色（饱和度 < 0.12，人群也是；段尾的水是 §5.1 的冷灰蓝 #5D6B73，饱和度 < 0.22）', () => {
+    for (const v of ['bright', 'gray']) for (const { chunk } of buildAll('plaza', v, 'high')) {
+      for (const c of onScreen('plaza', v, chunk)) {
         const { h, s } = hsv(c);
         expect(s < 0.12 || (s < 0.22 && h > 180 && h < 240), c.toString(16)).toBe(true);
       }
     }
   });
-  it('操场：唯一的暖色是跑道本身（§5.1 跑道色）', () => {
-    for (const { chunk } of buildAll('track', 'default', 'medium')) for (const g of [chunk.floor, chunk.static, chunk.emissive]) {
-      for (const c of vertexColors(g)) if (isWarm(c)) expect(Math.abs(hsv(c).h - hsv(C.track).h)).toBeLessThan(10);
+  it('操场在画面上唯一的暖色是跑道本身（§5.1 跑道色），而且不比色板更饱和', () => {
+    for (const { chunk } of buildAll('track', 'default', 'medium')) for (const c of onScreen('track', 'default', chunk)) {
+      if (!isWarm(c)) continue;
+      expect(Math.abs(hsv(c).h - hsv(C.track).h)).toBeLessThan(10);
+      expect(hsv(c).s).toBeLessThanOrEqual(0.5);
     }
   });
 });

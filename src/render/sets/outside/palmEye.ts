@@ -9,6 +9,7 @@ import type { StillSet, ViewContext } from '../../../core/contracts';
 import { registerSet } from '../../../core/registry';
 import { C, shade } from '../../kits/outside/lib/colors';
 import { OGeo, TexGeo } from '../../kits/outside/lib/geo';
+import { Tone } from '../../kits/outside/lib/tone';
 import { liveList } from './lib/live';
 import { SetBuild } from './lib/setkit';
 
@@ -31,6 +32,9 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   const f = new OGeo();
   f.flat(0, -60, 60, 3, -80, C.plaza, true);
   for (let z = 0; z > -30; z -= 1.4) f.flat(0.001, -30, 30, z, z - 0.02, C.plazaSeam, true);
+  // §5.1 是画面上的颜色：按 dream 的光反推反照率（与 plaza kit 的地面一样亮，见 kits/outside/lib/tone.ts）
+  const tone = Tone.of('dream');
+  tone.applyArrays(f.col, f.nor, f.pos, 'floor');
   b.lambert(f, 'plaza');
   // 手：四指、拇指、手腕、袖口（校服），掌心留给纹理
   const h = new OGeo();
@@ -50,10 +54,14 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   h.wallZ(PZ - 0.004, PX - 0.075, PX + 0.08, PY - PH - 0.07, PY - PH + 0.005, shade(skin, 0.95), 1);
   h.face([PX - 0.09, PY - PH - 0.06, PZ - 0.004], [PX + 0.095, PY - PH - 0.06, PZ - 0.004], [PX + 0.13, PY - PH - 0.4, PZ + 0.1], [PX - 0.06, PY - PH - 0.42, PZ + 0.1], C.uniform, [0, 0, 1]);
   h.face([PX - 0.09, PY - PH - 0.055, PZ - 0.003], [PX + 0.095, PY - PH - 0.055, PZ - 0.003], [PX + 0.097, PY - PH - 0.075, PZ + 0.0], [PX - 0.092, PY - PH - 0.075, PZ + 0.0], C.white, [0, 0, 1]);
+  // 手是一块正对镜头的平面：每个面都补到色板色（皮肤 #C9B8A6）
+  tone.applyArrays(h.col, h.nor, h.pos, 'exact');
   b.lambert(h, 'hand');
-  // 掌心（纹理：4 帧横排）
+  // 掌心（纹理：4 帧横排）；纹理的主色是皮肤，顶点色乘上同样的补偿倍数，掌心与手指一样亮
   const tg = new TexGeo();
   tg.quad([PX - PW, PY - PH, PZ], [PX + PW, PY - PH, PZ], [PX + PW, PY + PH, PZ], [PX - PW, PY + PH, PZ], [0, 0], [0.25, 0], [0.25, 1], [0, 1]);
+  const k = tone.factor(C.skin, [0, 0, 1]);
+  for (let i = 0; i < tg.col.length; i += 3) { tg.col[i] = (tg.col[i] as number) * k[0]; tg.col[i + 1] = (tg.col[i + 1] as number) * k[1]; tg.col[i + 2] = (tg.col[i + 2] as number) * k[2]; }
   const palm = b.textured(tg, 'palmEye', {}, 'palm');
   const uv = palm.geometry.getAttribute('uv') as THREE.BufferAttribute;
   const base = new Float32Array(uv.array as Float32Array);

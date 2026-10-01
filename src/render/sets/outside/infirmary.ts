@@ -11,21 +11,39 @@ import { liveList } from './lib/live';
 import { SetBuild, roomShell } from './lib/setkit';
 
 const X0 = -2.4, X1 = 2.4, Z0 = -3.6, Z1 = 2.4, H = 2.8;
+/** 房间的天花板范围 [x0, x1, z0, z1]（单元测试用）。 */
+export const INFIRMARY_ROOM: readonly [number, number, number, number] = [X0, X1, Z0, Z1];
+/**
+ * 5-10 的天花板：贴图铺满整个天花板（UV 在 [0, 1] 里），手形裂缝在贴图里按 (sx, sy) 缩到中间：
+ * 手宽约 1.9 m、从手腕（z ≈ −2.3）到中指尖（z ≈ 0.8），正对躺着的人；四周是没有裂缝的灰泥。
+ */
+export const INFIRMARY_CRACK = { shape: 'hand', sx: 2 / 3, sy: 0.625 } as const;
+/** 5-10 天花板上两根日光灯管的中心 (x, z)：放在手的两侧，不压在任何一根手指上。 */
+export const INFIRMARY_CEILING_TUBES: ReadonlyArray<readonly [number, number]> = [[1.65, -0.9], [-1.65, 1.1]];
 
 interface Bed { cx: number; z0: number; z1: number; top: number; pillowZ: number; dent: [number, number] | null }
 const BEDS: Record<'bed' | 'ceiling', Bed> = {
-  bed: { cx: -0.9, z0: -2.7, z1: -0.7, top: 0.6, pillowZ: -2.42, dent: [-0.62, -2.12] },
+  bed: { cx: -0.9, z0: -2.7, z1: -0.7, top: 0.6, pillowZ: -2.42, dent: [-0.6, -2.04] },
   ceiling: { cx: 0, z0: -1.2, z1: 0.8, top: 0.6, pillowZ: -0.95, dent: null },
 };
 
-/** 床单高度：平铺，两侧垂下；枕边的凹陷（高斯，深 4 cm）。 */
+/**
+ * 枕边凹陷的形状（0..1）：一个人坐过的大小（约 40 cm × 45 cm），中心在靠镜头一侧的床沿内、枕头下方。
+ * 5-9 的机位离床 3 m 多，凹陷太小在 640×360 里只有十几个像素，看不出来。
+ */
+export function dentShape(bed: Bed, x: number, z: number): number {
+  if (!bed.dent) return 0;
+  return Math.exp(-((x - bed.dent[0]) ** 2) / 0.045 - ((z - bed.dent[1]) ** 2) / 0.06);
+}
+/** 床单高度：平铺，两侧垂下；枕边的凹陷（高斯，深 6 cm）。 */
 export function sheetHeight(bed: Bed, x: number, z: number): number {
   let y = bed.top + 0.03;
   const ax = Math.abs(x - bed.cx);
   if (ax > 0.42) y -= (ax - 0.42) * 2.4;
-  if (bed.dent) y -= 0.04 * Math.exp(-((x - bed.dent[0]) ** 2) / 0.02 - ((z - bed.dent[1]) ** 2) / 0.03);
+  y -= 0.06 * dentShape(bed, x, z);
   return y;
 }
+export const INFIRMARY_BED: Readonly<Bed> = BEDS.bed;
 
 function build(ctx: ViewContext, variant: string): THREE.Object3D {
   const v = variant === 'ceiling' ? 'ceiling' : 'bed';
@@ -60,7 +78,7 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   b.lambert(g, 'room');
   // 发光：日光灯；窗（操场的白光，下沿一线跑道和草）
   const e = new OGeo();
-  const tubes: Array<[number, number]> = v === 'ceiling' ? [[0.9, -0.8], [-0.9, 1.2]] : [[0.3, -1.2], [0.3, 1.0]];
+  const tubes: ReadonlyArray<readonly [number, number]> = v === 'ceiling' ? INFIRMARY_CEILING_TUBES : [[0.3, -1.2], [0.3, 1.0]];
   for (const [x, z] of tubes) {
     e.box([x, H - 0.04, z], [0.12, 0.03, 1.2], C.tube, { faces: '-y+x-x' });
     e.box([x, H - 0.015, z], [0.2, 0.03, 1.3], 0xc9cfd2, { faces: '-y' });
@@ -69,30 +87,32 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
     e.wallZ(Z0 + 0.015, -0.2, 1.6, 1.62, 2.2, C.windowLightTop, 1);
     e.wallZ(Z0 + 0.015, -0.2, 1.6, 1.12, 1.62, C.windowLight, 1);
     // 窗外远处的跑道和草：隔着玻璃、阴天，颜色淡下去（第五章不要跳出来的暖色）
-    e.wallZ(Z0 + 0.016, -0.2, 1.6, 1.12, 1.2, mix(C.track, C.windowLight, 0.45), 1);
+    e.wallZ(Z0 + 0.016, -0.2, 1.6, 1.12, 1.2, mix(C.track, C.windowLight, 0.55), 1);
     e.wallZ(Z0 + 0.016, -0.2, 1.6, 1.0, 1.12, mix(C.grass, C.windowLight, 0.3), 1);
   }
   b.emissive(e);
   // 床单（可变形网格，带枕边的凹陷）
   const grid = heightGrid(bed.cx - 0.55, bed.cx + 0.55, bed.z0 + 0.05, bed.z1 + 0.05, ctx.quality.tier === 'low' ? 10 : 20, ctx.quality.tier === 'low' ? 16 : 32, 0.8,
     (x, z) => sheetHeight(bed, x, z));
-  // 凹陷处顶点色压暗一点（平面着色下很浅的凹陷不够显眼）
+  // 凹陷处顶点色压暗（平面着色下很浅的凹陷不够显眼）：中间最暗，靠镜头的半边（褶子朝光）略亮一点
   if (bed.dent) {
     const pos = grid.geometry.getAttribute('position') as THREE.BufferAttribute, col = grid.geometry.getAttribute('color') as THREE.BufferAttribute;
     for (let i = 0; i < pos.count; i++) {
-      const k = Math.exp(-((pos.getX(i) - bed.dent[0]) ** 2) / 0.02 - ((pos.getZ(i) - bed.dent[1]) ** 2) / 0.03);
-      const f = 1 - 0.28 * k;
+      const k = dentShape(bed, pos.getX(i), pos.getZ(i));
+      const rim = Math.max(0, pos.getZ(i) - bed.dent[1]) * 1.2 * k;
+      const f = 1 - 0.5 * k + rim;
       col.setXYZ(i, f, f, f);
     }
     col.needsUpdate = true;
   }
   b.textured(grid.geometry, 'bedSheet', {}, 'sheet', true);
-  // 天花板（ceiling 变体）：手形的裂缝，正对着躺着的人
+  // 天花板（ceiling 变体）：手形的裂缝，正对着躺着的人。贴图铺满整个天花板，UV 在 [0, 1] 里
+  // （超出时 ClampToEdge 会把边缘像素拉成条纹）；u 沿 x、v 沿 z，画布第 0 行在 z = Z1（CanvasTexture 默认 flipY）
   if (v === 'ceiling') {
     const tg = new TexGeo();
-    tg.quad([X0, H, Z1], [X0, H, Z0], [X1, H, Z0], [X1, H, Z1], [-0.25, 1.3], [-0.25, -0.3], [1.25, -0.3], [1.25, 1.3], 0xd4dadc);
+    tg.quad([X0, H, Z1], [X0, H, Z0], [X1, H, Z0], [X1, H, Z1], [0, 1], [0, 0], [1, 0], [1, 1], 0xd4dadc);
     // 日光灯下的天花板：不受半球光（朝下的面只吃地面色），直接给亮度
-    b.texturedBasic(tg, 'ceilingCrack', { shape: 'hand' }, 'ceiling');
+    b.texturedBasic(tg, 'ceilingCrack', INFIRMARY_CRACK, 'ceiling');
   }
   liveList('infirmary').add({ variant: v, root: b.root, update: () => { /* 静止 */ } });
   return b.root;

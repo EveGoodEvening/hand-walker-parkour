@@ -6,7 +6,7 @@ import { getCueHandler } from '../../../src/core/registry';
 import type { CompiledChapter, CompiledSegment, RunSegmentDef } from '../../../src/levels/schema';
 import { hsv, isWarm } from '../../../src/render/kits/outside/lib/colors';
 import { RAIN_COLOR, RAIN_MAX_LINES, RainField, RainLevel, createRainGeometry, rainAt } from '../../../src/render/weather/rain';
-import { Outdoor, atmosphereAt, createSkyGeometry, isOutdoorSegment, skyKindFor, sweepAnchors } from '../../../src/render/weather/outdoor';
+import { Outdoor, atmosphereAt, atmospheresIn, createSkyGeometry, isOutdoorSegment, skyKindFor, sweepAnchors } from '../../../src/render/weather/outdoor';
 import { TIERS, obstacle, segment, snapshot, viewContext } from './helpers';
 
 function chapterOf(segs: CompiledSegment[]): CompiledChapter {
@@ -205,5 +205,16 @@ describe('天空与栏杆红光', () => {
     expect(sweepAnchors(chapterOf([c]))).toEqual([{ seg: 0, s: 118.04 }]);
     expect(sweepAnchors(chapterOf([d]))).toEqual([]);
     expect(sweepAnchors(chapterOf([noData]))[0]?.s).toBe(118);
+  });
+});
+
+describe('读章时预建天空纹理：本段会用到的全部氛围', () => {
+  it('atmospheresIn 包括段中途的 cue、stop 的时间线和站立段「按完之后」的 input.onDone', () => {
+    const seg = segment({ kit: 'track', variant: 'default', events: [{ at: 4, body: { type: 'atmosphere', id: 'dawn', seconds: 1 } }] });
+    expect(atmospheresIn(seg).sort()).toEqual(['dawn', 'overcast']);
+    const stand = { ...seg, kind: 'stand' as const, def: { id: '5-8', kind: 'stand', kit: 'track', variant: 'default', script: 'sevenSteps', atmosphere: 'overcast',
+      duration: 13, follower: { mode: 'absent' }, events: [],
+      input: { at: 3, hint: 'hint.stand', mode: 'hold', holdSeconds: 3, timeout: 20, onDone: [{ at: 0.5, type: 'atmosphere', id: 'dreamGray', seconds: 2 }] } } } as unknown as CompiledSegment;
+    expect(atmospheresIn({ ...stand, events: [] })).toContain('dreamGray');
   });
 });

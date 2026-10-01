@@ -7,9 +7,10 @@ import { FlatLampField, FlatMaterials, FlatTextureBank } from '../../../src/core
 import { resolveQuality } from '../../../src/core/quality';
 import { createRng } from '../../../src/core/rng';
 import { DEFAULT_SETTINGS } from '../../../src/core/settings';
-import type { KitId, QualityTier, SimSnapshot } from '../../../src/core/types';
+import type { AtmosphereId, KitId, QualityTier, SimSnapshot } from '../../../src/core/types';
 import type { CompiledObstacle, CompiledSegment, CompiledSurface, EventBody, RunSegmentDef } from '../../../src/levels/schema';
 import { OBSTACLES, type ObstacleKind } from '../../../src/levels/obstacles';
+import { presetOf, screenColor, screenColorBasic } from '../../../src/render/kits/outside/lib/tone';
 
 export const TIERS: readonly QualityTier[] = ['low', 'medium', 'high'];
 
@@ -25,13 +26,21 @@ export function mirror(id: string, side: 'L' | 'R', s0: number, s1: number, y: [
   return s;
 }
 
+/** 各户外变体在第三到五章里用的氛围（§4.3–4.5、§5.2）。 */
+export function kitAtmosphere(kit: KitId, variant: string): AtmosphereId {
+  if (kit === 'track') return 'overcast';
+  if (kit === 'plaza') return variant === 'gray' ? 'dreamGray' : 'dream';
+  return variant === 'dawn' ? 'dawn' : 'rainNight';
+}
+
 export interface SegOpts {
-  kit: KitId; variant: string; s0?: number; beats?: number; stride?: number;
+  kit: KitId; variant: string; s0?: number; beats?: number; stride?: number; atmosphere?: AtmosphereId;
   obstacles?: CompiledObstacle[]; surfaces?: CompiledSurface[]; events?: Array<{ at: number; id?: string; body: EventBody }>;
 }
 export function segment(o: SegOpts): CompiledSegment {
   const s0 = o.s0 ?? 100, stride = o.stride ?? 1.1, beats = o.beats ?? 60;
-  const def: RunSegmentDef = { id: `t-${o.kit}-${o.variant}`, kind: 'run', kit: o.kit, variant: o.variant, atmosphere: 'rainNight', surface: 'asphaltWet',
+  const atmosphere = o.atmosphere ?? kitAtmosphere(o.kit, o.variant);
+  const def: RunSegmentDef = { id: `t-${o.kit}-${o.variant}`, kind: 'run', kit: o.kit, variant: o.variant, atmosphere, surface: 'asphaltWet',
     beats, stride, cadence: 5, follower: { mode: 'absent' } };
   return {
     def, index: 0, kind: 'run', s0, s1: s0 + beats * stride, stride,
@@ -98,5 +107,26 @@ export function vertexColors(g: THREE.BufferGeometry | undefined): number[] {
   if (!c) return [];
   const set = new Set<number>();
   for (let i = 0; i < c.count; i++) set.add(linToHex(c.getX(i), c.getY(i), c.getZ(i)));
+  return [...set];
+}
+
+/**
+ * 几何体在画面上的颜色（sRGB 十六进制，去重）：Lambert = 顶点色 × 氛围的半球光 + 平行光（按顶点法线）→ Neutral → sRGB；
+ * basic = 顶点色 → Neutral → sRGB。雾与 LampField 不计（§5.1 的色板就是这个口径）。
+ */
+export function screenColors(g: THREE.BufferGeometry | undefined, atmo: AtmosphereId, kind: 'lambert' | 'basic'): number[] {
+  if (!g) return [];
+  const c = g.getAttribute('color') as THREE.BufferAttribute | undefined, n = g.getAttribute('normal') as THREE.BufferAttribute | undefined;
+  if (!c) return [];
+  const p = presetOf(atmo);
+  const set = new Set<number>();
+  const enc = (v: readonly number[]) => {
+    const f = (x: number) => Math.round(Math.max(0, Math.min(1, x)) * 255);
+    return (f(v[0] as number) << 16) | (f(v[1] as number) << 8) | f(v[2] as number);
+  };
+  for (let i = 0; i < c.count; i++) {
+    const a = [c.getX(i), c.getY(i), c.getZ(i)] as const;
+    set.add(enc(kind === 'basic' || !n ? screenColorBasic(a) : screenColor(a, p, [n.getX(i), n.getY(i), n.getZ(i)])));
+  }
   return [...set];
 }

@@ -18,7 +18,7 @@ import '../../../src/render/kits/outside/track';
 import { gateSpan, shedSpan, graffitiCenter, barrierS } from '../../../src/render/kits/outside/street';
 import { rainAt } from '../../../src/render/weather/rain';
 import { Outdoor, sweepAnchors } from '../../../src/render/weather/outdoor';
-import { snapshot, vertexColors, viewContext } from './helpers';
+import { screenColors, snapshot, vertexColors, viewContext } from './helpers';
 
 const base = { follower: { mode: 'behind' as const }, surface: 'asphaltWet' as const };
 
@@ -76,7 +76,11 @@ function buildChapter(def: ChapterDef) {
       const c = kit.build({ seg, variant: d.variant, s0, s1, stride: seg.stride, floorY: (s) => seg.floorY(s) - seg.floorY(s0),
         openings: surfaces.openingsIn(s0, s1), quality: q, rng: createRng(ch.seed, `chunk:${d.id}:${i}`), mat: new FlatMaterials(), tex: new FlatTextureBank(256) });
       const geos = [c.floor, c.static, c.emissive].filter(Boolean);
-      out.push({ seg: d.id, s0, calls: geos.length, colors: geos.flatMap((g) => vertexColors(g)) });
+      // 第三章（rainNight，暗场景不补偿）看顶点色 = 色板；第四、五章看画面上的颜色（顶点色是补偿过的反照率，见 tone.ts）
+      const dark = d.atmosphere === 'rainNight';
+      const colors = dark ? geos.flatMap((g) => vertexColors(g))
+        : [...screenColors(c.floor, d.atmosphere, 'lambert'), ...screenColors(c.static, d.atmosphere, 'lambert'), ...screenColors(c.emissive, d.atmosphere, 'basic')];
+      out.push({ seg: d.id, s0, calls: geos.length, colors });
     }
   }
   return { ch, out };

@@ -13,7 +13,7 @@ import { vaporAt } from '../../../src/render/sets/outside/bathroom';
 import { blinkFrame } from '../../../src/render/sets/outside/palmEye';
 import { breakProgress, setWaterBreak, WATER_EDGE_Z } from '../../../src/render/sets/outside/water';
 import { BED_LAMP, kneeHeights } from '../../../src/render/sets/outside/bedroom';
-import '../../../src/render/sets/outside/infirmary';
+import { INFIRMARY_BED, INFIRMARY_CEILING_TUBES, INFIRMARY_CRACK, INFIRMARY_ROOM, dentShape, sheetHeight } from '../../../src/render/sets/outside/infirmary';
 import { LIVE_SETS } from '../../../src/render/sets/outside/lib/live';
 import { SetBuild } from '../../../src/render/sets/outside/lib/setkit';
 import { PALM_EYE, PALM_HEAD, PALM_LIFE, genCeilingCrack, palmLifeAt, type Img } from '../../../src/render/textures/outdoor';
@@ -365,6 +365,7 @@ describe('5-1：放松的时刻属于「这一遍」', () => {
 describe('天花板：贴图铺满房间（UV 在 [0, 1] 里），裂缝「从墙角爬到吊灯的位置」', () => {
   const rooms: Array<[SetId, string, [number, number, number, number]]> = [
     ['home', 'default', [-2.7, 2.7, -5.6, 2.6]], ['bedroom', 'feet', [-2.2, 2.2, -3.2, 2.4]], ['bedroom', 'ceiling', [-2.2, 2.2, -3.2, 2.4]],
+    ['infirmary', 'ceiling', [...INFIRMARY_ROOM] as [number, number, number, number]],
   ];
   for (const [id, v, [x0, x1, z0, z1]] of rooms) {
     it(`${id}.${v}`, () => {
@@ -380,6 +381,37 @@ describe('天花板：贴图铺满房间（UV 在 [0, 1] 里），裂缝「从�
       expect(box.min.z).toBeCloseTo(z0); expect(box.max.z).toBeCloseTo(z1);
     });
   }
+  it('5-9 枕边的凹陷（「像有人刚刚坐过」）：深 ≥ 5 cm、宽 ≥ 30 cm，机位离床 3 m 多也看得见；中心在床面上', () => {
+    const b = INFIRMARY_BED, [dx, dz] = b.dent!;
+    expect(sheetHeight(b, b.cx - 0.3, b.z1 - 0.2) - sheetHeight(b, dx, dz)).toBeGreaterThanOrEqual(0.05);
+    let w = 0;
+    for (let x = dx - 0.5; x <= dx + 0.5; x += 0.005) if (dentShape(b, x, dz) > 0.5) w += 0.005;
+    expect(w).toBeGreaterThanOrEqual(0.3);
+    expect(Math.abs(dx - b.cx)).toBeLessThan(0.42);
+    expect(dz).toBeGreaterThan(b.pillowZ + 0.2);              // 在枕头下方，不被枕头挡住
+  });
+  it('5-10 的手形裂缝缩在贴图中间：四周是没有裂缝的灰泥（ClampToEdge 的边缘像素就是灰泥），日光灯管不压在手指上', () => {
+    for (const size of [256, 1024]) {
+      const im: Img = genCeilingCrack(size, INFIRMARY_CRACK);
+      const at = (x: number, y: number) => im.data[(y * im.w + x) * 4] as number;
+      let edge = 255, all = 255;
+      for (let y = 0; y < im.h; y++) for (let x = 0; x < im.w; x++) {
+        all = Math.min(all, at(x, y));
+        if (x < im.w * 0.08 || x >= im.w * 0.92 || y < im.h * 0.06 || y >= im.h * 0.94) edge = Math.min(edge, at(x, y));
+      }
+      expect(all).toBeLessThan(110);            // 裂缝还在
+      expect(edge).toBeGreaterThan(165);        // 四周没有裂缝
+      // 灯管（含灯罩）的投影范围里没有裂缝：u 沿 x，画布第 0 行在 z = Z1
+      const [x0, x1, z0, z1] = INFIRMARY_ROOM;
+      for (const [tx, tz] of INFIRMARY_CEILING_TUBES) {
+        let m = 255;
+        const ua = Math.floor(((tx - 0.25 - x0) / (x1 - x0)) * im.w), ub = Math.ceil(((tx + 0.25 - x0) / (x1 - x0)) * im.w);
+        const ya = Math.floor((1 - (tz + 0.8 - z0) / (z1 - z0)) * im.h), yb = Math.ceil((1 - (tz - 0.8 - z0) / (z1 - z0)) * im.h);
+        for (let y = Math.max(0, ya); y < Math.min(im.h, yb); y++) for (let x = Math.max(0, ua); x < Math.min(im.w, ub); x++) m = Math.min(m, at(x, y));
+        expect(m, `tube ${tx}, ${tz}`).toBeGreaterThan(165);
+      }
+    }
+  });
   it('吊灯正下方的天花板上有裂缝（按纹理像素查）', () => {
     const im: Img = genCeilingCrack(256, { shape: 'river' });
     const dark = (u: number, y: number) => {

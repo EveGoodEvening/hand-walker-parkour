@@ -12,6 +12,7 @@ import { CORRIDOR_WIDTH } from '../../../../core/constants';
 import type { CompiledSurface } from '../../../../levels/schema';
 import { C, mix, shade } from './colors';
 import { OGeo } from './geo';
+import { Tone } from './tone';
 
 /** 开口所在的墙面：x = ±HALF（与 compile.ts 的 HALF_WALL 一致）。 */
 export const HALF = CORRIDOR_WIDTH / 2;
@@ -39,7 +40,12 @@ export class ChunkWork {
     this.s0 = ctx.s0; this.s1 = ctx.s1; this.L = ctx.s1 - ctx.s0;
     this.q = ctx.quality.tier === 'low' ? 0 : ctx.quality.tier === 'medium' ? 1 : 2;
     this.segId = ctx.seg.def.id;
+    // 发光体缺省不跟 LampField 明灭（窗、镜中的雾）；灯头、灯的倒影用 lampLit() 包起来
+    this.emi.steadyValue = 1;
   }
+
+  /** 跟着灯明灭的发光体（灯头、灯的倒影、栏杆灯）：aSteady = 0。 */
+  lampLit(fn: () => void): void { this.emi.withSteady(0, fn); }
 
   /** 世界里程 → 局部 z。 */
   z(s: number): number { return -(s - this.s0); }
@@ -93,9 +99,14 @@ export class ChunkWork {
   }
 
   finish(): KitChunk {
+    // §5.1 的色板是画面上的颜色：按段的氛围把顶点色反推成反照率（暗场景不动，见 tone.ts）
+    const tone = Tone.of(this.ctx.seg.def.atmosphere);
+    tone.applyArrays(this.floor.col, this.floor.nor, this.floor.pos, 'floor');
+    tone.applyArrays(this.stat.col, this.stat.nor, this.stat.pos, 'static');
+    tone.applyArrays(this.emi.col, this.emi.nor, this.emi.pos, 'emissive');
     const f = this.floor.build();
     const s = this.stat.build();
-    const e = this.emi.vertexCount ? this.emi.build() : undefined;
+    const e = this.emi.vertexCount ? this.emi.build({ steady: true }) : undefined;
     this.ctx.mat.ensureChalkAttr(f); this.ctx.mat.ensureChalkAttr(s); if (e) this.ctx.mat.ensureChalkAttr(e);
     return e ? { floor: f, static: s, emissive: e, lamps: this.lamps } : { floor: f, static: s, lamps: this.lamps };
   }

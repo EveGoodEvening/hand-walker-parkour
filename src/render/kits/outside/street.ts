@@ -97,7 +97,26 @@ function paverFloor(w: ChunkWork, xa: number, xb: number, base: number, joint: n
   if (w.q > 0) for (let x = xa + 0.5; x < xb - 0.1; x += 0.5) w.floor.flat(0.001, x - 0.01, x + 0.01, w.z(sa), w.z(sb), joint);
 }
 
-/** 湿柏油：大块深浅斑 + 裂缝 + 井盖。 */
+/**
+ * 柏油上的视觉节拍（§5.9、§9.5「地缝是视觉节拍」）：每拍一道灌过沥青的横缝，比路面深、比湿斑更湿，
+ * 偶尔断开一小截（不是画上去的线）。只画 [sa, sb]（缺省整个 chunk）。
+ */
+export function asphaltBeatSeams(w: ChunkWork, xa: number, xb: number, color: number, sa = w.s0, sb = w.s1): void {
+  w.grid(w.ctx.stride, 0, (s, k) => {
+    if (s < sa - 1e-6 || s >= sb - 1e-6) return;
+    const rng = keyRng(w.segId, 'seam', k);
+    const z = w.z(s), hw = 0.016 + rng.next() * 0.008, sk = (rng.next() - 0.5) * 0.05;
+    const gap = rng.next() < 0.45 ? xa + 0.3 + rng.next() * (xb - xa - 0.9) : null;
+    const piece = (a: number, b: number) => {
+      if (b - a < 0.05) return;
+      w.floor.face([a, 0.0015, z + hw], [b, 0.0015, z + hw + sk], [b, 0.0015, z - hw + sk], [a, 0.0015, z - hw], color, [0, 1, 0]);
+    };
+    if (gap === null) piece(xa, xb);
+    else { piece(xa, gap); piece(gap + 0.12 + rng.next() * 0.25, xb); }
+  });
+}
+
+/** 湿柏油：大块深浅斑 + 裂缝 + 井盖 + 每拍一道横缝。 */
 function asphaltFloor(w: ChunkWork, xa: number, xb: number, base: number, wet: number): void {
   const rng = keyRng(w.segId, 'asph', Math.round(w.s0 * 10));
   w.floor.flat(0, xa, xb, 0, -w.L, base);
@@ -120,6 +139,8 @@ function asphaltFloor(w: ChunkWork, xa: number, xb: number, base: number, wet: n
       x = nx; s = ns;
     }
   }
+  // 地面层不写深度，后画的盖住先画的：横缝放在湿斑之后，始终看得见
+  asphaltBeatSeams(w, xa, xb, shade(wet, 0.72));
 }
 
 /** 路沿：浅色一条（地面层），外侧是低一点的路面（仍在地面层，不写深度）。 */
@@ -157,6 +178,7 @@ function schoolGate(w: ChunkWork): void {
   }
   if (rOut) {
     w.floor.flat(0, -HALF, 1.9, w.z(rOut[0]), w.z(rOut[1]), C.asphalt);
+    asphaltBeatSeams(w, -HALF, 1.9, shade(C.asphaltWet, 0.72), rOut[0], rOut[1]);
     w.floor.flat(0.001, 1.9, 2.08, w.z(rOut[0]), w.z(rOut[1]), C.curb);
     w.floor.flat(-0.02, 2.08, 11, w.z(rOut[0]), w.z(rOut[1]), C.asphaltWet);
     w.floor.flat(0, -9, -HALF, w.z(rOut[0]), w.z(rOut[1]), C.paver);
@@ -463,7 +485,7 @@ function compoundGate(w: ChunkWork, sBar: number, red: boolean, dawn: boolean): 
     w.stat.box([-2.05, 0.5, z], [0.34, 1.0, 0.3], dawn ? 0x7d878d : 0x55606a);
     w.stat.box([-2.05, 0.75, z + 0.151], [0.3, 0.08, 0.005], dawn ? 0x3e474d : 0x2a3136, { faces: '+z' });
     if (red) {
-      w.emi.box([-2.05, 1.06, z], [0.12, 0.1, 0.12], C.barrierRed, { faces: '+y+x-x+z-z' });
+      w.lampLit(() => w.emi.box([-2.05, 1.06, z], [0.12, 0.1, 0.12], C.barrierRed, { faces: '+y+x-x+z-z' }));
       w.lamp(sBar, -2.05, 1.1, 'bulb', false);
     } else {
       w.stat.box([-2.05, 1.06, z], [0.12, 0.1, 0.12], 0x3a4349, { faces: '+y+x-x+z-z' });
@@ -509,7 +531,7 @@ function compound(w: ChunkWork): void {
     w.stat.wallX(-1.1, z, z - 0.6, 0, 2.3, 0x1c2328, 1);
     w.stat.wallX(1.1, z, z - 0.6, 0, 2.3, 0x1c2328, -1);
     w.stat.box([0, 2.4, z + 0.3], [2.6, 0.08, 0.6], 0x3a444b);
-    w.emi.flat(2.355, -0.25, 0.25, z + 0.2, z + 0.05, 0x9fb2c0, false);
+    w.lampLit(() => w.emi.flat(2.355, -0.25, 0.25, z + 0.2, z + 0.05, 0x9fb2c0, false));
     w.lamp(endS - 0.5, 0, 2.35, 'bulb', true);
   }
   panelsIfAny(w, 'L', 'dark', C.wallNight);

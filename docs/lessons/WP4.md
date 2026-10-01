@@ -28,3 +28,13 @@
 - **ClampToEdge 的贴图 UV 不要超出 [0, 1]**：超出的部分会把边缘像素拉成条纹。天花板贴图铺满整个房间，吊灯按 `riverYAt(u)` 挂在裂缝上（画布第 0 行对应 UV v = 1，CanvasTexture 默认 flipY）。
 - **调试用的 ViewSystem 只在 `urlParams().debugEnabled` 时注册**，画廊也不往真实总线上发伪造的 cue（`setWaterBreak(root, t)` 直接交给 set）。
 - **本机有 heavy-gate**：`npm run verify`（最后一步是 e2e:smoke）、`node scripts/shot.mjs` 都会开浏览器，必须 `~/.claude/bin/heavy-gate -l <标签> -- <命令>` 并在后台运行；`npm test`、`npm run typecheck` 不需要。
+
+## 2026-10-01（WP4 验收第 2 轮修复）
+
+- **§5.1 的色板是画面上的颜色，不是反照率**（与 WP3 的 wallTone.ts 同一口径）：r186 的 Lambert 对半球光、平行光都除以 π，NeutralToneMapping 的 toe 先减去约 0.04，直接把色板当顶点色，阴天的跑道 #7A4B44 在画面上是 (51, 14, 5)、饱和度 0.9。`kits/outside/lib/tone.ts` 按段的氛围（`presetOf(seg.def.atmosphere)`，WP3 注册的正式预设优先）反推线性反照率：`NeutralInverse(lin(色板)) ÷ E_ref`，在 `ChunkWork.finish()` 里统一改写 floor / static / emissive 的顶点色（Float32，可以 > 1）。地面的 E_ref = 朝上的面（半球光 + 平行光）；竖直面的 E_ref = 只有半球光的「背光面」，色板是阴面的颜色，被平行光照到的面、箱顶更亮，没有哪个面比色板更暗、被 toe 压得更饱和（用 ±x/+z 平均时，背光的墙比色板暗一半、饱和度 0.34）。暗场景（`preset.dark`，第三章雨夜）不补偿。
+- **NeutralToneMapping 有解析逆**：newPeak = max(t) → peak = d²/(1 − newPeak) − d + 0.76，撤掉去饱和再按 peak / newPeak 放大，最后按最小通道撤 toe（m' < 0.04 时 x = √(m'/6.25)）。随机颜色的往返误差 1e-9；目标颜色里最暗的通道低于 newPeak·g 时本来就映射不到，测试只用「先正向再逆」的样本。
+- **先在 Node 里对色**：`screenColor(反照率, 预设, 法线)`（Lambert ÷ π → Neutral → sRGB）复现了验收截图的 (51, 14, 5)，改完再上浏览器，截图取色与模拟差 ≤ 1 个色阶。单元测试检查画面上的颜色（`tests/unit/outside/helpers.ts` 的 `screenColors`），不要再检查顶点色：补偿后的反照率在蓝色的天光下会偏暖，按顶点色查暖色会误报。
+- **CORE 的回落氛围把所有平行光都放在 (0.3, −1, −0.55)**，§5.2 的 dream（从身后低角度）和 dawn（从前方）方向不同。补偿在建 chunk 时读当前注册的预设，所以和实际渲染的光一致；只看 CORE 桩下的画廊，清晨朝镜头的面会比 WP3 正式预设下亮（那里朝镜头的面是背光面）。
+- **贴图边缘不能有图案**：r1 的「UV 不超出 [0, 1]」只改了家和卧室，医务室漏了。要让图案只占天花板中间一块时，在生成器里把图案缩到画布中间（`genCeilingCrack` 的 `sx / sy`，线宽和抖动一起缩），四周留没有图案的底；单元测试遍历全部带天花板的 set，并按像素查灯管下面没有裂缝。
+- **发光体要带 aSteady**（WP3 的 kit 约定）：WP3 的 World 给 kit 的发光材质乘 `0.07 + 0.93·G`（灯自身的亮度），没有 aSteady 的整件跟灯走；梦里没有灯，镜中广场雾色的背墙会变成黑的，清晨的亮窗、门卫室的窗会跟着路灯灭。`OGeo.steadyValue` / `withSteady()`，`ChunkWork` 的 emi 缺省 1，灯头、灯的倒影、栏杆灯用 `w.lampLit()` 包成 0，emissive 一律带 aSteady 属性。
+- **地面层的绘制顺序就是覆盖顺序**：每拍一道的柏油横缝要画在湿斑、裂缝之后，否则会被后画的湿斑盖掉（地面不写深度）。

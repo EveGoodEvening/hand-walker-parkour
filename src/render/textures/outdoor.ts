@@ -214,7 +214,6 @@ export function genPlazaTile(size: number, _p: TexParams = {}): Img {
   return im;
 }
 
-/** 天花板上的裂缝。shape = 'river'（从墙角蜿蜒到吊灯，像一条安静的河）或 'hand'（像一只张开的手，五根手指朝着你）。 */
 /** 天花板裂缝「河」的主干（归一化坐标，u 向右，y 向下；u 单调增）：从左上角的墙角爬到右下。 */
 export const RIVER_MAIN: ReadonlyArray<readonly [number, number]> = [[0.02, 0.05], [0.18, 0.2], [0.26, 0.38], [0.44, 0.44], [0.55, 0.6], [0.72, 0.68], [0.9, 0.9]];
 /** 主干在横坐标 u 处的 y（折线插值；摆动 ±0.01 不计）。set 用它把吊灯挂在裂缝上。 */
@@ -228,9 +227,17 @@ export function riverYAt(u: number): number {
   return (m[m.length - 1] as readonly [number, number])[1];
 }
 
+/**
+ * 天花板上的裂缝。shape = 'river'（从墙角蜿蜒到吊灯，像一条安静的河）或 'hand'（像一只张开的手，五根手指朝着你）。
+ * 手形可以用 sx、sy（缺省 1）绕画布中心缩小：贴图铺满整个天花板（UV 在 [0, 1] 里，ClampToEdge 不会拉出边缘条纹），
+ * 手只占中间一块，四周留出没有裂缝的灰泥；线宽和抖动按同样的比例缩，在天花板上的粗细不变。
+ */
 export function genCeilingCrack(size: number, p: TexParams = {}): Img {
   const im = img(size, size);
   const shape = p.shape === 'hand' ? 'hand' : 'river';
+  const sx = shape === 'hand' && typeof p.sx === 'number' && p.sx > 0 ? Math.min(1, p.sx) : 1;
+  const sy = shape === 'hand' && typeof p.sy === 'number' && p.sy > 0 ? Math.min(1, p.sy) : 1;
+  const hs = Math.sqrt(sx * sy);
   const base = rgb(0xb9c0c1), crack = rgb(0x3e4546), halo = rgb(0x8f989a);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const n = (fbm(x / size * 5, y / size * 5, 5, 3) - 0.5) * 10 + (h2(x, y, 2) - 0.5) * 5;
@@ -254,9 +261,10 @@ export function genCeilingCrack(size: number, p: TexParams = {}): Img {
     return out;
   };
   const draw = (pts: Array<[number, number]>, wd: number, seed: number) => {
-    const px = wobble(pts.map(([u, v]) => [u * S, v * S] as [number, number]), S * 0.018, seed);
-    strokePolyline(im, px, wd * S * 2.4, halo, 0.35);
-    strokePolyline(im, px, wd * S, crack, 0.95);
+    const at = (u: number, v: number): [number, number] => [(0.5 + (u - 0.5) * sx) * S, (0.5 + (v - 0.5) * sy) * S];
+    const px = wobble(pts.map(([u, v]) => at(u, v)), S * 0.018 * hs, seed);
+    strokePolyline(im, px, wd * S * 2.4 * hs, halo, 0.35);
+    strokePolyline(im, px, wd * S * hs, crack, 0.95);
   };
   if (shape === 'river') {
     const main = RIVER_MAIN.map(([u, v]) => [u, v] as [number, number]);

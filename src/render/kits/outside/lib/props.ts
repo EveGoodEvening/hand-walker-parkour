@@ -26,8 +26,10 @@ export function streetLamp(w: ChunkWork, s: number, o: LampOpts): void {
   w.stat.segment([o.x, o.h - 0.05, z], [hx, o.h + 0.05, z], 0.06, 0.06, C.pole);
   w.stat.box([hx, o.h + 0.02, z], [0.5, 0.1, 0.24], shade(C.pole, 0.9), { faces: '+y+x-x+z-z' });
   if (o.working) {
-    w.emi.flat(o.h - 0.035, hx - 0.22, hx + 0.22, z + 0.1, z - 0.1, o.head, false);
-    w.emi.wallZ(z + 0.121, hx - 0.22, hx + 0.22, o.h - 0.03, o.h + 0.02, mix(o.head, 0xffffff, 0.15), 1);
+    w.lampLit(() => {
+      w.emi.flat(o.h - 0.035, hx - 0.22, hx + 0.22, z + 0.1, z - 0.1, o.head, false);
+      w.emi.wallZ(z + 0.121, hx - 0.22, hx + 0.22, o.h - 0.03, o.h + 0.02, mix(o.head, 0xffffff, 0.15), 1);
+    });
     w.lamp(s, hx, o.h - 0.05, 'street', o.flicker);
     if (o.reflect) lampReflection(w, s, hx, o.head);
   } else {
@@ -50,7 +52,7 @@ export function lampReflection(w: ChunkWork, s: number, x: number, head: number)
     const col = mix(C.asphalt, head, Math.max(0.1, k));
     const z = w.z(cs);
     const sk = (rng.next() * 2 - 1) * 0.04;
-    w.emi.face([cx - wid, 0.004, z + len], [cx + wid, 0.004, z + len + sk], [cx + wid * 0.7, 0.004, z - len], [cx - wid * 0.8, 0.004, z - len - sk], col, [0, 1, 0]);
+    w.lampLit(() => w.emi.face([cx - wid, 0.004, z + len], [cx + wid, 0.004, z + len + sk], [cx + wid * 0.7, 0.004, z - len], [cx - wid * 0.8, 0.004, z - len - sk], col, [0, 1, 0]));
   }
 }
 

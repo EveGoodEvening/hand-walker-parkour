@@ -16,6 +16,7 @@ import { registerSet } from '../../../core/registry';
 import type { SimSnapshot } from '../../../core/types';
 import { C, mix, shade } from '../../kits/outside/lib/colors';
 import { OGeo, keyRng } from '../../kits/outside/lib/geo';
+import { Tone } from '../../kits/outside/lib/tone';
 import { liveList } from './lib/live';
 import { stencilInside, stencilWrite } from './lib/mats';
 import { SetBuild, crawlerFigure } from './lib/setkit';
@@ -70,6 +71,9 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   land.flat(0, -60, 60, 4, WATER_EDGE_Z, mix(C.plaza, 0xa9b0b3, 0.35), true);
   for (let x = -9; x <= 9; x += 1.5) land.flat(0.001, x - 0.01, x + 0.01, 4, WATER_EDGE_Z, shade(C.plazaSeam, 0.9), true);
   land.flat(0.001, -60, 60, WATER_EDGE_Z + 0.06, WATER_EDGE_Z, shade(C.plaza, 0.7), true);
+  // §5.1 是画面上的颜色：按 dreamGray 起点的光反推反照率（与 plaza kit 的 gray 变体一致，见 kits/outside/lib/tone.ts）
+  const tone = Tone.of('dreamGray');
+  tone.applyArrays(land.col, land.nor, land.pos, 'floor');
   const landMesh = b.lambert(land, 'shore', { depthWrite: false });
   landMesh.renderOrder = RENDER_ORDER.floor;
   // 水面遮罩：只写模板位 0x80
@@ -95,6 +99,7 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
         crawlerFigure(cg, x, z, yaw, mix(0x7a848c, 0x6a747c, tone), mix(C.skin, 0x9aa2a6, 0.7), 0.95, 0x5a6268);
       }
     });
+    tone.applyArrays(cg.col, cg.nor, cg.pos, 'static');
     crowd = b.lambert(cg, 'waterCrowd', { stencil: stencilInside(STENCIL.puddleBit) });
     crowd.renderOrder = RENDER_ORDER.puddleDouble;
   }

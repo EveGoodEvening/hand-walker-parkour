@@ -20,14 +20,36 @@ export class OGeo extends GeoBuilder {
   /** > 0 时 wallX / wallZ / flat 按这个边长细分（烘焙光照需要足够的顶点做渐变）。 */
   cell = 0;
   private inCell = false;
+  /**
+   * 发光体：之后写入的顶点的 aSteady（WP3 的 kit 约定，docs/contract-requests/WP3.md 2026-09-30）：
+   * 1 = 不跟 LampField 明灭（窗、镜中的雾、远处的亮窗）；0 = 跟灯走（灯头、灯的倒影、栏杆灯）。没有 WP3 时这个属性没人读。
+   */
+  steadyValue = 0;
+  readonly steady: number[] = [];
 
   override tri(a: V3, b: V3, c: V3, hex: number): this {
-    if (!this.flip) return super.tri(a, b, c, hex);
+    if (!this.flip) { super.tri(a, b, c, hex); this.steady.push(this.steadyValue, this.steadyValue, this.steadyValue); return this; }
     super.tri(a, c, b, hex);
+    this.steady.push(this.steadyValue, this.steadyValue, this.steadyValue);
     // 交换顶点后 GeoBuilder 按新绕序算出的法线指向背面；取反，镜像后的法线 = R·n
     const nor = this.nor, k = nor.length - 9;
     for (let i = k; i < nor.length; i++) nor[i] = -(nor[i] as number);
     return this;
+  }
+
+  /** 以 aSteady = v 执行 fn。 */
+  withSteady(v: number, fn: () => void): this {
+    const prev = this.steadyValue;
+    this.steadyValue = v;
+    try { fn(); } finally { this.steadyValue = prev; }
+    return this;
+  }
+
+  /** 有非零 aSteady（或 o.steady）时多带一个 aSteady 属性。 */
+  override build(o: { chalk?: boolean; skin?: boolean; steady?: boolean } = {}): THREE.BufferGeometry {
+    const g = super.build(o);
+    if (o.steady || this.steady.some((v) => v !== 0)) g.setAttribute('aSteady', new THREE.Float32BufferAttribute(this.steady, 1));
+    return g;
   }
 
   /** 把矩形 [a0, a1] × [b0, b1] 按 cell 切开，逐块调用 fn。 */
@@ -141,7 +163,7 @@ export class OGeo extends GeoBuilder {
     for (const [p, h] of [[a, ha], [b, hb], [c, hc]] as const) {
       _col.setHex(h);
       this.pos.push(p[0], p[1], p[2]); this.nor.push(_n.x, _n.y, _n.z); this.col.push(_col.r, _col.g, _col.b);
-      this.chalk.push(this.chalkValue); this.skin.push(this.bone);
+      this.chalk.push(this.chalkValue); this.skin.push(this.bone); this.steady.push(this.steadyValue);
     }
     return this;
   }
