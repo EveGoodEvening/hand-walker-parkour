@@ -532,5 +532,600 @@
     "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
    }
   ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-occl-1-1-foot-3.6m.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-1&beat=4&autopilot=off&seed=1",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 120
+   },
+   {
+    "eval": "U5.frames(1)"
+   },
+   {
+    "eval": "(()=>{const a=__game.ext.wp5State().upperAlpha;const o=__game.obstaclesAhead(9).filter(o=>o.lanes.includes(__game.getState().lane)&&(o.cls==='low'||o.cls==='bar')).map(o=>o.kind+' ds'+o.ds.toFixed(1));if(!(a<=0.45))throw new Error('U5: upper body not faded '+a+' '+JSON.stringify(o));return {upperAlpha:a,ahead:o}})()"
+   }
+  ],
+  "autopilot": false
+ },
+ {
+  "out": "shots/visual/WP5/u5-occl-1-1-foot-1.8m.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-1&beat=4&autopilot=off&seed=1",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 169
+   },
+   {
+    "eval": "U5.frames(1)"
+   },
+   {
+    "eval": "(()=>{const a=__game.ext.wp5State().upperAlpha;const o=__game.obstaclesAhead(9).filter(o=>o.lanes.includes(__game.getState().lane)&&(o.cls==='low'||o.cls==='bar')).map(o=>o.kind+' ds'+o.ds.toFixed(1));if(!(a<=0.45))throw new Error('U5: upper body not faded '+a+' '+JSON.stringify(o));return {upperAlpha:a,ahead:o}})()"
+   }
+  ],
+  "autopilot": false
+ },
+ {
+  "out": "shots/visual/WP5/u5-occl-1-5-bucket.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-5&beat=172&autopilot=off&seed=1",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 60
+   },
+   {
+    "eval": "U5.frames(1)"
+   },
+   {
+    "eval": "(()=>{const a=__game.ext.wp5State().upperAlpha;const o=__game.obstaclesAhead(9).filter(o=>o.lanes.includes(__game.getState().lane)&&(o.cls==='low'||o.cls==='bar')).map(o=>o.kind+' ds'+o.ds.toFixed(1));if(!(a<=0.45))throw new Error('U5: upper body not faded '+a+' '+JSON.stringify(o));return {upperAlpha:a,ahead:o}})()"
+   }
+  ],
+  "autopilot": false
+ },
+ {
+  "out": "shots/visual/WP5/u5-sole-1-2.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-2&beat=20",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 120
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-sole-2-6.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch2&seg=2-6&beat=10",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 120
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-sole-1-5-lookback.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-5&beat=120",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.getState().lookBacks>=1)"
+   },
+   {
+    "steps": 12
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {lookBacks:s.lookBacks}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-3-10-sync-2.0s.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch3&seg=3-10",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 192
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "U5.readable('bath')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-3-10-doorway-10.85s.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch3&seg=3-10",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 1254
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "U5.readable('bath2')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-3-10-shoulder-11.3s.png",
+  "q": "low",
+  "size": "1280x720",
+  "query": "ch=ch3&seg=3-10",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 1308
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "U5.readable('bathBehind')"
+   },
+   {
+    "eval": "(()=>{const e=U5.ext('bathBehind',[26]);if(!(e.n>0&&e.ndc[0]>-1&&e.ndc[2]<1&&e.ndc[1]>-1&&e.ndc[3]<1))throw new Error('U5: shoulder hand out of frame '+JSON.stringify(e));const f=U5.ext('bathBehind',[20,23]),h=U5.ext('bath2',[20,23]);return {hand:e,feetBehind:f,feetHost:h}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-2-10-through-glass.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch2&seg=2-10&beat=110",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.getState().beat>=139)"
+   },
+   {
+    "steps": 312
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "U5.readable('chip')"
+   },
+   {
+    "eval": "(()=>{const f=__game.ext.wp5State().focus;return f})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-2-10-ripple.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch2&seg=2-10&beat=110",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.getState().beat>=139)"
+   },
+   {
+    "steps": 456
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const r=__game.ext.wp5Scene().getObjectByName('wp5.glassRipple');if(!r.visible)throw new Error('U5: no glass ripple');return {ripple:r.position.toArray().map(x=>+x.toFixed(2))}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-3-4-puddle-3.5s.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch3&seg=3-4&beat=100",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.getState().beat>=112)"
+   },
+   {
+    "steps": 372
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "U5.readable('puddle')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-3-5-bus-6.8s.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch3&seg=3-5",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 768
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "U5.readable('busMe')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-2-5-palm-5.6s.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch2&seg=2-5",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 624
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const h=U5.ext('winSeat',[26]);const px=(h.ndc[3]-h.ndc[1])*180;if(!(px>=40))throw new Error('U5: palm only '+px+' px');const legs=U5.ext('winSeat',[19,22]);return {palmPx:+px.toFixed(1),hand:h,legs}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-2-9-question.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch2&seg=2-9",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 960
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-2-9-answer.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch2&seg=2-9",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 1464
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-4-6-water-3.0s.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch4&seg=4-6",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 312
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const e=U5.ext('waterMe');const hgt=(e.ndc[3]-e.ndc[1])/2;if(!(hgt>=0.25))throw new Error('U5: water me only '+hgt);return {frac:+hgt.toFixed(2),ext:e}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-5-8-fallen.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch5&seg=5-8",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.beats().includes('seventhFall'),6000)"
+   },
+   {
+    "steps": 72
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const sc=__game.ext.wp5Scene();const p=sc.getObjectByName('player');p.updateMatrixWorld(true);const V=U5.V();const r={};for(const n of ['footL','footR']){const v=new V();p.getObjectByName(n).getWorldPosition(v);const q=U5.ndc(v.toArray());r[n]=[+q.x.toFixed(2),+q.y.toFixed(2)];if(!(Math.abs(q.x)<0.95&&Math.abs(q.y)<0.95))throw new Error('U5: '+n+' out of frame '+JSON.stringify(r))}return r})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-5-9-dent-8.6s.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch5&seg=5-9",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 984
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const q=U5.ndc([-0.52,-200+0.57,-2.16]);if(!(Math.abs(q.x)<0.3&&Math.abs(q.y)<0.3))throw new Error('U5: dent at '+q.x+','+q.y);return {dent:[+q.x.toFixed(2),+q.y.toFixed(2)]}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-shadow-1-5-jellyfish.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-5&beat=120",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.ext.wp5State().shadow.mode==='jellyfish')"
+   },
+   {
+    "steps": 36
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.ext.wp5State().shadow;if(!(s.planar&&s.eventK>0.99&&s.ratio>=3))throw new Error('U5: shadow event light '+JSON.stringify(s));return s})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-shadow-2-10-point.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch2&seg=2-10&beat=52",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.getState().beat>=58.2)"
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.ext.wp5State().shadow;if(!(s.planar&&s.eventK>0.99&&s.ratio>=3))throw new Error('U5: shadow event light '+JSON.stringify(s));return s})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-shadow-4-1-long.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch4&seg=4-1&beat=16",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.getState().beat>=21.5)"
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.ext.wp5State().shadow;if(!(s.planar&&s.eventK>0.99&&s.ratio>=3))throw new Error('U5: shadow event light '+JSON.stringify(s));return s})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-shadow-4-3-liesdown.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch4&seg=4-3",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 972
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.ext.wp5State().shadow;if(!(s.planar&&s.eventK>0.99&&s.ratio>=3))throw new Error('U5: shadow event light '+JSON.stringify(s));return s})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-shadow-5-3-chase.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch5&seg=5-3&beat=50",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.getState().beat>=58)"
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.ext.wp5State().shadow;if(!(s.second&&s.planar))throw new Error('U5: no chasing shadow '+JSON.stringify(s));return s})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-4-3-mirror-3.8s.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch4&seg=4-3",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 408
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const d=U5.dbl('dreamMirror');if(!(d.framed&&d.visible))throw new Error('U5: no mirror frame '+JSON.stringify(d));const h=U5.ndc(d.head);return {framed:d.framed,head:[+h.x.toFixed(2),+h.y.toFixed(2)],yaw:+d.yaw.toFixed(2)}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-tone-5-7-overcast.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch5&seg=5-7&beat=20",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 120
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-tone-5-3-dawn.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch5&seg=5-3&beat=150",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 120
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-1-3-glance-40.5.png",
+  "q": "low",
+  "size": "1280x720",
+  "query": "ch=ch1&seg=1-3&beat=4",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.getState().beat>=38.75)"
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "U5.readable('wc')"
+   },
+   {
+    "eval": "(()=>{const d=U5.dbl('wc');const V=U5.V();const c=U5.cam();const a=new V(d.head[0],d.head[1]+0.12,d.head[2]).project(c),b=new V(d.head[0],d.head[1]-0.12,d.head[2]).project(c);const px=(a.y-b.y)*360;return {headPx:+px.toFixed(1),lane:__game.getState().lane}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-1-3-still-down-44.9.png",
+  "q": "low",
+  "size": "1280x720",
+  "query": "ch=ch1&seg=1-3&beat=4",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.getState().beat>=43.15)"
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "U5.readable('wc')"
+   },
+   {
+    "eval": "(()=>{const d=U5.dbl('wc');const V=U5.V();const c=U5.cam();const a=new V(d.head[0],d.head[1]+0.12,d.head[2]).project(c),b=new V(d.head[0],d.head[1]-0.12,d.head[2]).project(c);const px=(a.y-b.y)*360;return {headPx:+px.toFixed(1),lane:__game.getState().lane}})()"
+   }
+  ]
  }
 ]

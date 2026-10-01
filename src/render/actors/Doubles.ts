@@ -274,9 +274,9 @@ export class DoubleSystem implements ViewSystem {
   slotIndexOf(id: string): number { return this.slots.findIndex((s) => s.rec?.id === id); }
 
   /** 活动替身（调试 / 测试用）。 */
-  active(): Array<{ id: string; kind: Kind; alpha: number; visible: boolean; head: number[]; yaw: number; framed: boolean }> {
-    return this.slots.filter((s) => s.rec).map((s) => ({ id: (s.rec as Rec).id, kind: (s.rec as Rec).kind, alpha: (s.rec as Rec).alpha, visible: s.box.visible,
-      head: (s.rec as Rec).head.toArray(), yaw: s.pose.root[3] as number, framed: this.framed((s.rec as Rec).id) }));
+  active(): Array<{ id: string; kind: Kind; alpha: number; visible: boolean; head: number[]; yaw: number; framed: boolean; slot: number }> {
+    return this.slots.map((s, i) => ({ s, i })).filter(({ s }) => s.rec).map(({ s, i }) => ({ id: (s.rec as Rec).id, kind: (s.rec as Rec).kind, alpha: (s.rec as Rec).alpha, visible: s.box.visible,
+      head: (s.rec as Rec).head.toArray(), yaw: s.pose.root[3] as number, framed: this.framed((s.rec as Rec).id), slot: i }));
   }
 
   // ———————————————————— cue ————————————————————
