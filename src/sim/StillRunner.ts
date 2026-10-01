@@ -13,7 +13,8 @@ import type { Action, HintId, InputEvent } from '../core/types';
 const PLAY_KEYS: ReadonlySet<Action> = new Set(['left', 'right', 'up', 'down', 'look', 'ask']);
 import type { CompiledSegment, EventBody, StillInput, StillSegmentDef, StandSegmentDef, TimedEventDef } from '../levels/schema';
 
-export interface StillFire { id?: string; body: EventBody }
+/** at：事件在时间线上排定的时刻（秒，不含等待）；按步事件等不在时间线上的没有。 */
+export interface StillFire { id?: string; body: EventBody; at?: number }
 interface Queued { at: number; seq: number; id?: string; body: EventBody }
 
 export class StillRunner {
@@ -130,26 +131,36 @@ export class StillRunner {
     return { promptChanged };
   }
 
-  /** 跳过：立刻触发剩余的全部事件（含 onDone），然后结束。extra 为调用方另外要补发的事件（站立段的按步事件）。 */
-  skip(fire: (f: StillFire) => void, extra: StillFire[] = []): void {
+  /**
+   * 跳过：把剩余的全部事件（含 onDone）按时间顺序交给 fire，然后结束。extra 为调用方另外要补发的事件（站立段的按步事件）。
+   * 交给 fire 的事件是全部还没发生的事件，由调用方决定怎么处理（Sim.skipStill 缺省只保留状态，见那里）。
+   * 返回不跳过时本段在时间线上的自然结束时刻（秒，不含等待）：max(duration, 最后一个事件)。
+   */
+  skip(fire: (f: StillFire) => void, extra: StillFire[] = []): number {
     const inp = this.input;
+    let end = Math.max(this.duration, this.clock);
     if (inp && !this.inputDone) {
-      for (const e of this.queue.filter((q) => q.at < inp.at)) this.fireOne(e, fire);
+      const before = this.queue.filter((q) => q.at < inp.at);
       this.queue = this.queue.filter((q) => q.at >= inp.at);
       this.clock = Math.max(this.clock, inp.at);
       this.completeInput();
+      end = Math.max(end, this.clock, ...before.map((q) => q.at), ...this.queue.map((q) => q.at));
+      for (const e of before) this.fireOne(e, fire);
+    } else {
+      end = Math.max(end, ...this.queue.map((q) => q.at));
     }
     for (const e of this.queue) this.fireOne(e, fire);
     for (const f of extra) fire(f);
     this.queue = [];
     this.waiting = false; this.inputDone = true; this.done = true;
+    return end;
   }
 
   /** 队列里还没触发的事件数（测试与站立段的结束判断用）。 */
   get pending(): number { return this.queue.length; }
 
   private fireOne(e: Queued, fire: (f: StillFire) => void): void {
-    const f: StillFire = { body: e.body };
+    const f: StillFire = { body: e.body, at: e.at };
     if (e.id !== undefined) f.id = e.id;
     fire(f);
   }

@@ -14,7 +14,7 @@ import { createRng, type Mulberry32 } from '../core/rng';
 import type {
   AABB, Action, ChapterId, ContactPart, FollowerSnap, Hand, HintId, InputEvent, Lane, PlayerMode, RunStats, SimSnapshot, Surface,
 } from '../core/types';
-import { LINES, type LineEntry, type LineId } from '../levels/lines';
+import { LINE_HOOKS, type LineId } from '../levels/lines';
 import type {
   CompiledChapter, CompiledObstacle, CompiledSegment, EventBody, FollowerDef, RunSegmentDef, StandSegmentDef, StepEventDef, StillSegmentDef,
   TimedEventDef,
@@ -32,7 +32,7 @@ import { laneX, PlayerState } from './Player';
 import { StandController, type StandEvent } from './Stand';
 import { Steady } from './Steady';
 import { StillRunner, type StillFire } from './StillRunner';
-import { obstacleState, TrackRuntime, type ObstacleState } from './Track';
+import { lanesCovered, obstacleState, TrackRuntime, type ObstacleState } from './Track';
 import { twitchSpeedMul, twitchStart, twitchUpdate, twitchVisual, type TwitchOutcome } from './Twitch';
 import { DERIVED, TUNING } from './tuning';
 
@@ -41,8 +41,6 @@ const isCue = (t: EventBody['type']) => !SIM_TYPES.has(t);
 /** 端盘段：2 s 内换道 ≥ 3 次会晃出汤汁（§3「端盘」）。 */
 const SPILL_WINDOW = 2;
 const SPILL_COUNT = 3;
-/** 4-3 梦中第一次按 ↓ 时的字（§4.4）。lines.ts 归 WP2，按文字反查 id。 */
-const DREAM_DOWN_TEXT = '我的手垂在身侧，不听使唤。';
 
 interface Timed { t: number; seq: number; id?: string; body: EventBody; fromStop: boolean }
 /** hash() 跳过的字段：只读编译数据的引用、输出缓冲、每 tick 重算的临时对象。 */
@@ -59,14 +57,6 @@ export function crispDelta(tIntent: number, lastHeelT: number, nextHeelT: number
  * Game 在交给模拟之前换算到模拟时钟。所以这里不再二次补偿。
  */
 export function intentSec(e: InputEvent): number { return e.t / 1000; }
-
-let dreamDownLineId: LineId | null | undefined;
-function dreamDownLine(): LineId | null {
-  if (dreamDownLineId === undefined) {
-    dreamDownLineId = (Object.entries(LINES as Record<string, LineEntry>).find(([, v]) => v.t === DREAM_DOWN_TEXT)?.[0] as LineId | undefined) ?? null;
-  }
-  return dreamDownLineId;
-}
 
 export class Sim implements SimAPI {
   private ch: CompiledChapter | null = null;
@@ -251,24 +241,84 @@ export class Sim implements SimAPI {
     return hashState(new Hasher(), this, HASH_SKIP).digest();
   }
 
+  /**
+   * 前方 meters 米内、此刻参与碰撞的障碍（__game.obstaclesAhead）。按 obstacleState 的实时状态计算（与碰撞同一口径）：
+   * ds = 实际前沿 − s（走动的人含位移），lanes = 此刻覆盖的车道（shift 之后是新车道），此刻不参与碰撞的（门荡开前、
+   * 腿收回、到点前、已让开）不列出。len = 沿 s 的长度（s1 − s0），behavior = 行为定义（副本）。旧字段不变。
+   */
   obstaclesAhead(meters: number) {
     if (!this.seg || this.seg.kind !== 'run') return [];
     const s = this.pace.s;
-    return this.seg.obstacles
-      .filter((o) => o.s1 >= s && o.s0 - s <= meters && !this.track.knocked.has(o.id) && !this.track.taken.has(o.id) && !this.askRt.parted(o.id, this.pace.tSeg))
-      .map((o) => ({ id: o.id, kind: o.kind, cls: o.cls, lanes: [...o.lanes], ds: o.s0 - s, beat: o.beat }));
+    const tSeg = this.pace.tSeg;
+    const beat = this.segBeat();
+    const st: ObstacleState = { active: true, ds: 0, x0: 0, x1: 0, amount: 1 };
+    const out: Array<{ id: number; kind: CompiledObstacle['kind']; cls: CompiledObstacle['cls']; lanes: Lane[]; ds: number; beat: number; len: number; behavior: CompiledObstacle['behavior'] }> = [];
+    for (const o of this.seg.obstacles) {
+      if (this.track.knocked.has(o.id) || this.track.taken.has(o.id) || this.askRt.parted(o.id, tSeg)) continue;
+      obstacleState(o, tSeg, beat, st);
+      if (!st.active) continue;
+      const ds = o.s0 + st.ds - s;
+      if (o.s1 + st.ds < s || ds > meters) continue;
+      out.push({ id: o.id, kind: o.kind, cls: o.cls, lanes: lanesCovered(st), ds, beat: o.beat, len: o.s1 - o.s0, behavior: { ...o.behavior } });
+    }
+    return out;
   }
 
-  /** 跳过当前静场（重试或已看过时由 UI 调用；测试钩子也用）。 */
-  skipStill(): void {
+  /**
+   * 跳过当前静场（重试或已看过时由 UI 调用；测试钩子也用）。剩余的事件（含 onDone、站立段还没到的按步事件）：
+   *   · mode 'state'（缺省）：只记节拍 id（markBeat），并把会改变状态的事件按「不跳过、看完时」的终态带进下一段（skipState）；
+   *     表现类 cue（字幕、音效、铃、机位、替身、影子、回忆、姿势、黑板、叠加层、纸条特写、数数、提示……）一律丢弃，
+   *     免得跳过的那一刻一次排出十几个 cue、把字幕和低语带进下一个跑段。
+   *   · mode 'all'：旧行为，剩余事件全部立即触发。
+   */
+  skipStill(mode: 'state' | 'all' = 'state'): void {
     if (!this.seg || this.seg.kind === 'run') return;
     const extra: StillFire[] = [];
     if (this.seg.kind === 'stand') {
       for (const e of this.stepEvents()) if (e.atStep > this.stand.steps) extra.push(stepFire(e));
     }
-    this.still.skip((f) => this.fire(f.body, f.id, 'still'), extra);
+    if (mode === 'all') this.still.skip((f) => this.fire(f.body, f.id, 'still'), extra);
+    else {
+      const rest: StillFire[] = [];
+      const end = this.still.skip((f) => rest.push(f), extra);
+      this.skipState(rest, end);
+    }
     this.flushTimed();
     this.nextSegment();
+  }
+
+  /**
+   * 跳过静场时，剩余事件只保留状态（skipStill 的 'state' 模式）。end = 不跳过时本段在时间线上的结束时刻。
+   *   · 节拍：所有带 id 的事件照常记为已触发（必备节拍不丢）。
+   *   · 模拟状态：follower、flip、leader 按顺序应用（终态与看完时相同）；noteGet 记进纸条（已有的不重复发 note）；
+   *     hush 只把「看完时还剩下的」部分带进下一段。
+   *   · 状态类 cue：ambience、atmosphere、fog、rain、hud 各只发最后一个，crowd 每组只发最后一个，lights（除 flicker）按顺序全发。
+   *   · 其余（表现类 cue；一次性的模拟事件 twitch、drift、autoCrawl、slow、stop、cadence、end、beat）丢弃。
+   */
+  private skipState(rest: readonly StillFire[], end: number): void {
+    const cues = new Map<string, EventBody>();
+    let lights = 0;
+    for (const f of rest) {
+      if (f.id) this.markBeat(f.id);
+      const b = f.body;
+      let key: string | null = null;
+      switch (b.type) {
+        case 'follower': case 'flip': case 'leader': this.fire(b, undefined, 'still'); break;
+        case 'noteGet': if (!this.stats.notes.includes(b.note)) this.gainNote(b.note, true); break;
+        case 'hush': {
+          const secs = b.seconds ?? (b.beats !== undefined ? b.beats / Math.max(0.5, this.cadenceNow()) : 1);
+          const left = (f.at ?? end) + secs - end;
+          if (left > 0) this.hushUntil = Math.max(this.hushUntil, this.t + left);
+          break;
+        }
+        case 'ambience': case 'atmosphere': case 'fog': case 'rain': case 'hud': key = b.type; break;
+        case 'crowd': key = `crowd:${b.group}`; break;
+        case 'lights': if (b.op !== 'flicker') key = `lights:${lights++}`; break;
+        default: break;
+      }
+      if (key) { cues.delete(key); cues.set(key, b); }   // 先删再放：按最后一次出现的先后发
+    }
+    for (const b of cues.values()) this.emitCue(b);
   }
 
   /** 当前求解计划（__game.plan）：自动驾驶开着时是它正在执行的计划，否则从当前状态现解一次。 */
@@ -913,8 +963,8 @@ export class Sim implements SimAPI {
     const st = this.stand;
     if (st.script === 'dream' && !st.downSaid && events.some((e) => e.phase === 'down' && e.action === 'down')) {
       st.downSaid = true;
-      const id = dreamDownLine();
-      if (id) this.emitCue({ type: 'text', line: id });
+      // 4-3 梦中第一次按 ↓ 时的字（§4.4、§10.2）：WP2 在 lines.ts 的 LINE_HOOKS 里登记
+      this.emitCue({ type: 'text', line: LINE_HOOKS.dreamDownPress });
     }
     this.still.step(TICK_DT, events, held, this.stillFire);
     const out: StandEvent[] = [];

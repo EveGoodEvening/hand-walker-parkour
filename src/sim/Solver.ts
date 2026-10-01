@@ -7,12 +7,14 @@
 // 做法：按时间分层的动态规划（等价于分层 BFS，按代价取最优）。每个节点保存一份 PlayerState + PaceState，
 // 用与 Sim 完全相同的函数逐 tick 推进和判定碰撞，所以求出的路线在实际模拟里逐 tick 复现（自动驾驶按里程执行）。
 // 代价：输入次数 × 10（开口 15、长按每拍 +0.5）+ 不在中道的时间 × 0.02 − 拾取纸条 × 25。
+// 可选（laneLead > 0，human 机器人用，评审 U2）：待在「本车道前方 laneLead 秒内就要接触必需障碍」的位置上，每 0.05 s 加 0.2，
+// 比不在中道的代价大一个量级、又远小于一次输入：输入次数不变，但换道从「最后一刻」提前到接触前 laneLead 秒（做不到时尽早）。
 //
 // 与冻结契约（core/contracts.ts）的关系：SolverAPI.solve(seg, opts) 照旧；本文件的 SolveOptions 是它的超集，
 // 多出来的字段（untilS / start / maxSeconds）只给 WP1 自己的自动驾驶、领跑者和难度机器人用，调用时用变量传入。
 // Plan 对象另带 asks（开口的里程）——PlanStep 的 action 联合里没有 'ask'，所以放在旁路字段里（见 contract-requests/WP1.md）。
 import type { Plan, PlanStep, SolveFrom, SolverAPI } from '../core/contracts';
-import { TICK_DT } from '../core/constants';
+import { LANE_WIDTH, TICK_DT } from '../core/constants';
 import type { AABB, Lane } from '../core/types';
 import type { CompiledObstacle, CompiledSegment, EventBody, RunSegmentDef } from '../levels/schema';
 import { askIgnores, askTargets } from './Ask';
@@ -26,6 +28,9 @@ import { TUNING } from './tuning';
 
 const GRID = 6;                       // tick / 格
 const GRID_DT = GRID * TICK_DT;       // 0.05 s
+/** laneLead 的代价：每格（0.05 s）待在危险区里加多少。 */
+const DANGER_COST = 0.2;
+const REQUIRED_CLS: ReadonlySet<string> = new Set(['low', 'bar', 'block']);
 /** 长按伏低的选项（从伏低开始算的拍数；0 = 点一下，最短 2 拍）。 */
 const HOLD_BEATS = [3, 5, 7] as const;
 
@@ -64,6 +69,8 @@ export interface SolveOptions {
   start?: { p: PlayerState; pace: PaceState; asked?: readonly number[]; parts?: ReadonlyArray<readonly [number, number]>; asksUsed?: number };
   /** WP1 扩展：展开的时间上限（秒）。 */
   maxSeconds?: number;
+  /** 评审 U2：躲障碍至少提前多少秒换道（代价项，见文件头）；缺省 0 = 不加这一项。 */
+  laneLead?: number;
 }
 
 /** 求解结果：契约里的 Plan，另带开口的里程（旁路字段）。 */
@@ -166,7 +173,8 @@ export class Solver implements SolverAPI {
     let expanded = 0;
     const maxLayers = Math.ceil((opts.maxSeconds ?? this.maxSeconds) / GRID_DT);
     const finished: Node[] = [];
-    const ctx = { seg, index, evs, mev, mul, margin, endBeat, untilS, gapTicks, scratch };
+    const laneLead = Math.max(0, opts.laneLead ?? 0);
+    const ctx = { seg, index, evs, mev, mul, margin, endBeat, untilS, gapTicks, scratch, laneLead };
     for (let g = 0; g < maxLayers && layer.length; g++) {
       const next = new Map<string, Node>();
       for (const node of layer) {
@@ -242,8 +250,9 @@ export class Solver implements SolverAPI {
   private expand(ctx: {
     seg: CompiledSegment; index: ObIndex; evs: readonly PaceEvent[]; mev: readonly MotionEvent[]; mul: number; margin: number; endBeat: number;
     untilS: number; gapTicks: number; scratch: { box: AABB; prev: AABB; ob: AABB; infl: AABB; st: ObstacleState; tmp: CompiledObstacle[] };
+    laneLead: number;
   }, node: Node, act: Act, hold: number): Node | null {
-    const { seg, index, evs, mev, mul, margin, endBeat, untilS, gapTicks, scratch } = ctx;
+    const { seg, index, evs, mev, mul, margin, endBeat, untilS, gapTicks, scratch, laneLead } = ctx;
     const p = clonePlayer(node.p);
     const pace = clonePace(node.pace);
     let taken = node.taken;
@@ -323,6 +332,10 @@ export class Solver implements SolverAPI {
       }
     }
     if (p.ducking || p.duck > 0) busyUntilTick = Math.max(busyUntilTick, tick + 1);
+    if (laneLead > 0) {
+      const reach = laneLead * Math.max(0.5, pace.base * mul * p.hitMul);
+      if (dangerAhead(seg, index, p.laneTarget, pace, reach, parts, scratch.st)) cost += DANGER_COST;
+    }
     return { p, pace, cost, lastInputTick, busyUntilTick, keyDown, releaseTick, releaseBeat, mCursor, asksLeft, asked, parts, parent: node, steps, askS, taken, tick, done: false };
   }
 
@@ -368,6 +381,32 @@ export class Solver implements SolverAPI {
     }
     return wouldHit(infl, o, ob);
   }
+}
+
+/**
+ * laneLead：玩家所在车道（laneTarget）前方 reach 米内，是否有一个要接触的必需障碍（low / bar / block）。
+ * 距离按障碍此刻的前沿（走动的人含位移）到玩家盒前沿算；周期障碍（门、伸出的脚）不论此刻开合都算（人会提前避开）。
+ */
+function dangerAhead(seg: CompiledSegment, index: ObIndex, lane: Lane, pace: PaceState, reach: number, parts: readonly number[], st: ObstacleState): boolean {
+  const front = pace.s + TUNING.hitbox.sFront;
+  const beat = (pace.s - seg.s0) / seg.stride;
+  const x = lane * LANE_WIDTH;
+  for (let i = lastAtOrBefore(index.s0s, front + reach); i >= 0; i--) {
+    const o = index.statics[i] as CompiledObstacle;
+    if (o.s0 < front) break;                    // 不走动的障碍 ds = 0：前沿已在身后
+    if (dangerHit(o, x, pace.tSeg, beat, front, reach, parts, st)) return true;
+  }
+  for (let i = 0; i < index.walkers.length; i++) if (dangerHit(index.walkers[i] as CompiledObstacle, x, pace.tSeg, beat, front, reach, parts, st)) return true;
+  return false;
+}
+function dangerHit(o: CompiledObstacle, x: number, tSeg: number, beat: number, front: number, reach: number, parts: readonly number[], st: ObstacleState): boolean {
+  if (!REQUIRED_CLS.has(o.cls)) return false;
+  if (parts.length && partedAt(parts, o.id, tSeg)) return false;
+  obstacleState(o, tSeg, beat, st);
+  const ahead = o.s0 + st.ds - front;
+  if (ahead < 0 || ahead > reach) return false;
+  if (!st.active && o.behavior.type !== 'swing' && o.behavior.type !== 'stretch') return false;
+  return st.x0 < x + 0.22 && st.x1 > x - 0.22;
 }
 
 function partedAt(parts: readonly number[], id: number, tSeg: number): boolean {
