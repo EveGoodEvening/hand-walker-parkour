@@ -28,7 +28,7 @@ const LOOKS: Record<string, Look> = {
 
 export function buildStairs(ctx: HwKitChunkContext, look: Look): KitChunk {
   const e = makeEnv(ctx);
-  const { floor, stat, emi } = geos();
+  const { floor, stat, emi } = geos(look.wall.lift ?? 1);
   const lamps: LampSpec[] = [];
   const rng = e.rng;
   const st = e.stride;
@@ -54,9 +54,9 @@ export function buildStairs(ctx: HwKitChunkContext, look: Look): KitChunk {
       const zn = e.z(sn);
       if (up) floor.quad([-HW, y, zn], [HW, y, zn], [HW, yn, zn], [-HW, yn, zn], 0xe0e4e4, [[-1.3, vb], [2.3, vb], [2.3, vb + 0.2], [-1.3, vb + 0.2]], [0.75, 0.75, 0.9, 0.9]);
       else floor.quad([HW, yn, zn], [-HW, yn, zn], [-HW, y, zn], [HW, y, zn], 0xc9cfcf, [[2.3, vb], [-1.3, vb], [-1.3, vb + 0.2], [2.3, vb + 0.2]], [0.6, 0.6, 0.8, 0.8]);
-      // 防滑条：踏面前沿（视觉节拍）
+      // 防滑条：踏面前沿（视觉节拍）。朝上的面吃满天光，按侧面做的暗色补偿会把它抬得跟踏面差不多亮，台阶就读不出来了：不补偿
       const zs = e.z(sn - 0.07);
-      stat.quad([-HW, y + 0.003, zs], [HW, y + 0.003, zs], [HW, y + 0.003, zn], [-HW, y + 0.003, zn], look.nose);
+      stat.withTone(null, () => stat.quad([-HW, y + 0.003, zs], [HW, y + 0.003, zs], [HW, y + 0.003, zn], [-HW, y + 0.003, zn], look.nose));
     }
   }
 

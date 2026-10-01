@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import type { ViewContext } from '../../../core/contracts';
 import { createRng } from '../../../core/rng';
 import { KitGeo, type Col } from '../../geom';
-import { wallAlbedo } from '../../wallTone';
+import { emissiveAlbedo, propTone, wallAlbedo } from '../../wallTone';
 import type { Env } from '../../kits/school/shell';
 import { PAL } from '../../palette';
 import type { AtmosphereId } from '../../../core/types';
@@ -22,6 +22,28 @@ export function setEnv(ctx: ViewContext, salt: string): Env {
 }
 
 export function geo(): KitGeo { return new KitGeo(); }
+
+/**
+ * 静场的道具 / 人物颜色补偿（wallTone.ts propTone）：按这个 set 自己的氛围、静场的亮度场整张取 1。
+ * 暗色（裤子、鞋、实验台、黑板、裙子）在画面上落回 §5.1 的色板值，不再是饱和的深蓝。
+ */
+export function setPropTone(atmo: AtmosphereId): ((hex: number) => Col) | null {
+  return propTone({ atmo, lamp: 1 });
+}
+
+/** 发光体的累积器：暗色按 toe 的逆写入（wallTone.ts emissiveAlbedo），亮色（窗光）不动。 */
+export function emiGeo(): KitGeo {
+  const g = new KitGeo();
+  g.tone = emissiveAlbedo;
+  return g;
+}
+
+/** 新累积器，十六进制颜色走 setPropTone(atmo)。 */
+export function propGeo(atmo: AtmosphereId): KitGeo {
+  const g = new KitGeo();
+  g.tone = setPropTone(atmo);
+  return g;
+}
 
 /** 把累积器变成网格（Lambert 顶点色，LampField 补丁由 ctx.mat 负责）。 */
 export function lambertMesh(ctx: ViewContext, g: KitGeo, name: string): THREE.Mesh {

@@ -10,7 +10,7 @@ import { registerSet } from '../../../core/registry';
 import type { SimSnapshot } from '../../../core/types';
 import { KitGeo } from '../../geom';
 import { PAL, WARM } from '../../palette';
-import { emissiveMesh, floorRect, lambertMesh, wallZ } from './common';
+import { emissiveMesh, floorRect, lambertMesh, propGeo, wallZ } from './common';
 import { mixHex } from '../../../core/geo';
 
 const ZW = -0.62;         // 窗口所在的墙
@@ -45,7 +45,7 @@ export function handAt(t: number): { x: number; y: number; z: number; tip: numbe
 
 function build(ctx: ViewContext): THREE.Object3D {
   const root = new THREE.Group();
-  const stat = new KitGeo(), emi = new KitGeo();
+  const stat = propGeo('noon'), emi = new KitGeo();
   // 食堂这一侧：地面、墙（下半截白瓷砖）、窗口
   floorRect(stat, -3.5, 3.5, ZW, 3, 0x9aa0a0);
   const tileG = new KitGeo();
@@ -72,15 +72,18 @@ function build(ctx: ViewContext): THREE.Object3D {
   stat.box([0, 2.25, ZW + 0.02], [1.9, 0.5, 0.04], 0x3a464d, { faces: '+z+y-y' });
   stat.box([0, 0.08, ZW + 0.01], [7, 0.16, 0.02], 0x8a979e, { faces: '+z' });
   // 窗口里：操作台、菜盆（暖灯下带一点暖）、后墙与暖灯
+  // 窗口里那一小块暖光是对着画面调的（「酱油色」的暗），不走道具的暗色补偿
   const warm = (c: number, k: number) => mixHex(c, WARM.windowLamp, k);
-  stat.box([0, 0.88, -1.25], [2.4, 0.06, 1.0], warm(0xaab4b8, 0.35), { faces: '+y+z' });
-  stat.quad([-1.8, 0, -2.4], [1.8, 0, -2.4], [1.8, 3.2, -2.4], [-1.8, 3.2, -2.4], warm(0x3a4246, 0.35), null, [0.6, 0.6, 1, 1]);
-  const basins: Array<[number, number]> = [[-0.45, WARM.braisedPork], [0.1, 0x5e6b5a], [0.62, 0xd9dcd6]];
-  for (const [x, food] of basins) {
-    stat.box([x, 0.97, -1.15], [0.5, 0.12, 0.42], warm(0xc9cfcf, 0.3), { faces: '+x-x+z-z' });
-    stat.box([x, 1.02, -1.15], [0.44, 0.02, 0.36], food, { faces: '+y' });
-  }
-  stat.box([0, 2.9, -1.6], [0.02, 0.6, 0.02], 0x3a4246);
+  stat.withTone(null, () => {
+    stat.box([0, 0.88, -1.25], [2.4, 0.06, 1.0], warm(0xaab4b8, 0.35), { faces: '+y+z' });
+    stat.quad([-1.8, 0, -2.4], [1.8, 0, -2.4], [1.8, 3.2, -2.4], [-1.8, 3.2, -2.4], warm(0x3a4246, 0.35), null, [0.6, 0.6, 1, 1]);
+    const basins: Array<[number, number]> = [[-0.45, WARM.braisedPork], [0.1, 0x5e6b5a], [0.62, 0xd9dcd6]];
+    for (const [x, food] of basins) {
+      stat.box([x, 0.97, -1.15], [0.5, 0.12, 0.42], warm(0xc9cfcf, 0.3), { faces: '+x-x+z-z' });
+      stat.box([x, 1.02, -1.15], [0.44, 0.02, 0.36], food, { faces: '+y' });
+    }
+    stat.box([0, 2.9, -1.6], [0.02, 0.6, 0.02], 0x3a4246);
+  });
   emi.withSteady(1, () => {
     emi.box([0, 2.55, -1.6], [0.16, 0.12, 0.16], WARM.windowLamp);                    // 酱油色的灯
     emi.quad([-1.6, 1.2, -2.39], [1.6, 1.2, -2.39], [1.6, 3.0, -2.39], [-1.6, 3.0, -2.39], [0x3a3228, 0x3a3228, 0x6e5a40, 0x6e5a40]); // 灯照亮的后墙
@@ -93,10 +96,15 @@ function build(ctx: ViewContext): THREE.Object3D {
   const vegOnTray = lambertMesh(ctx, vegG, 'veg'), porkOnTray = lambertMesh(ctx, porkG, 'pork');
   // 窗口阿姨的手（只露出这只手）：局部 −z 是手臂伸回窗口里的方向，+z 是勺子伸向餐盘的方向。
   // 前臂斜着从右后方伸出来，镜头看得见它的长度；袖口在最里面，被前臂和手挡住一半，不再是迎面的一块白方块。
-  const handG = new KitGeo();
+  const handG = propGeo('noon');
   const skin = PAL.skin, skinDark = mixHex(PAL.skin, PAL.creaseGray, 0.35);
   handG.segment([0.0, 0.04, -0.12], [0.03, 0.11, -0.46], 0.062, 0.055, skin);                    // 前臂
   handG.segment([0.03, 0.11, -0.44], [0.045, 0.15, -0.62], 0.092, 0.09, 0xc3cacb);               // 袖口（灰白工作服）
+  // 袖子再往窗口深处伸一截，越往里越暗（被窗口里的暗光吞掉），手不再是悬在半空的一截
+  handG.withTone(null, () => {
+    handG.segment([0.045, 0.15, -0.6], [0.06, 0.2, -0.86], 0.1, 0.098, mixHex(0xc3cacb, 0x6e5a40, 0.45));
+    handG.segment([0.06, 0.2, -0.84], [0.08, 0.27, -1.3], 0.104, 0.102, mixHex(0xc3cacb, 0x6e5a40, 0.85));
+  });
   handG.box([0, 0.012, -0.03], [0.082, 0.032, 0.11], skin, { faces: '+x-x+y-y+z-z' });              // 手背
   for (let i = 0; i < 4; i++) {                                                                     // 四根弯着的手指，握住勺柄
     const x = -0.03 + i * 0.02;

@@ -43,7 +43,8 @@ export const WARM = {
 
 /** 校园场景里额外用到的冷灰（全部由上面的色板混出，集中在这里便于调色）。 */
 export const SCHOOL = {
-  doorLeaf: 0x4a5557, doorFrame: 0x6b7477, plate: 0xdfe6ea, plateText: 0x2a3136,
+  // 门扇是走廊里最深的竖条（画面上的颜色；道具的暗色补偿后侧面约 #3F494C）
+  doorLeaf: 0x354043, doorFrame: 0x6b7477, plate: 0xdfe6ea, plateText: 0x2a3136,
   radiator: 0x8a979e, pipe: 0x7c878c, baseboard: 0x3a464d, beam: 0xaeb5b6,
   locker: 0x7d8a90, lockerDark: 0x5f6b71, notice: 0x8f9a9c, paper: 0xdfe3e2,
   labBench: 0x2a3136, labBenchTop: 0x3a4246, stool: 0x6f7a7e,

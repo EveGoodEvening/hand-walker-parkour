@@ -17,11 +17,17 @@ const VERT = /* glsl */`
 #include <fog_pars_vertex>
 attribute vec4 aDecal;
 varying vec2 vUv;
+varying vec2 vCell;
 varying vec4 vDecal;
 varying vec3 vTint;
 void main() {
   vUv = uv;
   vDecal = aDecal;
+  // 图集格子的偏移在顶点里按实例算好（先取整）：同一实例的三个顶点完全相同，插值后仍是常数。
+  // 以前在片元里对插值过的 vDecal.x 做 mod / floor，ring（2.0）插值成 1.9999 时选错格子，
+  // 2×2 像素块里 uv 跳半个图集，导数爆掉、取到最低一级 mip，整行变成一条灰杠。
+  float cell = floor(aDecal.x + 0.5);
+  vCell = vec2(mod(cell, 2.0), 1.0 - floor(cell * 0.5)) * 0.5;
   #ifdef USE_INSTANCING_COLOR
     vTint = instanceColor;
   #else
@@ -39,12 +45,12 @@ uniform sampler2D uAtlas;
 uniform sampler2D uLampField;
 uniform float uLampBase, uLampScale;
 varying vec2 vUv;
+varying vec2 vCell;
 varying vec4 vDecal;
 varying vec3 vTint;
 void main() {
-  float cell = vDecal.x;
-  vec2 off = vec2(mod(cell, 2.0), 1.0 - floor(cell / 2.0)) * 0.5;
-  float m = texture2D(uAtlas, off + clamp(vUv, 0.01, 0.99) * 0.5).a;
+  // 格子偏移是 0 或 0.5，插值误差只有 1e-6 量级，不会跨格；uv 夹在格子里离边 1%（> 半个纹素），线性过滤也不串格
+  float m = texture2D(uAtlas, vCell + clamp(vUv, 0.01, 0.99) * 0.5).a;
   float lamp = vDecal.w > ${NO_LAMP.toFixed(1)} ? texture2D(uLampField, vec2((vDecal.w - uLampBase) * uLampScale, 0.5)).g : 1.0;
   float a = m * vDecal.y * lamp;
   #ifdef USE_FOG
@@ -85,6 +91,10 @@ export class Decals {
       ? new THREE.CanvasTexture(decalAtlasCanvas(atlasSize))
       : new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
     this.atlas.name = 'hw:decalAtlas';
+    // 4 格各自是柔和的形状：线性过滤、不生成 mip（低几级 mip 会把相邻格子糊到一起）
+    this.atlas.generateMipmaps = false;
+    this.atlas.minFilter = THREE.LinearFilter;
+    this.atlas.magFilter = THREE.LinearFilter;
     this.atlas.needsUpdate = true;
     const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uAtlas: { value: null }, uLampBase: { value: 0 }, uLampScale: { value: 1 } }]);
     uniforms.uAtlas = { value: this.atlas };

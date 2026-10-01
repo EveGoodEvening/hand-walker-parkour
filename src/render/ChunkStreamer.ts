@@ -707,7 +707,9 @@ export class World implements ViewSystem {
           if (kind === 'tube') {
             const rx = cam.x + (this.lamps.lampX(k) - cam.x) * 0.45;
             const inten = sl.gloss * 0.42 * clamp(0.4 + d / 25, 0.4, 1);
-            this.decals.add('streak', rx, floorY + 0.01, rs, 0.1 + 0.14 * sl.gloss, 1.0 + 2.8 * sl.gloss, 0xdfe9f2, inten, ls);
+            // 越湿越宽（早晨 0.14 m，湿地 0.39 m）；湿地再在下面铺一层宽而淡的光（「水银河」是一条河，不是地上画的中线）
+            this.decals.add('streak', rx, floorY + 0.01, rs, 0.12 + 0.42 * sl.gloss * sl.gloss, 1.0 + 2.8 * sl.gloss, 0xdfe9f2, inten, ls);
+            if (sl.gloss > 0.5) this.decals.add('pool', rx, floorY + 0.011, rs, 0.5 + 1.1 * sl.gloss, 1.6 + 2.4 * sl.gloss, 0xc9d8e2, inten * 0.16, ls);
           } else {
             // 窗在光滑地面上的倒影：沿墙根一块拉长的柔光（不是形状，是一片亮）
             const rx = this.lamps.lampX(k) * 0.8;
@@ -715,7 +717,8 @@ export class World implements ViewSystem {
           }
         } else if (kind === 'street' || kind === 'bulb') {
           const r = kind === 'street' ? 5.5 : 2.6;
-          this.decals.add('pool', this.lamps.lampX(k), floorY + 0.01, ls, r, r, kind === 'street' ? 0xc8a15a : 0xcfd8de, kind === 'street' ? 0.35 : 0.22, ls);
+          // 路灯的光池用当前氛围的灯色（rainNight 是碎金 #C8A15A；别的氛围里是冷白，不会把暖色带出第三章，附录 A-9）
+          this.decals.add('pool', this.lamps.lampX(k), floorY + 0.01, ls, r, r, kind === 'street' ? this.atmo.cur.lampColor.getHex() : 0xcfd8de, kind === 'street' ? 0.35 : 0.22, ls);
         }
       }
     }

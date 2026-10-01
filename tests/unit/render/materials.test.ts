@@ -98,4 +98,18 @@ describe('材质（§5 总则、§5.3）', () => {
     d.begin(); d.end();
     expect(d.mesh.visible).toBe(false);
   });
+
+  it('地面贴花：图集格子在顶点里先取整再算偏移（片元里不对插值过的格子号做 mod / floor），图集不生成 mip', () => {
+    const d = new Decals(lamps.uniforms, 8, 16);
+    const vs = d.material.vertexShader, fs = d.material.fragmentShader;
+    expect(vs).toContain('floor(aDecal.x + 0.5)');
+    expect(vs).toContain('vCell =');
+    expect(fs).not.toMatch(/mod\(|floor\(/);
+    expect(fs).toContain('vCell + clamp(vUv, 0.01, 0.99) * 0.5');
+    expect(d.texture.generateMipmaps).toBe(false);
+    expect(d.texture.minFilter).toBe(THREE.LinearFilter);
+    // 4 种贴花各自的格子偏移（与着色器同一个公式）：ring = 2 → 左下
+    const off = (c: number) => [((Math.floor(c + 0.5) % 2) + 2) % 2 * 0.5, (1 - Math.floor(Math.floor(c + 0.5) * 0.5)) * 0.5];
+    expect(off(0)).toEqual([0, 0.5]); expect(off(1)).toEqual([0.5, 0.5]); expect(off(2)).toEqual([0, 0]); expect(off(1.99995)).toEqual([0, 0]); expect(off(3)).toEqual([0.5, 0]);
+  });
 });

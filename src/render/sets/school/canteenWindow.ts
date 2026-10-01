@@ -12,9 +12,11 @@ import type { SimSnapshot } from '../../../core/types';
 import { KitGeo } from '../../geom';
 import { chair } from '../../kits/school/classroom';
 import { PAL, SCHOOL } from '../../palette';
-import { emissiveMesh, floorRect, lambertMesh, seatedLegs, setEnv, texturedFloor, wallX } from './common';
+import { emiGeo, emissiveMesh, floorRect, lambertMesh, propGeo, seatedLegs, setEnv, texturedFloor, wallX } from './common';
 
 export const GLASS_X = -1.1;
+/** 2-5 的氛围（ch2 数据：noon）；道具颜色按它补偿。 */
+const ATMO = 'noon';
 const GZ0 = -3.0, GZ1 = 1.6, GY0 = 0.75, GY1 = 2.8;
 const ROOM_D = 4.2;
 
@@ -29,9 +31,9 @@ function squareTable(g: KitGeo, x: number, z: number): void {
 function build(ctx: ViewContext): THREE.Object3D {
   const e = setEnv(ctx, 'canteenWindow');
   const root = new THREE.Group();
-  const stat = new KitGeo(), emi = new KitGeo();
+  const stat = propGeo(ATMO), emi = emiGeo();
   // 这一侧：地面、窗墙（留洞）、窗台、暖气管、后面的桌子
-  const floor = texturedFloor(ctx, GLASS_X, 4, -6, 3, 'terrazzo', { base: 0x868d8c });
+  const floor = texturedFloor(ctx, GLASS_X, 4, -6, 3, 'terrazzo', { base: 0x868d8c, polish: 1 });
   wallX(stat, GLASS_X, -1, -6, GZ0, 0, 3.6, 0xcbd1d0);
   wallX(stat, GLASS_X, -1, GZ1, 3, 0, 3.6, 0xcbd1d0);
   wallX(stat, GLASS_X, -1, GZ0, GZ1, 0, GY0, 0xe0e5e6);
@@ -73,7 +75,7 @@ function build(ctx: ViewContext): THREE.Object3D {
     for (let i = 0; i < 12; i++) { const z = GZ1 + 1.5 - i * 0.6; emi.quad([xs + 0.01, 1.2, z + 0.01], [xs + 0.01, 1.2, z - 0.01], [xs + 0.01, 1.75, z - 0.01], [xs + 0.01, 1.75, z + 0.01], 0x6e7c82); }
   });
   // 陈默：7.0 s 坐下，只看得见腿
-  const cm = new KitGeo();
+  const cm = propGeo(ATMO);
   seatedLegs(cm, -0.45, -0.87, Math.PI, PAL.trousers, 0xdfe3e2, 0.09);
   chenMo = lambertMesh(ctx, cm, 'chenMoLegs');
   root.add(floor, lambertMesh(ctx, stat, 'canteenCorner'), emissiveMesh(ctx, emi, 'playground'), chenMo);

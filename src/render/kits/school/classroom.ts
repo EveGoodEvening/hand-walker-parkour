@@ -60,7 +60,7 @@ export function chair(g: KitGeo, e: Env, x: number, z: number, pushed: number): 
 export function buildClassroom(ctx: HwKitChunkContext, look: Look): KitChunk {
   const WALL = look.night ? NIGHT_WALL : DAY_WALL;
   const e = makeEnv(ctx);
-  const { floor, stat, emi } = geos();
+  const { floor, stat, emi } = geos(WALL.lift ?? 1);
   const lamps: LampSpec[] = [];
   const rng = e.rng;
   const hw = ctx.hw;

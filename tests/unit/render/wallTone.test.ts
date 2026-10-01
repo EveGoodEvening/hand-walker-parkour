@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { ATMOSPHERES } from '../../../src/render/atmosphere';
 import { NIGHT_LIFT, wallShade } from '../../../src/render/kits/school/shell';
-import { ATLAS_MEAN, toneInverse, wallAlbedo } from '../../../src/render/wallTone';
+import { ATLAS_MEAN, kitPropTone, propAlbedo, propTone, toneInverse, wallAlbedo } from '../../../src/render/wallTone';
+import { KitGeo } from '../../../src/render/geom';
 import { PAL } from '../../../src/render/palette';
 
 const lin = (h: number) => { const c = new THREE.Color(h); return [c.r, c.g, c.b]; };
@@ -82,5 +83,52 @@ describe('墙面受光补偿（wallTone.ts）', () => {
     expect(hsl(pixel(wallN, -1, 1.9, 'nightIndoor')).l).toBeLessThan(0.9);
     // lift 0 = 原色板
     expect(wallAlbedo(PAL.wainscot, y, { lift: 0 })).toEqual(lin(PAL.wainscot));
+  });
+
+  /** 道具的一个面（法线 n）在 y 高处的像素（没有贴图、没有假 AO，静场整张亮度场 lamp）。 */
+  function propPixel(albedo: readonly number[], n: [number, number, number], y: number, atmo: keyof typeof ATMOSPHERES, lamp: number): number[] {
+    const p = ATMOSPHERES[atmo];
+    const sky = lin(p.hemi.sky), gr = lin(p.hemi.ground), lc = lin(p.lampColor), dc = lin(p.dir?.color ?? 0xffffff);
+    const d = p.dir?.dir ?? [0, -1, 0], dl = Math.hypot(...d), ndl = Math.max(0, -(n[0] * d[0] + n[1] * d[1] + n[2] * d[2]) / dl);
+    const w = 0.5 * n[1] + 0.5, hwH = 0.55 + 0.45 * smooth(0, 3, y);
+    const pre = albedo.map((a, i) => a * (((gr[i] as number) + ((sky[i] as number) - (gr[i] as number)) * w) * p.hemi.intensity / Math.PI
+      + (dc[i] as number) * (p.dir?.intensity ?? 0) * ndl / Math.PI + (lc[i] as number) * lamp * hwH * p.lampGain));
+    return neutral(pre).map((v) => Math.min(1, Math.max(0, toSrgb(v))));
+  }
+
+  it('道具的暗色补偿：裤子 / 鞋 / 实验台 / 裙子的侧面落在色板值附近，不再是饱和的深蓝；亮色不动', () => {
+    const cases: Array<[number, keyof typeof ATMOSPHERES]> = [[PAL.trousers, 'morning'], [PAL.trousers, 'overcast'], [PAL.trousers, 'noon'],
+      [PAL.shoeTop, 'morning'], [0x2a3136, 'labNorth'], [0x3f4448, 'morning'], [PAL.blackboard, 'morning']];
+    for (const [hex, atmo] of cases) {
+      const t = target(hex);
+      const a = propAlbedo(hex, { atmo, lamp: 1 });
+      for (const n of [[-1, 0, 0], [1, 0, 0], [0, 0, 1]] as Array<[number, number, number]>) {
+        const h = hsl(propPixel(a, n, 0.5, atmo, 1));
+        expect(Math.abs(h.s - t.s)).toBeLessThan(0.15);
+        expect(Math.abs(h.l - t.l)).toBeLessThan(0.08);
+      }
+      // 不补偿时就是验收员看到的饱和深色（饱和度 > 0.5）
+      expect(hsl(propPixel(lin(hex), [-1, 0, 0], 0.5, atmo, 1)).s).toBeGreaterThan(hex === PAL.trousers || hex === PAL.shoeTop || hex === 0x2a3136 ? 0.5 : 0.3);
+    }
+    // 亮色（L ≥ 0.6）原样；虚空走廊 lift 0 不补偿
+    for (const hex of [PAL.wall, PAL.deskTop, PAL.ceiling, PAL.steel]) expect(propAlbedo(hex)).toEqual(lin(hex));
+    expect(propTone({ lift: 0 })).toBeNull();
+    expect(kitPropTone(0)).toBeNull();
+    // 夜景：补得少、去饱和多，裤子不再是饱和的深蓝，也不发白
+    const night = kitPropTone(0.3) as (h: number) => readonly number[];
+    const hn = hsl(propPixel(night(PAL.trousers), [-1, 0, 0], 0.5, 'nightIndoor', 0.9));
+    expect(hn.s).toBeLessThan(0.45); expect(hn.l).toBeLessThan(0.3);
+  });
+
+  it('KitGeo.tone 只作用于十六进制颜色；线性 RGB（墙面补偿）原样写入；withTone(null) 临时关掉', () => {
+    const g = new KitGeo();
+    g.tone = (h) => (h === 0x123456 ? [0.5, 0.25, 0.125] : h);
+    g.tri([0, 0, 0], [1, 0, 0], [0, 1, 0], 0x123456);
+    expect(g.col.slice(0, 3)).toEqual([0.5, 0.25, 0.125]);
+    g.quad([0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0.9, 0.8, 0.7]);
+    expect(g.col.slice(9, 12)).toEqual([0.9, 0.8, 0.7]);
+    g.withTone(null, () => g.tri([0, 0, 0], [1, 0, 0], [0, 1, 0], 0x123456));
+    expect(g.col[g.col.length - 3]).toBeCloseTo(lin(0x123456)[0] as number, 6);
+    expect(g.tone).not.toBeNull();
   });
 });

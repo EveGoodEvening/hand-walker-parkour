@@ -9,7 +9,7 @@ import { clamp, smoothstep } from '../../../core/math';
 import type { QualityTier, Rng } from '../../../core/types';
 import type { CompiledSurface } from '../../../levels/schema';
 import { KitGeo, subRect, type Col, type Rect, type V3 } from '../../geom';
-import { wallAlbedo } from '../../wallTone';
+import { emissiveAlbedo, kitPropTone, wallAlbedo } from '../../wallTone';
 import { mixHex } from '../../../core/geo';
 import type { HwKitChunkContext, HwKitExt } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
@@ -80,8 +80,16 @@ export function stepsIn(e: Env, step: number, offset = 0, pad = 0): number[] {
   return out;
 }
 
-export function geos(): { floor: KitGeo; stat: KitGeo; emi: KitGeo } {
-  return { floor: new KitGeo(ATLAS_WHITE_UV), stat: new KitGeo(ATLAS_WHITE_UV), emi: new KitGeo(ATLAS_WHITE_UV) };
+/**
+ * 一个 chunk 的三个累积器。static 的十六进制颜色走道具的暗色补偿（wallTone.ts kitPropTone）：
+ * lift 取这个 kit 变体墙面的 lift（白天 1、夜景 NIGHT_LIFT、虚空走廊 0 = 不补偿）。emissive 的暗色按 toe 的逆写入（emissiveAlbedo，
+ * 夜里的窗、门上的玻璃不再是饱和的深青）；地面（有贴图、另调过）不补偿。
+ */
+export function geos(lift = 1): { floor: KitGeo; stat: KitGeo; emi: KitGeo } {
+  const stat = new KitGeo(ATLAS_WHITE_UV), emi = new KitGeo(ATLAS_WHITE_UV);
+  stat.tone = kitPropTone(lift);
+  if (lift > 0) emi.tone = emissiveAlbedo;
+  return { floor: new KitGeo(ATLAS_WHITE_UV), stat, emi };
 }
 
 // ——————————————————— 地面 ———————————————————
@@ -542,6 +550,10 @@ export function sideHoles(e: Env, side: 'L' | 'R'): Hole[] {
  * 从走廊看过去就是一扇窗，而不是一个暗的壁龛（不提前暴露哪扇窗会出事）；替身仍站在里面的镜像位置。
  */
 export function mirrorRooms(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomStyle = DARK_ROOM): void {
+  // 镜中房间的暗色是对着画面调的（「暗、但看得见替身」），不走道具的暗色补偿
+  stat.withTone(null, () => emi.withTone(null, () => mirrorRoomsRaw(stat, emi, e, st)));
+}
+function mirrorRoomsRaw(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomStyle): void {
   for (const o of e.openings) {
     if (o.side === 'end') continue;
     const sa = Math.max(o.s0, e.s0), sb = Math.min(o.s1, e.s1);

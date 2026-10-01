@@ -34,7 +34,7 @@ export const CORRIDOR_LOOKS: Record<string, Look> = {
   morning: BASE,
   // 1-6：走廊尽头靠近厕所的那一截（尽头的镜子由关卡数据的 endMirror 给）：没有储物柜，地刚拖过，比别处亮一点
   mirrorEnd: { ...BASE, lockers: false, gloss: 0.4, floor: 0xc4cbcd },
-  // 课间：大部分门开着，门洞里是亮着的教室
+  // 课间：门几乎都开着（九成），门洞里是亮着的教室；chunk 池会复用，概率太低时看得见的一段常常全是关着的门
   recess: { ...BASE, doorOpen: 1.1 },
   wet: { ...BASE, floor: 0xb4bcc0, gloss: 0.8, wet: true },
   labNorth: {
@@ -63,7 +63,7 @@ function overlapsOpening(e: Env, side: 'L' | 'R', a: number, b: number): boolean
 
 export function buildCorridor(ctx: HwKitChunkContext, look: Look): KitChunk {
   const e = makeEnv(ctx);
-  const { floor, stat, emi } = geos();
+  const { floor, stat, emi } = geos(look.wall.lift ?? 1);
   const lamps: LampSpec[] = [];
   const H = look.wall.height;
   const rng = e.rng;
@@ -110,7 +110,7 @@ export function buildCorridor(ctx: HwKitChunkContext, look: Look): KitChunk {
     if (r < 0.42) {
       const plate = look.dark ? null : (rng.next() < 0.5 ? ATLAS.plates[2] : ATLAS.plates[3]);
       doorHoles.push(sideDoor(stat, emi, e, 1, c + (rng.next() - 0.5) * 0.6, {
-        leaf: look.doorLeaf, windowPane: look.doorPane, plate, open: look.doorOpen > 0 && rng.next() < 0.7 ? look.doorOpen : 0,
+        leaf: look.doorLeaf, windowPane: look.doorPane, plate, open: look.doorOpen > 0 && rng.next() < 0.9 ? look.doorOpen : 0,
         frame: look.dark ? 0x101316 : SCHOOL.doorFrame,
       }));
     } else if (r < 0.62 && look.lockers) {

@@ -889,7 +889,7 @@
   "query": "ch=ch1",
   "ops": [
    {
-    "eval": "(async () => { const g = __game; g.render(); const m0 = g.ext.wp3Mem(); const samples = []; let restarts = 0; for (let i = 0; i < 60; i++) { g.step(600, { render: true }); if (g.screen() !== 'play') { restarts++; await g.start('ch1', { skipCards: true }); g.setAutopilot('perfect'); g.render(); } if (i % 10 === 9) { const m = g.ext.wp3Mem(); samples.push([g.getState().segment, m.geometries, m.textures]); } } const m1 = g.ext.wp3Mem(); return { same: m0.geometries === m1.geometries && m0.textures === m1.textures, m0, m1, samples, restarts }; })()"
+    "eval": "(async () => { const g = __game; g.render(); const m0 = g.ext.wp3Mem(); const samples = []; let restarts = 0; for (let i = 0; i < 60; i++) { g.step(600, { render: true }); if (g.screen() !== 'play') { restarts++; await g.start('ch1', { skipCards: true }); g.setAutopilot('perfect'); g.render(); } if (i % 10 === 9) { const m = g.ext.wp3Mem(); samples.push([g.getState().segment, m.geometries, m.textures]); } } const m1 = g.ext.wp3Mem(); const same = m0.geometries === m1.geometries && m0.textures === m1.textures; if (!same) throw new Error(\"memory grew over 36000 ticks: \" + JSON.stringify({ m0, m1, samples, restarts })); return { same, m0, m1, samples, restarts }; })()"
    }
   ]
  },
@@ -932,6 +932,132 @@
    },
    {
     "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/ring-void-top-low.png",
+  "q": "low",
+  "size": "960x540",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\":\"corridor\",\"variant\":\"void\",\"atmosphere\":\"voidDark\",\"stride\":1.1,\"rings\":[[7.5,0,0.9]],\"cam\":{\"pos\":[0,2.2,0.6],\"look\":[0,0,-1.8],\"fov\":60}})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/ring-void-top-high.png",
+  "q": "high",
+  "size": "960x540",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\":\"corridor\",\"variant\":\"void\",\"atmosphere\":\"voidDark\",\"stride\":1.1,\"rings\":[[7.5,0,0.9]],\"cam\":{\"pos\":[0,2.2,0.6],\"look\":[0,0,-1.8],\"fov\":60}})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/ring-night-top-high.png",
+  "q": "high",
+  "size": "960x540",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"kit\":\"corridor\",\"variant\":\"night\",\"atmosphere\":\"nightIndoor\",\"lights\":{\"op\":\"out\",\"from\":0,\"to\":96},\"rings\":[[7.5,0.8,0.9]],\"cam\":{\"pos\":[0,2.2,0.6],\"look\":[0,0,-1.8],\"fov\":60}})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-deskFeet-teacher-t1.5-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\":\"deskFeet\",\"variant\":\"teacher\",\"t\":1.5,\"atmosphere\":\"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-deskFeet-teacher-t2.3-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\":\"deskFeet\",\"variant\":\"teacher\",\"t\":2.3,\"atmosphere\":\"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-deskFeet-teacher-t5.2-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\":\"deskFeet\",\"variant\":\"teacher\",\"t\":5.2,\"atmosphere\":\"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/set-deskFeet-teacher-t6.5-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\":\"deskFeet\",\"variant\":\"teacher\",\"t\":6.5,\"atmosphere\":\"morning\"})"
+   },
+   {
+    "steps": 2
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/palette-deskFeet-trousers-low.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\":\"deskFeet\",\"variant\":\"math\",\"t\":1,\"atmosphere\":\"overcast\"})"
+   },
+   {
+    "steps": 2
+   },
+   {
+    "eval": "(() => { const x = __game.ext; const t = { s: 0.32, l: 0.24 }; const regions = { near: [0.475, 0.47, 0.495, 0.53], right: [0.94, 0.47, 0.965, 0.53] }; const out = {}; const bad = []; for (const [k, r] of Object.entries(regions)) { const c = x.wp3Color(...r); out[k] = c; if (Math.abs(c.s - t.s) > 0.1 || Math.abs(c.l - t.l) > 0.08 || c.h < 0.55 || c.h > 0.66) bad.push(k + \" \" + c.hex + \" h\" + c.h + \" s\" + c.s + \" l\" + c.l); } if (bad.length) throw new Error(\"palette check trousers (#2A3A52 s0.32 l0.24): \" + bad.join(\"; \")); return out; })()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP3/palette-deskFeet-trousers-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2",
+  "ops": [
+   {
+    "eval": "__game.ext.wp3Preview({\"set\":\"deskFeet\",\"variant\":\"math\",\"t\":1,\"atmosphere\":\"overcast\"})"
+   },
+   {
+    "steps": 2
+   },
+   {
+    "eval": "(() => { const x = __game.ext; const t = { s: 0.32, l: 0.24 }; const regions = { near: [0.475, 0.47, 0.495, 0.53], right: [0.94, 0.47, 0.965, 0.53] }; const out = {}; const bad = []; for (const [k, r] of Object.entries(regions)) { const c = x.wp3Color(...r); out[k] = c; if (Math.abs(c.s - t.s) > 0.1 || Math.abs(c.l - t.l) > 0.08 || c.h < 0.55 || c.h > 0.66) bad.push(k + \" \" + c.hex + \" h\" + c.h + \" s\" + c.s + \" l\" + c.l); } if (bad.length) throw new Error(\"palette check trousers (#2A3A52 s0.32 l0.24): \" + bad.join(\"; \")); return out; })()"
    }
   ]
  }

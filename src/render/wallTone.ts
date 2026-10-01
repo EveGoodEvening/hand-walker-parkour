@@ -90,3 +90,70 @@ export function wallAlbedo(hex: number, y: number, o: WallToneOpts = {}): Lin {
   cache.set(key, out);
   return out;
 }
+
+// ——————————————————— 道具与人物的暗色补偿 ———————————————————
+// 同一个问题也出在家具、门、人物身上：§5.1 的裤子 #2A3A52（饱和度 0.32）早晨在画面上是 #04213D（0.88），
+// 实验台 #2A3136 成了 #041620。暗色越暗，toe 减掉的比例越大，剩下的就只有蓝通道。
+// 道具（无贴图、各个朝向都有）按「离地 0.6 m 的侧面」做参考受光，只补偿暗色：
+// 显示亮度（HSL 的 L）≤ 0.3 完全补偿，≥ 0.6 不动（亮色以前按眼睛调好了，受光不足只是略暗，不变色），中间平滑过渡；
+// 补偿的那部分再朝亮度去饱和一点，背光面受光更少、toe 又会把饱和度抬回去。
+
+/** 显示亮度在 [DARK_LO, DARK_HI] 之间从完全补偿过渡到不补偿。 */
+export const DARK_LO = 0.3, DARK_HI = 0.6;
+
+export interface PropToneOpts {
+  /** 0 = 不补偿，1 = 完全补偿（缺省）。夜景的 kit 与墙一样用 NIGHT_LIFT。 */
+  lift?: number;
+  /** 暗色（k = 1）去饱和的比例；按暗色程度 k 缩放。缺省 0.15。 */
+  desat?: number;
+  /** 参考氛围（缺省 morning；静场用自己的氛围）。 */
+  atmo?: AtmosphereId;
+  /** 灯的平均电平（跑段 0.9，静场 1）。 */
+  lamp?: number;
+  /** 参考高度（缺省 0.6 m）。 */
+  y?: number;
+}
+
+/** sRGB 十六进制的 HSL 亮度（0..1）。 */
+export function hexLightness(hex: number): number {
+  const r = ((hex >> 16) & 255) / 255, g = ((hex >> 8) & 255) / 255, b = (hex & 255) / 255;
+  return (Math.max(r, g, b) + Math.min(r, g, b)) / 2;
+}
+
+/** 道具颜色 hex（色板值）的补偿反照率（线性）。亮色原样返回（与 THREE.Color.setHex 相同）。 */
+export function propAlbedo(hex: number, o: PropToneOpts = {}): Lin {
+  const k = 1 - smoothstep(DARK_LO, DARK_HI, hexLightness(hex));
+  const lift = (o.lift ?? 1) * k;
+  if (lift <= 1e-4) return wallAlbedo(hex, 0, { lift: 0 });
+  return wallAlbedo(hex, o.y ?? 0.6, { lift, shade: 1, tex: 1, lamp: o.lamp ?? LAMP_MEAN, desat: (o.desat ?? 0.15) * k, atmo: o.atmo ?? 'morning' });
+}
+
+/** KitGeo.tone 用的函数：hex → 补偿后的线性颜色。lift ≤ 0 时返回 null（不补偿，例如虚空走廊的近黑）。 */
+export function propTone(o: PropToneOpts = {}): ((hex: number) => Lin) | null {
+  if ((o.lift ?? 1) <= 0) return null;
+  return (hex) => propAlbedo(hex, o);
+}
+
+/** kit 的道具补偿：白天完全补偿；夜景（lift < 1）补得少、去饱和多（与墙的 NIGHT_LIFT 一致，夜里灯管增益大）。 */
+export function kitPropTone(lift = 1): ((hex: number) => Lin) | null {
+  return propTone({ lift, desat: lift >= 1 ? 0.15 : 0.15 + (1 - lift) * 0.9 });
+}
+
+/**
+ * 发光体（Basic，不受光）的暗色：画面上 = NeutralToneMapping(顶点色)，toe 同样把暗色压成饱和色
+ * （夜里的窗 #1A2A33 成了 #0B2028，饱和度 0.57）。暗色按 toe 的逆写入，画面上就是色板值；亮色（窗光、灯管）不动。
+ */
+export function emissiveAlbedo(hex: number): Lin {
+  const k = 1 - smoothstep(DARK_LO, DARK_HI, hexLightness(hex));
+  const key = `emi|${hex}|${k.toFixed(3)}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const base = lin(hex);
+  let out: [number, number, number] = [...base];
+  if (k > 1e-4) {
+    const inv = toneInverse(base);
+    out = base.map((v, i) => (v > 1e-6 ? v * Math.pow((inv[i] as number) / v, k) : (inv[i] as number) * k)) as [number, number, number];
+  }
+  cache.set(key, out);
+  return out;
+}

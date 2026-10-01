@@ -9,7 +9,7 @@ import { Board, BOARDS, boardMaterial } from '../../boards';
 import { KitGeo } from '../../geom';
 import { bench, stool } from '../../kits/school/labRoom';
 import { PAL } from '../../palette';
-import { emissiveMesh, lambertMesh, schoolWallX, schoolWallZ, setEnv, setWallTone, wallZ } from './common';
+import { emiGeo, emissiveMesh, lambertMesh, propGeo, schoolWallX, schoolWallZ, setEnv, setWallTone, wallZ } from './common';
 
 export const BOARD_Z = -3.2;
 const BX = 1.8, BY0 = 0.85, BY1 = 2.1;
@@ -18,7 +18,7 @@ const XL = -3.6, XR = 3.6, ZB = 3.0, H = 3.4;
 function build(ctx: ViewContext): THREE.Object3D {
   const e = setEnv(ctx, 'labBoard');
   const root = new THREE.Group();
-  const stat = new KitGeo(), emi = new KitGeo(), floorG = new KitGeo();
+  const stat = propGeo('labNorth'), emi = emiGeo(), floorG = new KitGeo();
   // 地面：灰绿小方砖（贴图）
   floorG.quad([XL, 0, ZB], [XR, 0, ZB], [XR, 0, BOARD_Z], [XL, 0, BOARD_Z], 0xffffff,
     [[XL / 1.2, -ZB / 1.2], [XR / 1.2, -ZB / 1.2], [XR / 1.2, -BOARD_Z / 1.2], [XL / 1.2, -BOARD_Z / 1.2]], [0.85, 0.85, 1, 1]);

@@ -37,6 +37,11 @@ export class KitGeo {
   steadyValue = 0;
   /** 可选：顶点变换（行列式为负时自动翻转三角形绕向，镜像的东西正面仍朝外）。 */
   matrix: THREE.Matrix4 | null = null;
+  /**
+   * 可选：十六进制颜色写入前的变换（道具的暗色受光补偿，wallTone.ts 的 propTone / kitPropTone）。
+   * 只作用于十六进制；直接给的线性 RGB（墙面补偿）原样写入。
+   */
+  tone: ((hex: number) => Col) | null = null;
   private flip = false;
   /** 没给 uv 时用的坐标（贴图集的白色区中心）。 */
   constructor(readonly whiteUV: UV = [0.9, 0.12]) {}
@@ -48,8 +53,9 @@ export class KitGeo {
     _v.set(p[0], p[1], p[2]);
     if (this.matrix) _v.applyMatrix4(this.matrix);
     this.pos.push(_v.x, _v.y, _v.z);
-    if (typeof hex === 'number') _c.setHex(hex);
-    else { _c.r = hex[0]; _c.g = hex[1]; _c.b = hex[2]; }
+    const c = typeof hex === 'number' && this.tone ? this.tone(hex) : hex;
+    if (typeof c === 'number') _c.setHex(c);
+    else { _c.r = c[0]; _c.g = c[1]; _c.b = c[2]; }
     this.col.push(_c.r * shade, _c.g * shade, _c.b * shade);
     const w = uv ?? this.whiteUV;
     this.uv.push(w[0], w[1]);
@@ -151,6 +157,8 @@ export class KitGeo {
 
   /** 以粉笔值 v 执行 fn。 */
   withChalk(v: number, fn: () => void): this { const p = this.chalkValue; this.chalkValue = v; fn(); this.chalkValue = p; return this; }
+  /** 以颜色变换 t 执行 fn（null = 不变换，例如镜中房间、窗口里调好的暖色）。 */
+  withTone(t: ((hex: number) => Col) | null, fn: () => void): this { const p = this.tone; this.tone = t; fn(); this.tone = p; return this; }
   /** 以 aSteady 值 v 执行 fn。 */
   withSteady(v: number, fn: () => void): this { const p = this.steadyValue; this.steadyValue = v; fn(); this.steadyValue = p; return this; }
 

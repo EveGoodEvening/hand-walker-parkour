@@ -68,13 +68,16 @@ export const terrazzo: TexGen = (size, p) => {
   // 石子（边缘处在对侧再画一次，保证可平铺）
   const spec = terrazzoSpec(size);
   const n = Math.round(spec.count * Number(p.density ?? 1));
+  // polish（0..1）：打磨得更平的地面——石子更贴近底色、更淡。静场的镜头离地 0.3 m，近看时原来的石子像碎石
+  const polish = Math.min(1, Math.max(0, Number(p.polish ?? 0)));
+  const toBase = 0.4 + 0.25 * polish, alpha = 0.75 - 0.3 * polish;
   const pts: number[] = [];
   const edge = spec.rMax * 1.6;
   for (let i = 0; i < n; i++) {
     const x = rng.next() * size, y = rng.next() * size;
     const r = spec.rMin + Math.pow(rng.next(), 1.6) * (spec.rMax - spec.rMin);
     const sides = 3 + rng.int(4), rot = rng.next() * Math.PI;
-    g.fillStyle = hex(mixc(pickStone(rng.next()), base, 0.4), 0.75);
+    g.fillStyle = hex(mixc(pickStone(rng.next()), base, toBase), alpha);
     polygonPts(r, sides, rot, rng, pts);
     const wx = x < edge ? size : x > size - edge ? -size : 0;
     const wy = y < edge ? size : y > size - edge ? -size : 0;
