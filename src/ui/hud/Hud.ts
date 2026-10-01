@@ -27,6 +27,13 @@ export const NOTE_OPEN = { flipAt: 1.0, fadeAt: 4.4, endAt: 4.8 } as const;
 /** 七步平衡线：θ 达到 plantAngle（0.35 rad）时点到头（§2.4 stand.plantAngle）。 */
 export const BALANCE_RANGE = 0.35;
 export const BALANCE_HALF_PX = 56;
+/**
+ * 节拍点挪到画面上方的静场（修复轮 B3）：4-4 掌心（palmEye）镜头在他眼睛里，举起的右手占满画面下半部（指尖约在 53–55% 高度），
+ * 节拍点原来在栈底、正压在掌心那只眼睛下面。这里把节拍点（只是它，栈里照样占位，字幕和提示不动）挪到指尖上方的空地，
+ * 点的中心在 METRO_LIFT_Y 高度（styles.css 的 .hw-hud.hw-lift .hw-metro：translateY = 栈底到 (1 − METRO_LIFT_Y) × 100vh）。
+ */
+export const METRO_LIFT_SETS: ReadonlySet<string> = new Set(['palmEye']);
+export const METRO_LIFT_Y = 0.44;
 
 export class Hud {
   readonly root: HTMLDivElement;
@@ -217,6 +224,7 @@ export class Hud {
     });
     this.lastMetro = m;
     b.cls(this.metroEl, 'on', o.playing);
+    b.cls(this.root, 'hw-lift', snap.segKind === 'still' && METRO_LIFT_SETS.has(snap.still?.set ?? ''));
     b.style(this.selfDots, 'opacity', m.selfVisible ? String(m.selfOpacity) : '0');
     b.style(this.selfDots, 'transform', `translate(calc(-50% + ${m.selfDx}px), calc(-50% + ${m.selfDy}px))`);
     b.cls(this.selfDots, 'white', m.selfWhite);
