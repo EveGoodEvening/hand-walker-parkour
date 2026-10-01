@@ -1,7 +1,7 @@
 // tests/unit/content/lint.test.ts —— 内容 lint 自身（DESIGN.md R14、附录 B.8）与全部内容零问题。归 WP2。
 import { describe, expect, it } from 'vitest';
 import { availableChapters, getChapter } from '../../../src/levels/chapters/index';
-import { charCount, lintChapter, lintContent, lintStrings, lintText } from '../../../src/levels/lint';
+import { charCount, lintChapter, lintContent, lintSplices, lintStrings, lintText } from '../../../src/levels/lint';
 import type { ChapterDef } from '../../../src/levels/schema';
 import { SOURCE_CHAPTERS } from '../../../src/levels/sourceQuotes';
 import * as UI from '../../../src/ui/strings';
@@ -81,6 +81,38 @@ describe('lintChapter：能抓到数据错误', () => {
       { id: 'x2', face: 'blank', front: null, back: null, folded: false, pickup: false }];
     const r = lintChapter(d).map((i) => i.rule);
     expect(r).toEqual(expect.arrayContaining(['R14-lines', 'variant', 'notes']));
+  });
+});
+
+describe('lintSplices（附录 A-8：一个文字事件里的多行，连起来必须是原文的连续片段）', () => {
+  const clone = (id: 'ch3' | 'ch5'): ChapterDef => structuredClone(getChapter(id) as ChapterDef);
+  const runSeg = (d: ChapterDef, id: string) => {
+    const s = d.segments.find((x) => x.id === id);
+    if (s?.kind !== 'run') throw new Error(`${id} missing`);
+    return s;
+  };
+  it('旧数据的两处拼接被报出来：3-6 @112 删掉了「在所有我看见自己的地方，」，5-11 @150 删掉了「那个和我一模一样、在我前面、」', () => {
+    const c3 = clone('ch3'), c5 = clone('ch5');
+    const s36 = runSeg(c3, '3-6'), s511 = runSeg(c5, '5-11');
+    s36.events = [...(s36.events ?? []), { at: 112, type: 'text', line: ['c3.reflective', 'c3.shouldStand'] }];
+    s511.events = [...(s511.events ?? []), { at: 150, type: 'text', line: ['c5.stillCrawling', 'c5.rhythm'] }];
+    const r = [c3, c5].flatMap((d) => lintSplices(d, SOURCE_CHAPTERS));
+    expect(r.map((i) => [i.level, i.rule, i.where])).toEqual([['error', 'A-8-splice', 'ch3 3-6 @112'], ['error', 'A-8-splice', 'ch5 5-11 @150']]);
+    // lintContent 给了原文时同样报出
+    expect(lintContent({ chapters: [c3, c5], sources: SOURCE_CHAPTERS }).filter((i) => i.rule === 'A-8-splice').length).toBe(2);
+  });
+  it('补上中间那句、按原文顺序拆成两个事件的写法通过；两行开场卡（第二章）也是原文的连续片段', () => {
+    const c3 = clone('ch3');
+    const s36 = runSeg(c3, '3-6');
+    s36.events = [...(s36.events ?? []), { at: 112, type: 'text', line: ['c3.reflective', 'c3.seeSelf'] }, { at: 120, type: 'text', line: 'c3.shouldStand' }];
+    expect(lintSplices(c3, SOURCE_CHAPTERS)).toEqual([]);
+    expect(lintSplices(getChapter('ch2') as ChapterDef, SOURCE_CHAPTERS)).toEqual([]);
+    const bad = structuredClone(getChapter('ch2') as ChapterDef);
+    bad.card = ['c2.card2', 'c2.card1'];                       // 顺序颠倒也不是原文
+    expect(lintSplices(bad, SOURCE_CHAPTERS).map((i) => i.where)).toEqual(['ch2 card']);
+  });
+  it('当前五章：0 条', () => {
+    for (const c of availableChapters()) expect(lintSplices(getChapter(c) as ChapterDef, SOURCE_CHAPTERS), c).toEqual([]);
   });
 });
 

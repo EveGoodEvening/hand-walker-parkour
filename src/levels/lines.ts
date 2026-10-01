@@ -10,19 +10,25 @@ export const LINES = {
   'c1.card':        { t: '早自习的铃声还没响，走廊里已经有人了。', ch: 1, quote: true },
   'c1.leaveClass':  { t: '我把书包甩上肩，双手撑地，出了教室。', ch: 1, quote: true },
   'c1.nickname':    { t: '手行者来了。', ch: 1, quote: true },
+  'c1.justNickname':{ t: '他们以为它只是个绰号。', ch: 1, quote: true },
+  'c1.meToo':       { t: '有时候我也这么以为。', ch: 1, quote: true },
   'c1.lastWeek':    { t: '直到上周。', ch: 1, quote: true },
   'c1.cold':        { t: '凉意从掌心一直爬到小臂。', ch: 1, quote: true },
   'c1.inverted':    { t: '一个倒着的人。', ch: 1, quote: true },
   'c1.hey':         { t: '喂。', ch: 1, quote: true },
   'c1.handsQ':      { t: '你手……', ch: 1, quote: true },
   'c1.hurtQ':       { t: '不疼吗？', ch: 1, quote: true },
+  'c1.sincere':     { t: '他的问题很真诚，真诚到近乎冒犯。', ch: 1, quote: true },
   'c1.hurtA1':      { t: '疼。', ch: 1, quote: true },
   'c1.hurtA2':      { t: '每天都疼。', ch: 1, quote: true },
+  'c1.laughed':     { t: '他愣了一下，然后笑了，像是我开了个玩笑。', ch: 1, quote: true },
+  'c1.prickle':     { t: '那种熟悉的、细微的刺痛，', ch: 1, quote: true },   // 与 c1.oldFriend 连成原文一句，两行显示
   'c1.oldFriend':   { t: '像旧友拍肩。', ch: 1, quote: true },
   'c1.gaze':        { t: '规矩管不住所有的眼睛。', ch: 1, quote: true },
   'c1.washroom':    { t: '我拐进厕所。', ch: 1, quote: true },
   'c1.lateHead':    { t: '镜子里，我的倒影晚了半拍才抬起头。', ch: 1, quote: true },
   'c1.stillDown':   { t: '它还在低头。', ch: 1, quote: true },
+  'c1.bellRang':    { t: '早自习铃终于响了，', ch: 1, quote: true },          // 与 c1.bell 连成原文一句，两行显示
   'c1.bell':        { t: '尖锐，像某种警告。', ch: 1, quote: true },
   'c1.feetQ':       { t: '那我的脚，究竟是用来做什么的？', ch: 1, quote: true },
   'c1.note':        { t: '手指触到一团纸。', ch: 1, quote: true },
@@ -56,6 +62,7 @@ export const LINES = {
   'c2.counter':     { t: '我爬到窗口前，站起来取餐。', ch: 2, quote: true },
   'c2.eatMore':     { t: '多吃点。', ch: 2, quote: true },
   'c2.compensate':  { t: '那多出来的一勺不是善意，是补偿。', ch: 2, quote: true },
+  'c2.drip':        { t: '油汁沿着盘沿流下来，滴在我的校服领口上，', ch: 2, quote: true },   // 与 c2.collar 连成原文一句
   'c2.collar':      { t: '像一枚温热的印章。', ch: 2, quote: true },
   'c2.sits':        { t: '它坐在椅子上。', ch: 2, quote: true },
   'c2.curled':      { t: '而我正把腿蜷在椅子下面。', ch: 2, quote: true },
@@ -72,11 +79,14 @@ export const LINES = {
   'c2.echoRule':    { t: '回音不会在我停的时候停。', ch: 2, quote: true },
   'c2.dont':        { t: '别。', ch: 2, quote: true },                     // 2-8 第一次压住腿时的低语（twitch.say）
   'c2.blank':       { t: '空白。', ch: 2, quote: true },
+  'c2.blankWorse':  { t: '空白比字更吓人。', ch: 2, quote: true },
   'c2.noteBack':    { t: '你后面。', ch: 2, quote: true },                 // n1-desk 的背面（第二章打开）
   'c2.extraHand':   { t: '它多了一只手。', ch: 2, quote: true },
   'c2.whyNotStand': { t: '你为什么不站起来？', ch: 2, quote: true },       // 黑板字（board）
   'c2.cantStand':   { t: '因为我站不起来。', ch: 2, quote: true },         // 他擦掉问题后自己写的黑板字（board）
   'c2.lying':       { t: '我在撒谎。', ch: 2, quote: true },
+  'c2.notBody':     { t: '真正站不起来的，不是我的身体。', ch: 2, quote: true },
+  'c2.whereTo':     { t: '是我不知道，站起来之后，我该去哪里。', ch: 2, quote: true },
   'c2.whatTell':    { t: '你想告诉我什么？', ch: 2, quote: true },
   'c2.approach':    { t: '它正在靠近。', ch: 2, quote: true },
   'c2.out1':        { t: '我没有回头。', ch: 2, quote: true },
@@ -98,6 +108,8 @@ export const LINES = {
   'c3.strange':     { t: '这天也怪。', ch: 3, quote: true },
   'c3.rain':        { t: '下雨了。', ch: 3, quote: true },
   'c3.goldPieces':  { t: '路灯倒在里面，碎成一块一块的金色。', ch: 3, quote: true },
+  'c3.shedRoof':    { t: '铁皮顶棚会在下雨时发出很响的声音，', ch: 3, quote: true },   // 与 c3.coverSteps 连成原文一句
+  'c3.coverSteps':  { t: '把我的脚步声盖住。', ch: 3, quote: true },
   'c3.notCovered':  { t: '但今天它没有盖。', ch: 3, quote: true },
   'c3.iStop':       { t: '我停下来。', ch: 3, quote: true },
   'c3.itStops':     { t: '它也停下来。', ch: 3, quote: true },
@@ -111,7 +123,9 @@ export const LINES = {
   'c3.useless':     { t: '我已经知道回头没用。', ch: 3, quote: true },
   'c3.notBehind':   { t: '它不在我身后。', ch: 3, quote: true },
   'c3.reflective':  { t: '它在所有能反光的地方，', ch: 3, quote: true },     // 原文后面是逗号
+  'c3.seeSelf':     { t: '在所有我看见自己的地方，', ch: 3, quote: true },   // 原文里夹在 reflective 与 shouldStand 之间（附录 A-8）
   'c3.shouldStand': { t: '在所有我本该站起来却没有站起来的地方。', ch: 3, quote: true },
+  'c3.redLight':    { t: '栏杆的红光在我身上扫了一下，', ch: 3, quote: true },   // 与 c3.wound 连成原文一句
   'c3.wound':       { t: '像一道浅浅的伤口。', ch: 3, quote: true },
   'c3.soundLight':  { t: '楼道里的灯是声控的。', ch: 3, quote: true },
   'c3.twelveSteps': { t: '客厅到卫生间的距离是十二步——', ch: 3, quote: true },
@@ -120,6 +134,7 @@ export const LINES = {
   'c3.wantStand':   { t: '你想让我站起来？', ch: 3, quote: true },
   'c3.afterStand':  { t: '站起来之后呢？', ch: 3, quote: true },
   'c3.doorClosed':  { t: '门关上了。', ch: 3, quote: true },
+  'c3.rightFootMoved':{ t: '然后我的右脚动了。', ch: 3, quote: true },        // 结尾卡第一行（第三章原文，不是第一章的「动了一下」）
   'c3.out1':        { t: '它们在练习。', ch: 3, quote: true },
   'c3.out2':        { t: '它在等我。', ch: 3, quote: true },
   'c3.out3':        { t: '而我，第一次想要回头。', ch: 3, quote: true },
@@ -146,6 +161,8 @@ export const LINES = {
   'c4.dontStand':   { t: '别站着。', ch: 4, quote: true },
   'c4.run':         { t: '跑。', ch: 4, quote: true },
   'c4.kneel':       { t: '我跪下去。', ch: 4, quote: true },
+  'c4.slow':        { t: '很慢，很慢。', ch: 4, quote: true },             // 4-5 段首：「我开始跑。很慢，很慢。但比站着好。」
+  'c4.better':      { t: '但比站着好。', ch: 4, quote: true },
   'c4.follows':     { t: '身后的脚步声跟着我了。', ch: 4, quote: true },
   'c4.notChasing':  { t: '但它不是追上来的。', ch: 4, quote: true },
   'c4.sameSpeed':   { t: '我快，它快；我慢，它慢。', ch: 4, quote: true },
@@ -207,6 +224,8 @@ export const LINES = {
   'c5.seventh':     { t: '第七步的时候，我摔倒了。', ch: 5, quote: true },
   'c5.practiceQ':   { t: '你……在练习走路？', ch: 5, quote: true },
   'c5.theyPractice':{ t: '不是。是它们在练习。', ch: 5, quote: true },
+  'c5.failed':      { t: '我失败了。', ch: 5, quote: true },
+  'c5.orRather':    { t: '或者说，我的身体成功了七步，然后把我摔在地上。', ch: 5, quote: true },
   'c5.walkingQ':    { t: '你刚才……在走路？', ch: 5, quote: true },
   'c5.sevenSteps':  { t: '走了七步。', ch: 5, quote: true },               // 是「我」回答陈默
   'c5.noteBack':    { t: '现在，你后面没有我了。', ch: 5, quote: true },   // n5-note 的背面
@@ -219,6 +238,7 @@ export const LINES = {
   'c5.notStanding': { t: '不是那个站着的影子。', ch: 5, quote: true },
   'c5.alreadyAhead':{ t: '它已经在往前走了。', ch: 5, quote: true },
   'c5.stillCrawling':{ t: '我要找到那个还在爬行的影子，', ch: 5, quote: true },
+  'c5.likeMe':      { t: '那个和我一模一样、在我前面、', ch: 5, quote: true },   // 原文里夹在 stillCrawling 与 rhythm 之间（附录 A-8）
   'c5.rhythm':      { t: '用掌根指节指腹敲出节奏的影子。', ch: 5, quote: true },
   'c5.out1':        { t: '因为它可能是真正的我。', ch: 5, quote: true },
   'c5.out2':        { t: '而我，只是它的倒影。', ch: 5, quote: true },

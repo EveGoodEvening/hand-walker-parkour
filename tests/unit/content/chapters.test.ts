@@ -1,6 +1,6 @@
 // tests/unit/content/chapters.test.ts —— 五章数据（DESIGN.md §4、§8.10 WP2 验收 1–4、6，附录 B.1、B.3、附录 C）。归 WP2。
 import { describe, expect, it } from 'vitest';
-import { CORRIDOR_WIDTH, LANE_WIDTH, LIMITS } from '../../../src/core/constants';
+import { CORRIDOR_WIDTH, LANE_WIDTH, LIMITS, TEXT } from '../../../src/core/constants';
 import { FALLBACK_ATMOSPHERES } from '../../../src/core/fallbacks';
 import { QUALITY } from '../../../src/core/quality';
 import type { ChapterId, ObstacleClass } from '../../../src/core/types';
@@ -13,6 +13,7 @@ import { OBSTACLES } from '../../../src/levels/obstacles';
 import type { ChapterDef, CompiledSegment, RunSegmentDef, SegmentDef, StillSegmentDef } from '../../../src/levels/schema';
 import { nominalTimeline, timeAtS, validateChapter } from '../../../src/levels/validate';
 import { solver } from '../../../src/sim/Solver';
+import { NOTE_OPEN } from '../../../src/ui/hud/Hud';
 
 const IDS = ['ch1', 'ch2', 'ch3', 'ch4', 'ch5'] as const;
 const ch = (id: ChapterId) => getChapter(id) as ChapterDef;
@@ -38,7 +39,8 @@ const REQUIRED: Record<(typeof IDS)[number], string[]> = {
 const CARDS: Record<(typeof IDS)[number], { card: string[]; outro: string[] }> = {
   ch1: { card: ['早自习的铃声还没响，走廊里已经有人了。'], outro: ['有些问题问出来就回不去了。', '但我现在已经不想问了。', '我想知道答案。'] },
   ch2: { card: ['午饭铃比早自习铃更长，', '像一把钝锯在空气里来回拉扯。'], outro: ['我没有回头。', '像有人在空房间里鼓掌。'] },
-  ch3: { card: ['晚自习的灯是一盏一盏灭的。'], outro: ['它们在练习。', '它在等我。', '而我，第一次想要回头。'] },
+  // 第三章结尾卡在「它们在练习。」之前加原文「然后我的右脚动了。」（评审修复 U1，代替 3-11 静场；建议 lead 回写 B.1）
+  ch3: { card: ['晚自习的灯是一盏一盏灭的。'], outro: ['然后我的右脚动了。', '它们在练习。', '它在等我。', '而我，第一次想要回头。'] },
   ch4: { card: ['我睡着的时候，脚还在抖。'], outro: ['羡慕和歧视，有时候是同一件事，只是换了一个表情。', '它不像鼓掌。', '像某种练习。'] },
   ch5: { card: ['我醒的时候，闹钟还没响。'], outro: ['因为它可能是真正的我。', '而我，只是它的倒影。'] },
 };
@@ -315,12 +317,20 @@ describe('§2.8 难度曲线：最后一个跑段是减速的叙事收束，不�
     }
     expect(problems).toEqual([]);
   });
-  it('2-10 碎角镜只有 @10 一个要处理的障碍（§4.2），其余行都只占边道', () => {
-    const seg = compile(ch('ch2')).segments.find((s) => s.def.id === '2-10')!;
-    const REQ = new Set(['low', 'bar', 'block']);
-    const centre = seg.obstacles.filter((o) => REQ.has(o.cls) && o.lanes.includes(0));
-    expect(centre.map((o) => o.beat)).toEqual([10]);
-    expect(density(seg).inputs * 14).toBeLessThanOrEqual(1 + 1e-9);   // 140 拍里求解器只需要 1 次输入
+  // 评审修复 U1 推翻了 §10.2「2-10 只有 @10 一个障碍」：140 拍里 30 s 不用按键太空。2-10 仍是减速的叙事收束，
+  // 但每 12–16 拍有一个轻的强制动作；必需动作密度 ≤ 0.5 次 / 10 拍，并且低于本章技巧高潮 2-8。
+  it('2-10 碎角镜：求解器最少输入 ≤ 0.5 次 / 10 拍，低于本章最密的 2-8；2-8 是第二章最密的跑段', () => {
+    const runs = compile(ch('ch2')).segments.filter((s) => s.kind === 'run');
+    const d = new Map(runs.map((s) => [s.def.id, density(s).inputs]));
+    expect(d.get('2-10')!).toBeLessThanOrEqual(0.5 + 1e-9);
+    expect(d.get('2-10')!).toBeGreaterThanOrEqual(0.3 - 1e-9);
+    expect(d.get('2-10')!).toBeLessThan(d.get('2-8')!);
+    for (const [sid, v] of d) if (sid !== '2-8') expect(v, sid).toBeLessThan(d.get('2-8')!);
+  });
+  it('第三章高潮不倒置：3-6 的最少输入 ≥ 3-4；第四章 4-5 ≥ 4-1', () => {
+    const inputs = (id: ChapterId, sid: string) => density(compile(ch(id)).segments.find((s) => s.def.id === sid)!).inputs;
+    expect(inputs('ch3', '3-6')).toBeGreaterThanOrEqual(inputs('ch3', '3-4'));
+    expect(inputs('ch4', '4-5')).toBeGreaterThanOrEqual(inputs('ch4', '4-1'));
   });
 });
 
@@ -331,7 +341,10 @@ describe('5-11 门牌（§4.5「@208 画面水平翻转（门牌成了反字）�
     { name: 'landscape', back: 2.35, k: 0.7, halfH: (76 / 2) * (Math.PI / 180) },
     { name: 'portrait', back: 3.8, k: 0.6, halfH: Math.atan(Math.tan((80 / 2) * (Math.PI / 180)) * (9 / 20)) },
   ];
-  it('翻转那一拍：门牌在两种机位前方 ≥ 4 m、在雾的远端以内；翻转之后还在画面里 ≥ 0.8 s', () => {
+  // 评审修复 U1：门牌挂低、略提前（@214、y 1.3–1.6 m），让它在翻转后约 0.5–1.2 s 进入 0.92 m 横屏机位的视线带。
+  // 代价是竖屏（镜头更靠后、水平视角更窄）在画面里的时间从 0.85 s 降到约 0.67 s，所以竖屏只要求 ≥ 0.6 s。
+  const MIN_IN_FRAME: Record<string, number> = { landscape: 0.8, portrait: 0.6 };
+  it('翻转那一拍：门牌在两种机位前方 ≥ 4 m、在雾的远端以内；翻转之后还在画面里（横屏 ≥ 0.8 s，竖屏 ≥ 0.6 s）', () => {
     const seg = compile(ch('ch5')).segments.find((s) => s.def.id === '5-11')!;
     const plate = seg.surfaces.find((s) => s.kind === 'doorPlate');
     expect(plate?.side).toBe('L');
@@ -347,8 +360,89 @@ describe('5-11 门牌（§4.5「@208 画面水平翻转（门牌成了反字）�
       expect(ahead, `${c.name}: inside the fog at the flip`).toBeLessThanOrEqual(fogFar);
       const lateral = CORRIDOR_WIDTH / 2 + c.k * LANE_WIDTH;
       const sExit = plate!.s0 + c.back - lateral / Math.tan(c.halfH);   // 玩家走到这里时门牌出画
-      expect(timeAtS(tl, sExit) - tFlip, `${c.name}: seconds in frame after the flip`).toBeGreaterThanOrEqual(0.8);
+      expect(timeAtS(tl, sExit) - tFlip, `${c.name}: seconds in frame after the flip`).toBeGreaterThanOrEqual(MIN_IN_FRAME[c.name]!);
     }
+  });
+  it('门牌挂低（y 在 1.2–1.7 m 之间，0.92 m 机位的视线带），翻转后约 0.5–1.2 s 内经过横屏镜头前 6 m → 4 m', () => {
+    const seg = compile(ch('ch5')).segments.find((s) => s.def.id === '5-11')!;
+    const plate = seg.surfaces.find((s) => s.kind === 'doorPlate')!;
+    const [y0, y1] = plate.y ?? [0, 0];
+    expect(y0).toBeGreaterThanOrEqual(1.2);
+    expect(y1).toBeLessThanOrEqual(1.7);
+    const tl = nominalTimeline(seg);
+    const tFlip = timeAtS(tl, seg.s0 + 208 * seg.stride);
+    const back = CAMS[0]!.back;
+    const tAt = (ahead: number) => timeAtS(tl, plate.s0 + back - ahead) - tFlip;   // 门牌在镜头前 ahead 米的时刻
+    expect(tAt(6)).toBeGreaterThanOrEqual(0.4);
+    expect(tAt(4)).toBeLessThanOrEqual(1.2);
+  });
+});
+
+describe('评审修复 U1 的数据形状', () => {
+  const runSeg = (id: ChapterId, sid: string) => compile(ch(id)).segments.find((s) => s.def.id === sid)!;
+  it('1-2 陈默：@113–@121 之间至少有一条边道上没有储物柜或任何 block（他要有地方让开）', () => {
+    const seg = runSeg('ch1', '1-2');
+    const s0 = seg.s0 + 113 * seg.stride, s1 = seg.s0 + 121 * seg.stride;
+    const free = ([-1, 1] as const).filter((lane) => !seg.obstacles.some((o) => o.cls === 'block' && o.lanes.includes(lane) && o.s1 > s0 && o.s0 < s1));
+    expect(free.length).toBeGreaterThanOrEqual(1);
+    // 陈默本人与他留在过道里的脚仍在中道（§4.1）；他在脚之前让开
+    const chen = seg.obstacles.find((o) => o.kind === 'chenMo')!;
+    const foot = seg.obstacles.find((o) => o.kind === 'footOut' && o.params.itemId === 'chenmoFoot')!;
+    expect(chen.lanes).toEqual([0]);
+    expect(foot.lanes).toEqual([0]);
+    expect(chen.behavior.type === 'yield' ? chen.behavior.atBeat : NaN).toBeLessThan(chen.beat);
+  });
+  it('1-2 陈默那场的减速：回到原速用 ≥ 1.2 s，并在撑跃那只脚之前回到稳定步频', () => {
+    const seg = runSeg('ch1', '1-2');
+    const slow = seg.events.find((e) => e.body.type === 'slow')!;
+    const b = slow.body as Extract<typeof slow.body, { type: 'slow' }>;
+    expect(b.ramp ?? 0.5).toBeGreaterThanOrEqual(1.2);
+    const tl = nominalTimeline(seg);
+    const foot = seg.obstacles.find((o) => o.kind === 'footOut' && o.params.itemId === 'chenmoFoot')!;
+    const tSlowEnd = timeAtS(tl, seg.s0 + slow.at * seg.stride) + (b.ramp ?? 0.5) * 2 + b.seconds;
+    const tFoot = timeAtS(tl, foot.s0 - 0.25);                 // 接触时刻（碰撞盒前沿）
+    expect(tFoot - tSlowEnd, 'seconds between the end of the speed-up and the foot').toBeGreaterThanOrEqual(0.4);
+  });
+  it('1-3「它还在低头。」出字到消失都在替身低头保持的时间里', () => {
+    const seg = runSeg('ch1', '1-3');
+    const tl = nominalTimeline(seg);
+    const tB = (b: number) => timeAtS(tl, seg.s0 + b * seg.stride);
+    const mod = seg.events.find((e) => e.body.type === 'doubleMod' && e.id === 'mirrorLate')!;
+    const hold = (mod.body as Extract<typeof mod.body, { type: 'doubleMod' }>).mod.headDownHold ?? 0;
+    const text = seg.events.find((e) => e.body.type === 'text' && e.body.line === 'c1.stillDown')!;
+    const t0 = tB(mod.at), tText = tB(text.at);
+    const shown = (Array.from(lineText('c1.stillDown')).length * TEXT.msPerChar + TEXT.baseMs) / 1000;
+    expect(tText).toBeGreaterThanOrEqual(t0);
+    expect(tText + shown, `text gone at +${(tText + shown - t0).toFixed(2)} s, head held down for ${hold} s`).toBeLessThanOrEqual(t0 + hold + 1e-9);
+  });
+  it('5-9「像有人刚刚坐过。」在纸条收起之后（纸条显示 NOTE_OPEN.endAt 秒）', () => {
+    const seg = ch('ch5').segments.find((s) => s.id === '5-9') as StillSegmentDef;
+    const open = seg.events.find((e) => e.type === 'noteOpen')!;
+    const sat = seg.events.find((e) => e.type === 'text' && e.line === 'c5.sat')!;
+    const dent = seg.events.find((e) => e.type === 'actor' && e.clip === 'touchPillowDent')!;
+    expect(sat.at).toBeGreaterThanOrEqual(open.at + NOTE_OPEN.endAt - 1e-9);
+    expect(dent.at).toBeGreaterThanOrEqual(open.at + NOTE_OPEN.endAt - 1e-9);
+  });
+  it('班长与马老师的组存在（WP6 specials 按组 id 认出来；不是中道上的障碍）', () => {
+    const groups = (id: ChapterId, sid: string) => ((ch(id).segments.find((s) => s.id === sid) as RunSegmentDef).npcs ?? []).map((g) => g.id);
+    expect(groups('ch3', '3-1')).toContain('monitor');
+    expect(groups('ch5', '5-7')).toContain('teacherMa');
+    for (const id of IDS) for (const seg of compile(ch(id)).segments) {
+      for (const o of seg.obstacles) expect(['monitor', 'teacherMa'].includes(String(o.params.itemId ?? '')), `${seg.def.id} ${o.kind}`).toBe(false);
+    }
+  });
+  it('4-5 照原文「很慢，很慢。但比站着好。」：段首约 5 m/s，段内渐变到不超过约 6.5 m/s，明显低于 4-1；段首有这两句', () => {
+    const s45 = runSeg('ch4', '4-5'), s41 = runSeg('ch4', '4-1');
+    const v = (seg: CompiledSegment, b: number) => seg.cadenceAt(b) * seg.stride;
+    expect(v(s45, 0)).toBeGreaterThanOrEqual(4.6);
+    expect(v(s45, 0)).toBeLessThanOrEqual(5.4);
+    const vmax = Math.max(...Array.from({ length: 281 }, (_, b) => v(s45, b)));
+    expect(vmax).toBeLessThanOrEqual(6.6);
+    expect(vmax).toBeLessThan(0.75 * v(s41, 0));
+    const first = s45.events.find((e) => e.body.type === 'text')!;
+    expect(first.at).toBe(0);
+    const body = first.body as Extract<typeof first.body, { type: 'text' }>;
+    expect((Array.isArray(body.line) ? body.line : [body.line]).map((l) => lineText(l))).toEqual(['很慢，很慢。', '但比站着好。']);
   });
 });
 

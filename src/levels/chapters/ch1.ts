@@ -7,6 +7,14 @@
 //     两个间隔都 ≥ 20 s。各段拍数不变（tests/unit/core 断言了全章长度）。
 //   · lead 集成（WP1 校验器 R5-R10）：1-5 从检查点 @104 起原来没有合规路线。@113 的 L 从中道挪到左道、@161 的 L 从左道挪到右道，
 //     路线变成 23.5–23.8 s 换进左道、32.15 s 回中道，三个休息窗各放宽 0.3 s 仍然有解。只换车道，不改节拍和台词。
+//   · 评审修复 U1（偏离 §4.1 表格的地方，建议 lead 写进 §10.3）：
+//     - 1-2 陈默：右侧储物柜错开到 @99–@113（长度不变，@113 之后右道空着，是他向右让开的地方）；「喂。」@101、减速 @102（1.2 s 减到 1.2 m/s、走 5.0 s、1.2 s 回到原速），
+//       中间按原文补「他的问题很真诚，真诚到近乎冒犯。」「他愣了一下，然后笑了，像是我开了个玩笑。」；他在 @112 让开（表中 @115），
+//       回速在 @115.2 结束，@118 那只脚在稳定步频下撑跃。陈默本人仍在 @116，脚仍在 @118。
+//     - 1-2 @6、@22 按原文补「他们以为它只是个绰号。」「有时候我也这么以为。」（@22 在第一个挡道之后，不和教学抢）。
+//     - 1-3 @38 低头保持 1.0 s → 2.8 s：@44「它还在低头。」出字到消失（1.36 → 2.70 s）都在低头。@19 加 'LL.'（门道是可选路线）。
+//     - 1-1 撑跃提示 @4 → @6（第一句旁白出来之后，接触前仍 ≥ 1.2 s）。
+//     - 半句比喻补成原文整句，两行显示：1-2 @124「那种熟悉的、细微的刺痛，」「像旧友拍肩。」；1-3 @58「早自习铃终于响了，」「尖锐，像某种警告。」。
 // 台词全部来自 lines.ts。
 import type { ChapterDef } from '../schema';
 
@@ -32,7 +40,7 @@ export default {
       rows: [[12, ['.', 'footOut', '.']], [20, ['.', 'footOut', '.']]],     // 静止伸在过道里的脚
       events: [
         { at: 0, type: 'text', line: 'c1.leaveClass' },
-        { at: 4, type: 'hint', hint: 'jump' },
+        { at: 6, type: 'hint', hint: 'jump' },                                         // 第一句旁白出完之后；接触 @11.75 前 1.3 s（R7）
         { at: 0, type: 'ambience', amb: 'reading', level: 1, seconds: 1.5 },
       ],
     },
@@ -55,14 +63,16 @@ export default {
         [162, '.L.'], [167, 'B..'],
       ],
       items: [
-        { at: 106, lane: -1, kind: 'locker', len: 14 },                     // 储物柜夹出中道
-        { at: 106, lane: 1, kind: 'locker', len: 14 },
-        { at: 116, lane: 0, kind: 'chenMo', id: 'chenmo', behavior: { type: 'yield', atBeat: 115 } },
-        { at: 118, lane: 0, kind: 'footOut', id: 'chenmoFoot', behavior: { type: 'static' } },
+        { at: 106, lane: -1, kind: 'locker', len: 14 },                     // 储物柜夹出中道（@106–@113 两侧都是柜子）
+        { at: 99, lane: 1, kind: 'locker', len: 14 },                       // 右侧错开到 @99–@113：给陈默留出向右让开的地方
+        { at: 116, lane: 0, kind: 'chenMo', id: 'chenmo', behavior: { type: 'yield', atBeat: 112 } },   // 对话说完，他站起来让到右边
+        { at: 118, lane: 0, kind: 'footOut', id: 'chenmoFoot', behavior: { type: 'static' } },          // 留在过道里的脚
       ],
       notes: [{ at: 132, lane: 1, note: 'n1-a' }],
       events: [
         { at: 2, type: 'text', line: 'c1.nickname', style: 'whisper', pan: -0.6, id: 'whisperHandWalker' },
+        { at: 6, type: 'text', line: 'c1.justNickname' },
+        { at: 22, type: 'text', line: 'c1.meToo' },                                      // 第一个挡道（@17，提示 @10）之后，不和它抢
         { at: 10, type: 'hint', hint: 'lane' },
         { at: 40, type: 'text', line: 'c1.lastWeek' },
         { at: 47, type: 'text', line: 'c1.cold' },
@@ -70,14 +80,19 @@ export default {
         { at: 48, type: 'overlay', op: 'desaturate', seconds: 1.2 },
         { at: 53, type: 'text', line: 'c1.inverted' },
         { at: 60, type: 'hint', hint: 'duck' },
-        { at: 108, type: 'text', line: 'c1.hey', style: 'other', speaker: 'chenMo' },
-        { at: 109, type: 'slow', speed: 1.2, seconds: 4.2, ramp: 0.5, timeline: [
+        { at: 101, type: 'text', line: 'c1.hey', style: 'other', speaker: 'chenMo' },
+        // 减速 1.2 s → 1.2 m/s 走 5.0 s → 1.2 s 回到原速（回速不再是 0.6 s 内猛地加速）。「他愣了一下，然后笑了」之后
+        // 他起身（ObstacleView：yield 前 2.6 → 1.6 拍）、让到右边（前 1.6 → 0.6 拍），@112 让开；回速在 @115.2 结束，
+        // @118 那只脚在稳定步频下撑跃
+        { at: 102, type: 'slow', speed: 1.2, seconds: 5.0, ramp: 1.2, timeline: [
           { at: 0.3, type: 'text', line: 'c1.handsQ', style: 'other', speaker: 'chenMo', id: 'chenMoAsk' },
-          { at: 1.3, type: 'text', line: 'c1.hurtQ', style: 'other', speaker: 'chenMo' },
-          { at: 2.4, type: 'text', line: 'c1.hurtA1', style: 'self' },
-          { at: 3.2, type: 'text', line: 'c1.hurtA2', style: 'self' },
+          { at: 1.1, type: 'text', line: 'c1.hurtQ', style: 'other', speaker: 'chenMo' },
+          { at: 1.9, type: 'text', line: 'c1.sincere' },
+          { at: 2.9, type: 'text', line: 'c1.hurtA1', style: 'self' },
+          { at: 3.5, type: 'text', line: 'c1.hurtA2', style: 'self' },
+          { at: 4.2, type: 'text', line: 'c1.laughed' },
         ] },
-        { at: 124, type: 'text', line: 'c1.oldFriend' },
+        { at: 124, type: 'text', line: ['c1.prickle', 'c1.oldFriend'] },                  // 原文一句，两行显示
         { at: 156, type: 'text', line: 'c1.gaze' },
       ],
     },
@@ -87,7 +102,8 @@ export default {
       beats: 72, stride: 1.0, cadence: 4.4,
       follower: { mode: 'hidden' },
       surfaces: [{ id: 'wcMirror', kind: 'mirror', side: 'L', from: 8, to: 60, y: [0.25, 1.6], backdrop: 'darkRoom' }],
-      rows: [[14, '.W.', 3], [27, '.L.'], [49, 'W..', 3], [49, '..L'], [54, '.H.'], [63, 'L..']],
+      // @19：左、中两道各一只拖把桶，右道是来回荡的坏锁门——撑跃过去，或者在门荡开的间隙里从右道过去（评审 p13）
+      rows: [[14, '.W.', 3], [19, 'LL.'], [27, '.L.'], [49, 'W..', 3], [49, '..L'], [54, '.H.'], [63, 'L..']],
       items: [
         { at: 20, lane: 1, kind: 'stallDoor', behavior: { type: 'swing', period: 1.8, phase: 0 } },
         { at: 32, lane: 1, kind: 'stallDoor', behavior: { type: 'swing', period: 1.8, phase: 0.5 } },
@@ -96,13 +112,14 @@ export default {
         { at: 0, type: 'text', line: 'c1.washroom' },
         { at: 6, type: 'double', spec: { id: 'wc', surface: 'wcMirror', source: 'history', delay: 0.35 } },
         { at: 9, type: 'hint', hint: 'wet' },
-        { at: 38, type: 'doubleMod', target: 'wc', mod: { headLag: 0.6, headDownHold: 1.0 }, id: 'mirrorLate' },
+        // 低头要一直保持到 @44「它还在低头。」显示完（@38 之后 1.36 s 出字，再显示 1.34 s）
+        { at: 38, type: 'doubleMod', target: 'wc', mod: { headLag: 0.6, headDownHold: 2.8 }, id: 'mirrorLate' },
         { at: 38, type: 'camera', shot: 'glanceLeft', seconds: 1.0 },
         { at: 40, type: 'text', line: 'c1.lateHead' },
         { at: 44, type: 'text', line: 'c1.stillDown' },
         { at: 56, type: 'lights', op: 'flicker', from: 56, to: 60, every: 1 },
         { at: 58, type: 'bell', kind: 'morning', id: 'bellWarning' },
-        { at: 58, type: 'text', line: 'c1.bell' },
+        { at: 58, type: 'text', line: ['c1.bellRang', 'c1.bell'] },                       // 原文一句，两行显示
         { at: 66, type: 'text', line: 'c1.feetQ' },
       ],
     },
