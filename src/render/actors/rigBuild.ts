@@ -13,7 +13,8 @@ import { propHex } from '../wallTone';
 import type { PoseHistoryAPI, QualityProfile, RigFactory, RigHandle, ViewContext } from '../../core/contracts';
 import { GeoBuilder, type V3 } from '../../core/geo';
 import { BONE_COUNT, BONE_INDEX, BONE_PARENT, BONES, type BoneName, type Pose } from '../../core/rig';
-import type { QualityTier } from '../../core/types';
+import type { AtmosphereId, QualityTier } from '../../core/types';
+import { Tone } from '../kits/outside/lib/tone';
 import { PoseHistory } from './PoseHistory';
 
 /** 骨段长度（米）。IK 用。 */
@@ -74,6 +75,24 @@ const TONED: ReadonlySet<string> = new Set(['uniform', 'pants', 'hair', 'shoe', 
 const C = Object.fromEntries(Object.entries(RIG_COLORS).map(([k, v]) => [k, TONED.has(k) ? propHex(v) : v])) as Record<keyof typeof RIG_COLORS, number>;
 /** 写进顶点色的颜色（深色衣物、鞋底已按早晨的受光补偿）。测试与户外的颜色倍率用它找顶点。 */
 export function rigColor(k: keyof typeof RIG_COLORS): number { return C[k]; }
+
+/**
+ * 户外氛围（修复轮 U5，triage F11 的主角部分）：早晨的补偿在阴天、黎明、梦里不够，校服和裤子成了饱和的深蓝甚至近黑。
+ * 这些氛围下按 WP4 户外 kit 同一套模拟（kits/outside/lib/tone.ts，只读）把 §5.1 的色板反推成反照率，参考朝向是追尾镜头
+ * 主要看到的背与背顶（法线朝后上方）：那些面在画面上就是色板色。其余氛围维持早晨的补偿（与改动前相同）。
+ */
+export const OUTDOOR_ATMOS: ReadonlySet<AtmosphereId> = new Set<AtmosphereId>(['overcast', 'dawn', 'dream', 'dreamGray']);
+export const FIGURE_TONE_NORMAL: readonly [number, number, number] = [0, Math.SQRT1_2, Math.SQRT1_2];
+/** 需要随氛围重新补偿的衣物。 */
+export type TonedCloth = 'uniform' | 'pants';
+const _tc = new THREE.Color();
+/** 某个氛围下校服 / 裤子的顶点色（线性反照率）。 */
+export function clothAlbedo(key: TonedCloth, atmo: AtmosphereId): [number, number, number] {
+  if (!OUTDOOR_ATMOS.has(atmo)) { _tc.setHex(C[key]); return [_tc.r, _tc.g, _tc.b]; }
+  _tc.setHex(RIG_COLORS[key]);
+  const a = Tone.of(atmo).albedo([_tc.r, _tc.g, _tc.b], FIGURE_TONE_NORMAL);
+  return [a[0], a[1], a[2]];
+}
 
 /** 画质 → 基本体细分。 */
 export interface RigDetail { radial: number; cap: number; ico: 0 | 1 }
@@ -297,6 +316,10 @@ export class ActorRigFactory implements RigFactory {
   private readonly geos = new Map<QualityTier, THREE.BufferGeometry>();
   private readonly rigs: Rig[] = [];
   private tier: QualityTier;
+  /** 当前氛围（衣物颜色按它补偿）。 */
+  private atmo: AtmosphereId = 'morning';
+  /** 每个几何体里校服、裤子顶点的下标（建好时记一次）。 */
+  private readonly cloth = new Map<THREE.BufferGeometry, Record<TonedCloth, Uint32Array>>();
   constructor(private readonly ctx: ViewContext) {
     this.tier = ctx.quality.tier;
     const body = ctx.mat.lambert({ vertexColors: true, flat: true });
@@ -313,8 +336,38 @@ export class ActorRigFactory implements RigFactory {
       g = buildRigGeometry(rigDetail(this.ctx.quality.tier === tier ? this.ctx.quality : { capsuleSegments: tier === 'low' ? 5 : tier === 'medium' ? 6 : 8, icoDetail: tier === 'low' ? 0 : 1 }));
       this.ctx.mat.ensureChalkAttr(g);
       this.geos.set(tier, g);
+      const col = g.getAttribute('color') as THREE.BufferAttribute;
+      const find = (hex: number) => {
+        _tc.setHex(hex);
+        const out: number[] = [];
+        for (let i = 0; i < col.count; i++) {
+          if (Math.abs(col.getX(i) - _tc.r) < 1e-5 && Math.abs(col.getY(i) - _tc.g) < 1e-5 && Math.abs(col.getZ(i) - _tc.b) < 1e-5) out.push(i);
+        }
+        return Uint32Array.from(out);
+      };
+      this.cloth.set(g, { uniform: find(C.uniform), pants: find(C.pants) });
+      this.retone(g);
     }
     return g;
+  }
+
+  /** 段的氛围变了（Actor 在换段、atmosphere cue 时调用）：校服、裤子的顶点色按新氛围重写（所有角色共用几何体）。 */
+  setAtmosphere(id: AtmosphereId): void {
+    if (id === this.atmo) return;
+    this.atmo = id;
+    for (const g of this.geos.values()) this.retone(g);
+  }
+  get atmosphere(): AtmosphereId { return this.atmo; }
+
+  private retone(g: THREE.BufferGeometry): void {
+    const idx = this.cloth.get(g);
+    if (!idx) return;
+    const col = g.getAttribute('color') as THREE.BufferAttribute;
+    for (const key of ['uniform', 'pants'] as const) {
+      const [r, gg, b] = clothAlbedo(key, this.atmo);
+      for (const i of idx[key]) col.setXYZ(i, r, gg, b);
+    }
+    col.needsUpdate = true;
   }
   create(role: 'player' | 'double' | 'shadow' | 'leader'): RigHandle { return this.make(role); }
   /** 同 create，但返回具体类型（包内用）。 */

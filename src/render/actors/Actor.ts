@@ -11,7 +11,7 @@ import { clamp, lerp, smoothstep } from '../../core/math';
 import { getSet } from '../../core/registry';
 import { copyPose, createPose, type Pose } from '../../core/rig';
 import type { PoseClipId, SimSnapshot } from '../../core/types';
-import type { CompiledChapter } from '../../levels/schema';
+import type { CompiledChapter, CompiledSegment } from '../../levels/schema';
 import { clipPose, SET_DEFAULT_CLIP } from './clips';
 import { CrawlAnimator, crawlPose, jumpDur, PoseBuilder, type CrawlInput } from './handCycle';
 import { applyPosture, blendPoses, standing, standPose } from './poses';
@@ -78,7 +78,11 @@ export class PlayerActor implements ViewSystem {
     this.clip = { id: clip, t0: t, until: seconds && seconds > 0 ? t + seconds : Infinity };
   }
 
+  /** 换段：衣物颜色按段的氛围补偿（户外，rigBuild.clothAlbedo）。 */
+  onSegment(seg: CompiledSegment): void { this.factory?.setAtmosphere(seg.def.atmosphere); }
+
   onEvent(e: GameEvent): void {
+    if (e.type === 'cue' && e.data.body.type === 'atmosphere') this.factory?.setAtmosphere(e.data.body.id);
     if (e.type === 'land') this.anim.onLand();
     if (e.type === 'segment' || e.type === 'retry') { this.clip = null; this.clipWeight = 0; }
   }
