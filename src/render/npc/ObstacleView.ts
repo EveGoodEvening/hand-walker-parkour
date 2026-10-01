@@ -33,7 +33,7 @@ import { CRAWL, Crawlers, type Crawler } from './Crawlers';
 import { expandChapter, lowerBound, type Decor, type GroupInfo } from './crowds';
 import { HitboxDebug } from './hitboxDebug';
 import type { InstPool } from './InstPool';
-import { BODY, LegForest, STAND_HIP, newPerson, type Person } from './LegForest';
+import { BODY, LegForest, NEAR_UPPER, STAND_HIP, newPerson, type Person } from './LegForest';
 import { KNEELER_BOY, KNEELER_CROWD } from './archetypes/kneeler';
 import { footSeat } from './archetypes/footOut';
 import { MAX_EXPAND } from './archetype';
@@ -596,6 +596,7 @@ export class ObstacleView implements ViewSystem {
       // 障碍里的人只转鞋尖和腿（上身扭过去会让垂着的手伸出碰撞盒）
       this.applyGaze(p, o.id * 8 + i, (o.s0 + o.s1) / 2 + st.ds, f, 'turnShoes', -1, b.type === 'walk', OBSTACLE_GAZE_MAX, 0);
       p.upper = look.upper || f.stand;
+      p.near = nearUpper(p.x, -p.z, f);
       if (p.upper && this.globalOp.applaud >= 0) p.clap = clapClosed(f.tAnim, hash01(o.id + i)) ? 2 : 1;
       if (sp === 'directorZhou') p.glow = emberGlow(f.t, this.reducedFlicker);
       this.forest.add(p);
@@ -653,7 +654,7 @@ export class ObstacleView implements ViewSystem {
   private resetPerson(p: Person, look: Look): void {
     p.look = look; p.yaw = 0; p.hipH = STAND_HIP; p.stance = BODY.stance;
     p.hipL = p.hipR = p.kneeL = p.kneeR = 0; p.legYawL = p.legYawR = 0; p.footYawL = p.footYawR = 0;
-    p.lean = 0; p.roll = 0; p.dx = 0; p.bob = 0; p.turn = 0; p.upper = false; p.clap = 0; p.glow = 0; p.targetL = null; p.seated = false; p.squat = false;
+    p.lean = 0; p.roll = 0; p.dx = 0; p.bob = 0; p.turn = 0; p.upper = false; p.near = 0; p.clap = 0; p.glow = 0; p.targetL = null; p.seated = false; p.squat = false;
     p.arms = false;
   }
 
@@ -770,6 +771,7 @@ export class ObstacleView implements ViewSystem {
       this.applyGaze(p, -1 - i, sN, f, d.gaze, gi, d.pose === 'walk');
       const kit = groups[gi]?.kit;
       p.upper = d.look.upper || f.stand || kit === 'plaza';
+      p.near = nearUpper(p.x, sN, f);
       const applaud = (gs && gs.applaud >= 0) || this.globalOp.applaud >= 0;
       if (applaud && p.upper) p.clap = clapClosed(f.tAnim, d.phase) ? 2 : 1;
       this.forest.add(p);
@@ -883,6 +885,15 @@ interface FrameCtx {
   s: number; px: number; t: number; tAnim: number; beat: number; tSeg: number; speed: number; bps: number; ahead: number; behind: number; hush: number; stand: boolean;
   /** 身后看得见的程度（0..1）：回头或镜头转向身后时越过的障碍照常画。 */
   reveal: number;
+}
+
+/**
+ * 近处的人加上身（U6，LegForest.NEAR_UPPER）：离玩家 r 米以内为 1，再往外 grow 米内降到 0。
+ * 站立段（4-3、5-8）与近处的人墙（5-6、2-2）不再是齐腰截断的裤腿柱；远处路边的人仍只到腰带（P2）。
+ */
+export function nearUpper(x: number, s: number, f: { s: number; px: number }): number {
+  const d = Math.hypot(s - f.s, x - f.px);
+  return 1 - smoothstep(NEAR_UPPER.r, NEAR_UPPER.r + NEAR_UPPER.grow, d);
 }
 
 /**

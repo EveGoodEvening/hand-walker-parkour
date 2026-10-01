@@ -8,7 +8,7 @@ import type { ChapterDef } from '../../../src/levels/schema';
 import { customStage, makeStage, toStage, type StageName } from '../../../src/render/npc/stage';
 import { chapter, runSeg } from '../core/helpers';
 import { ViewDriver, faceBack, fakeCtx, instancedBounds, makeView, stageView } from './helpers';
-import { FEET, LegForest, newPerson } from '../../../src/render/npc/LegForest';
+import { FEET, LegForest, NEAR_UPPER, newPerson } from '../../../src/render/npc/LegForest';
 import { EMBER_PEAK, emberGlow, lookFor } from '../../../src/render/npc/specials';
 import { LAMP_PEAK, lampGlow } from '../../../src/render/npc/archetypes/armBar';
 import { reducedPulse } from '../../../src/render/npc/behaviors';
@@ -42,7 +42,7 @@ describe('WP6 draw call 与数量上限（§9.4；验收 1）', () => {
     }
   });
 
-  it('低画质下 NPC 部件最多 3 个 InstancedMesh：feet（鞋 + 腿）、hipsLow、special（梦里也不画躯干和头）', () => {
+  it('低画质下 NPC 部件最多 3 个 InstancedMesh：feet（鞋 + 腿）、hipsLow、special 或 upperLow（远处的人在梦里也不画躯干和头）', () => {
     for (const stage of ['dream', 'specials', 'forest'] as StageName[]) {
       const { view } = withStage('low', stage, 20);
       const c = view.forest.counts();
@@ -51,6 +51,10 @@ describe('WP6 draw call 与数量上限（§9.4；验收 1）', () => {
       expect(c.hipsLow, stage).toBeGreaterThan(0);
       // 特殊人物（陈默、周主任）只在 special 里，普通人不进去
       expect(c.special > 0, stage).toBe(stage === 'specials');
+      // 近处的人的上身（U6）：只给 NEAR_UPPER 以内的人；和 special 不同时出现
+      expect(c.upperLow, stage).toBeLessThan(c.hipsLow);
+      expect(c.special > 0 && c.upperLow > 0, stage).toBe(false);
+      expect(visible(view.forest.meshes), stage).toBeLessThanOrEqual(3);
     }
   });
 
@@ -71,13 +75,25 @@ describe('WP6 draw call 与数量上限（§9.4；验收 1）', () => {
       rows.push(`${stage}: ${view.stats.people} 人 ${view.forest.triangles()}`);
       expect(view.forest.triangles(), stage).toBeLessThanOrEqual(LOW_BUDGET);
     }
+    // U6：站立段和近处的人墙多了近处的人的上身（upperLow）
+    for (const [ch, seg, beat] of [['ch4', '4-3', 2], ['ch5', '5-8', 2], ['ch5', '5-6', 10], ['ch2', '2-2', 30]] as const) {
+      const { view } = makeView('low');
+      const vd = new ViewDriver(view, getChapter(ch) as ChapterDef, { segment: seg, beat });
+      vd.d.sim.setInvincible(true);
+      vd.step(20);
+      rows.push(`${seg}@${beat}: ${view.stats.people} 人 ${view.forest.triangles()}（上身 ${view.forest.counts().upperLow}）`);
+      expect(view.forest.counts().upperLow, `${seg}@${beat}`).toBeGreaterThan(0);
+      expect(view.forest.triangles(), `${seg}@${beat}`).toBeLessThanOrEqual(LOW_BUDGET);
+      expect(visible(view.forest.meshes), `${seg}@${beat}`).toBeLessThanOrEqual(3);
+    }
     // 24 个普通人 + 每人一双垂着的手（最坏情况）也在预算内
     const f = new LegForest(); f.init(fakeCtx('low'));
     const p = newPerson(lookFor('student', 1, 'tris'));
     p.arms = true;
     f.begin(); for (let i = 0; i < 24; i++) f.add(p); f.end();
     expect(f.triangles()).toBeLessThanOrEqual(LOW_BUDGET);
-    expect(rows.length).toBe(7);
+    // 实测（U6 之后）：1-1 5664、forest 6426、4-3 6078（上身 23）、5-6 6396（上身 22）、2-2 6312；24 人 + 手臂 7872
+    expect(rows.length).toBe(11);
   });
 
   it('梦中的爬行者 ≤ 3 次 draw call；数量上限 低 24 / 中 60 / 高 120', () => {
@@ -92,9 +108,19 @@ describe('WP6 draw call 与数量上限（§9.4；验收 1）', () => {
 });
 
 describe('站立段与梦里：躯干和头（§5.7「只在站立段、梦里、远景中显示」）', () => {
-  it('跑段里只到腰带；同一群人在站立段里画出躯干和头（高画质）；crowd applaud 时手在胸前开合', () => {
+  it('跑段里只到腰带（离玩家 ≤ 7.5 m 的近处的人除外，U6）；同一群人在站立段里画出躯干和头（高画质）；crowd applaud 时手在胸前开合', () => {
     const { view, vd } = withStage('high', 'forest', 10);
-    expect(view.forest.counts().torso).toBe(0);
+    {
+      // 跑段：躯干只在近处（NEAR_UPPER.r + grow）；远处的人仍只到腰带
+      const sn = vd.d.snap, m = new THREE.Matrix4(), v = new THREE.Vector3();
+      const dist = (pool: ReturnType<typeof view.forest.pool>, i: number) => { pool.matrixAt(i, m); v.setFromMatrixPosition(m); return Math.hypot(-v.z - sn.player.s, v.x - sn.player.x); };
+      const torso = view.forest.pool('torso'), hips = view.forest.pool('hips');
+      for (let i = 0; i < torso.n; i++) expect(dist(torso, i)).toBeLessThan(NEAR_UPPER.r + NEAR_UPPER.grow + 0.5);
+      let far = 0;
+      for (let i = 0; i < hips.n; i++) if (dist(hips, i) > NEAR_UPPER.r + NEAR_UPPER.grow + 0.5) far++;
+      expect(far).toBeGreaterThan(5);
+      expect(view.forest.counts().torso).toBeLessThan(hips.n - far + 1);
+    }
     const snap = vd.d.snap;
     const stand = { ...snap, segKind: 'stand' as const };
     view.frame(stand, stand, 1, 0);
