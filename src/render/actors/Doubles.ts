@@ -30,11 +30,16 @@ import { FOLLOW } from '../camera/shots';
 import { vFromH } from '../camera/CameraRig';
 import { endRoomFloor, reflectPlane, type ReflectSurfaces, type SurfaceView } from './surfaces';
 import { applyThirdHand, gestureExtend, type ThirdHandTarget } from './ThirdHand';
+import { planFor } from './planCache';
 
 type Kind = 'side' | 'end' | 'floor' | 'world' | 'still' | 'memory';
 
 /** 记忆闪回的淡入、淡出（秒）：短，但不是硬切（附录 A-1「不闪白」；减少闪烁时是 0.4 s）。 */
 export const MEMORY_FADE_IN = 0.12, MEMORY_FADE_OUT = 0.18;
+/** 世界里的替身（5-6 站着的「我」、4-3 镜中的「我」）淡入用时：§10.2「一律 ≥ 0.6 s」，减少闪烁时也一样。 */
+export const WORLD_FADE_IN = 0.8;
+/** 反光面、静场里的替身淡入用时。 */
+export const SURFACE_FADE_IN = 0.35;
 
 interface Rec {
   id: string; spec: DoubleSpec; kind: Kind; t0: number;
@@ -168,7 +173,7 @@ export class DoubleSystem implements ViewSystem {
       speedFactor: 1, stopAt: null, stopped: false,
       offS: 0, worldS: snap.player.s + (spec.anchor?.sAhead ?? 8), worldX: (spec.anchor?.lane ?? 0) * 1.1, worldXv: 0, lane: spec.anchor?.lane ?? 0, walk: 0,
       sAhead: 0, sAheadInit: false,
-      alpha: 0, fadeIn: kind === 'memory' ? MEMORY_FADE_IN : 0.35, fadeOut: null, until: spec.ttl && spec.ttl > 0 ? t + spec.ttl : Infinity,
+      alpha: 0, fadeIn: kind === 'memory' ? MEMORY_FADE_IN : kind === 'world' ? WORLD_FADE_IN : SURFACE_FADE_IN, fadeOut: null, until: spec.ttl && spec.ttl > 0 ? t + spec.ttl : Infinity,
       memorySec: 0, head: new THREE.Vector3(),
     };
     if (rec.spec.avoidPlayerLane && rec.lane === snap.player.laneTarget) rec.lane = snap.player.laneTarget === 0 ? -1 : 0;
@@ -284,7 +289,10 @@ export class DoubleSystem implements ViewSystem {
     const host = r.spec.attachBehind ? this.slots.find((q) => q.rec?.id === r.spec.attachBehind && q !== sl) : undefined;
     if (host && host.rec) {
       if (!host.box.visible) return false;
-      root[0] = host.pose.root[0] as number; root[1] = (root[1] as number) + (host.rec.surf?.floorY ?? fyNow); root[2] = (host.pose.root[2] as number) - 0.5; root[3] = host.pose.root[3] as number;
+      // 脚踩在宿主的地面上。静场里宿主的 box.matrix 已经含 STILL_ORIGIN × 锚点（宿主的根在锚点原点），不能再加一次地面高度
+      // （修复轮 U5：3-10 的站立替身曾被抬高约 2.3 m，只剩两只鞋底浮在镜子顶端）；跑段里反射矩阵在世界坐标里，要加反光面的地面。
+      const floor = host.rec.kind === 'still' ? 0 : (host.rec.surf?.floorY ?? fyNow);
+      root[0] = host.pose.root[0] as number; root[1] = (root[1] as number) + floor; root[2] = (host.pose.root[2] as number) - 0.5; root[3] = host.pose.root[3] as number;
       box.matrix.copy(host.box.matrix);
     } else switch (r.kind) {
       case 'side': case 'memory': {
@@ -388,7 +396,10 @@ export class DoubleSystem implements ViewSystem {
           _mAt.makeTranslation(STILL_ORIGIN.x + sf.at[0], STILL_ORIGIN.y + sf.at[1], STILL_ORIGIN.z + sf.at[2]).multiply(_mYaw);
           reflectPlane(_pl, box.matrix).multiply(_mAt);
         } else reflectPlane(_pl, box.matrix).multiply(WP5.stillAnchor);
-        if (!scripted) { root[0] = 0; root[1] = 0; root[2] = 0; root[3] = 0; }
+        // 倒影（history）：主角在静场里的姿势相对锚点，根只有脚本姿势自带的高度（站立约 0.5 m）。横向、里程、朝向归零；
+        // 高度保留（修复轮 U5：以前也归零，3-10 镜中的「我」比主角矮了约 0.5 m，脚陷在地下）。
+        // 刚进静场时历史里可能还是跑段的姿势（根在世界里），那时高度不可信，按 0 处理。
+        if (!scripted) { root[0] = 0; root[1] = Math.abs(root[1] as number) < 1.5 ? (root[1] as number) : 0; root[2] = 0; root[3] = 0; }
         break;
       }
     }
@@ -471,7 +482,7 @@ export class DoubleSystem implements ViewSystem {
   private oraclePose(r: Rec, next: SimSnapshot, sNow: number, out: Pose): void {
     const seg = this.seg ?? this.chapter?.segments[next.segIndex] ?? null;
     if (seg && seg.kind === 'run' && this.planSeg !== seg.index) {
-      this.plan = this.ctx.solver.solve(seg); this.planSeg = seg.index;
+      this.plan = planFor(this.ctx.solver, seg); this.planSeg = seg.index;
     }
     const N = next.player;
     const lead = r.spec.lead ?? 0.35;

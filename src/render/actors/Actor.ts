@@ -16,7 +16,7 @@ import { clipPose, SET_DEFAULT_CLIP } from './clips';
 import { CrawlAnimator, crawlPose, jumpDur, PoseBuilder, type CrawlInput } from './handCycle';
 import { applyPosture, blendPoses, standing, standPose } from './poses';
 import { applyThirdHand } from './ThirdHand';
-import { patchUpperFade, stepUpperFade, upperAlpha, upperFadeWanted } from './readability';
+import { patchGroupAlpha, stepUpperFade, upperAlpha, upperFadeWanted } from './readability';
 import type { ActorRigFactory, Rig } from './rigBuild';
 import { WP5, type PoseTestName } from './shared';
 
@@ -55,16 +55,18 @@ export class PlayerActor implements ViewSystem {
   private clipWeight = 0;
   private lastFrameT = 0;
   private chapter: CompiledChapter | null = null;
-  /** 上半身淡出（readability.ts）：权重与着色器 uniform。 */
+  /** 上半身淡出（readability.ts）：权重与着色器 uniform（四个分组的不透明度：腿、手、手臂、躯干与头）。 */
   private fadeW = 0;
-  private readonly fadeU = { value: 1 };
-  /** 本帧上半身的不透明度（测试 / wp5State 用）。 */
-  get upperAlpha(): number { return this.fadeU.value; }
+  private readonly groupU = { value: new THREE.Vector4(1, 1, 1, 1) };
+  /** 本帧上半身（手臂、躯干与头）的不透明度（测试 / wp5State 用）。 */
+  get upperAlpha(): number { return this.groupU.value.w; }
+  /** 本帧四个分组的不透明度（测试用）。 */
+  get groupAlpha(): THREE.Vector4 { return this.groupU.value; }
 
   init(ctx: ViewContext): void {
     this.ctx = ctx;
     this.factory = ctx.rig as unknown as ActorRigFactory;
-    const mat = patchUpperFade(ctx.mat.lambert({ vertexColors: true, flat: true }), this.fadeU);
+    const mat = patchGroupAlpha(ctx.mat.lambert({ vertexColors: true, flat: true }), this.groupU);
     mat.name = 'rigPlayer';
     this.rig = this.factory.make('player', mat);
     this.rig.root.name = 'player';
@@ -81,9 +83,9 @@ export class PlayerActor implements ViewSystem {
     if (e.type === 'segment' || e.type === 'retry') { this.clip = null; this.clipWeight = 0; }
   }
 
-  onReset(): void { this.anim.reset(); this.lastTick = -1; this.clip = null; this.clipWeight = 0; this.fadeW = 0; this.fadeU.value = 1; }
+  onReset(): void { this.anim.reset(); this.lastTick = -1; this.clip = null; this.clipWeight = 0; this.fadeW = 0; this.groupU.value.set(1, 1, 1, 1); }
 
-  async loadChapter(ch: CompiledChapter): Promise<void> { this.chapter = ch; this.fadeW = 0; this.fadeU.value = 1; }
+  async loadChapter(ch: CompiledChapter): Promise<void> { this.chapter = ch; this.fadeW = 0; this.groupU.value.set(1, 1, 1, 1); }
 
   setQuality(): void { this.factory.setQuality(this.ctx.quality); }
 
@@ -103,7 +105,7 @@ export class PlayerActor implements ViewSystem {
     rig.root.matrixAutoUpdate = true;
     rig.root.position.set(0, 0, 0); rig.root.quaternion.identity(); rig.root.scale.set(1, 1, 1);
 
-    if (next.segKind !== 'run' || WP5.poseTest) { this.fadeW = 0; this.fadeU.value = 1; }
+    if (next.segKind !== 'run' || WP5.poseTest) { this.fadeW = 0; this.groupU.value.set(1, 1, 1, 1); }
     if (next.segKind === 'run') {
       crawlInputFrom(prev, next, a, this.inp);
       this.backfill(next);
@@ -114,7 +116,10 @@ export class PlayerActor implements ViewSystem {
         const want = !!seg && seg.kind === 'run' && N.lookBack < 0.3 && N.mode !== 'fall'
           && upperFadeWanted(seg.obstacles, this.inp.s, N.lane, N.laneTarget, N.speed);
         this.fadeW = stepUpperFade(this.fadeW, want, sdt);
-        this.fadeU.value = upperAlpha(this.fadeW);
+        const ua = upperAlpha(this.fadeW);
+        // 停拍里镜头绕到水洼另一侧回看（3-4）：主角整个藏起来（影子还在），水里的倒影不被他挡住
+        const hide = WP5.hidePlayer;
+        this.groupU.value.set(1 - hide, 1 - hide, ua * (1 - hide), ua * (1 - hide));
       }
       let pose = WP5.poseTest ? this.testPose(WP5.poseTest, t) : this.anim.update(this.inp, dt, this.b);
       if (this.clip && this.clipWeight > 0) {

@@ -31,6 +31,8 @@ export const WP5 = {
   debugCam: null as { pos: THREE.Vector3; look: THREE.Vector3; fov: number } | null,
   /** 镜头焦点（停拍时看向镜中替身等）。 */
   focus: null as CameraFocus | null,
+  /** 镜头要求藏起主角（0..1；3-4 绕到水洼另一侧回看时）。CameraRig 写，下一帧 Actor 读。 */
+  hidePlayer: 0,
   /** 主角的「行走相位」读数（测试用）：左右手腕的世界坐标。 */
   debug: { wristL: new THREE.Vector3(), wristR: new THREE.Vector3() },
 };
