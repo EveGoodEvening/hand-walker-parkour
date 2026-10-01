@@ -7,12 +7,13 @@
 //   wp3Luma(x0,y0,x1,y1)  渲染并读回一块区域的平均亮度   wp3Color(x0,y0,x1,y1)  一块区域的平均颜色与 HSL（取色校验）
 //   wp3Atmo(id)  立即切到某个氛围（灯光、雾、LampField 参数当场生效）   wp3Chalk(v|null)  强制描边亮度（对照测量）
 //   wp3Mem()  几何体 / 纹理 / 着色器数量   wp3Stats()  chunk 统计
-import { registerCueHandler, registerDebug, registerMaterials, registerView, registerViewSystem } from '../core/registry';
+import { getSet, registerCueHandler, registerDebug, registerMaterials, registerView, registerViewSystem } from '../core/registry';
 import { STILL_ORIGIN } from '../core/constants';
 import { urlParams } from '../core/urlParams';
 import * as THREE from 'three';
 import type { AtmosphereId } from '../core/types';
 import { registerAtmospheres } from './atmosphere';
+import { FOLLOW, SET_DEFAULT_SHOT, SET_SHOTS } from './camera/shots';
 import { world, type PreviewOpts } from './ChunkStreamer';
 import { LampField } from './lampField';
 import { HwMaterials } from './materials';
@@ -40,7 +41,10 @@ registerCueHandler('board', 'WP3', (b, c) => world.boardOp(b, c.snap.t));
 // ——————————————————— 调试扩展 ———————————————————
 const guard = () => { if (!urlParams().debugEnabled) throw new Error('debug disabled'); };
 
-/** 预览用的 set 机位（相对 STILL_ORIGIN；与 WP5 的 camera/shots.ts 保持一致，找不到时用这里的值）。 */
+/**
+ * 预览用的 set 机位（相对 STILL_ORIGIN）：只在 WP5 的 camera/shots.ts 没有这个 set 的缺省机位时用。
+ * 修复轮 B3：以前一直用这张表（和游戏里的静场机位对不上），跑段预览也还是 §5.4 的旧追尾机位 0.92 / 2.35 / 0.45。
+ */
 const SET_CAMS: Record<string, { pos: [number, number, number]; look: [number, number, number]; fov: number }> = {
   deskFeet: { pos: [0.3, 0.3, 1.35], look: [-0.1, 0.32, -1.8], fov: 62 },
   counter: { pos: [0, 1.1, 1.6], look: [0, 1.0, -1], fov: 55 },
@@ -60,17 +64,9 @@ registerDebug('wp3Preview', (o?: unknown) => {
         look: new THREE.Vector3(b.x + opts.cam.look[0], b.y + opts.cam.look[1], b.z + opts.cam.look[2]), fov: opts.cam.fov ?? null,
       };
     } else if (r.setShot) {
-      const c = SET_CAMS[opts.set ?? ''] ?? SET_CAMS.deskFeet as (typeof SET_CAMS)[string];
-      view.previewCam = {
-        pos: new THREE.Vector3(STILL_ORIGIN.x + c.pos[0], STILL_ORIGIN.y + c.pos[1], STILL_ORIGIN.z + c.pos[2]),
-        look: new THREE.Vector3(STILL_ORIGIN.x + c.look[0], STILL_ORIGIN.y + c.look[1], STILL_ORIGIN.z + c.look[2]), fov: c.fov,
-      };
+      view.previewCam = previewSetCam(opts.set ?? '', opts.variant);
     } else {
-      // 与 CameraRig 的横屏追尾机位相同：(0.7·x, 0.92, +2.35)，注视 (·, 0.45, −7)
-      view.previewCam = {
-        pos: new THREE.Vector3(0.7 * r.x, r.floorY + 0.92, -r.s + 2.35),
-        look: new THREE.Vector3(0.42 * r.x, r.floorY + 0.45, -r.s - 7), fov: null,
-      };
+      view.previewCam = previewFollowCam(r, view.camera.aspect || 16 / 9);
     }
     view.warmUp();
   }
@@ -79,6 +75,35 @@ registerDebug('wp3Preview', (o?: unknown) => {
   }
   return { s: r.s, floorY: r.floorY, stats: { ...world.stats } };
 });
+/**
+ * set 预览的机位：与游戏里这个 set 的缺省静场机位相同（WP5 camera/shots.ts 的 SET_DEFAULT_SHOT / SET_SHOTS，相对锚点
+ * STILL_ORIGIN × playerAnchor(variant)）；shots.ts 里没有时用上面的 SET_CAMS（相对 STILL_ORIGIN）。
+ */
+export function previewSetCam(set: string, variant?: string): { pos: THREE.Vector3; look: THREE.Vector3; fov: number } {
+  const v = variant ?? 'default';
+  const id = SET_DEFAULT_SHOT[`${set}.${v}`] ?? SET_DEFAULT_SHOT[set];
+  const sh = id ? SET_SHOTS[id] : undefined;
+  const def = getSet(set as never);
+  if (sh && def) {
+    const M = new THREE.Matrix4().makeTranslation(STILL_ORIGIN.x, STILL_ORIGIN.y, STILL_ORIGIN.z).multiply(def.playerAnchor(v));
+    return { pos: new THREE.Vector3(...sh.pos).applyMatrix4(M), look: new THREE.Vector3(...sh.look).applyMatrix4(M), fov: sh.fov };
+  }
+  const c = SET_CAMS[set] ?? SET_CAMS.deskFeet as (typeof SET_CAMS)[string];
+  return {
+    pos: new THREE.Vector3(STILL_ORIGIN.x + c.pos[0], STILL_ORIGIN.y + c.pos[1], STILL_ORIGIN.z + c.pos[2]),
+    look: new THREE.Vector3(STILL_ORIGIN.x + c.look[0], STILL_ORIGIN.y + c.look[1], STILL_ORIGIN.z + c.look[2]), fov: c.fov,
+  };
+}
+
+/** 跑段预览的机位：与 CameraRig 的追尾机位相同（shots.ts 的 FOLLOW；横屏 (0.7·x, 1.15, +2.8) 注视 (0.42·x, 0.20, −7)，竖屏按 portrait）。 */
+export function previewFollowCam(r: { s: number; floorY: number; x: number }, aspect: number): { pos: THREE.Vector3; look: THREE.Vector3; fov: null } {
+  const L = aspect < 1 ? FOLLOW.portrait : FOLLOW.landscape;
+  return {
+    pos: new THREE.Vector3(L.k * r.x, r.floorY + L.h, -r.s + L.back),
+    look: new THREE.Vector3(L.lookK * r.x, r.floorY + L.ly, -r.s + L.lz), fov: null,
+  };
+}
+
 registerDebug('wp3PreviewOff', () => {
   guard();
   world.stopPreview();

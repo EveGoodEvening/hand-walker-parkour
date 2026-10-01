@@ -93,6 +93,7 @@ export function playStill(w: Scene, segId: string, tEnd: number): SimSnapshot {
   const seg = w.ch.segments.find((s) => s.def.id === segId)!;
   const evs = [...((seg.def as { events?: Ev[] }).events ?? [])].sort((a, b) => a.at - b.at);
   let prev = stillSnap(seg, 0);
+  w.cam.onSegment(seg);                                // 与 View 一致：先 onSegment，再 segment 事件
   w.cam.onEvent({ type: 'segment', tick: 0, data: {} } as never);
   w.actor.onEvent({ type: 'segment', tick: 0, data: {} } as never);
   w.dbl.onSegment(seg);
@@ -142,6 +143,17 @@ export function playerBox(w: Scene): [number, number, number, number] {
     b[0] = Math.min(b[0], q.x); b[1] = Math.min(b[1], q.y); b[2] = Math.max(b[2], q.x); b[3] = Math.max(b[3], q.y);
   });
   return b;
+}
+
+/** 主角落在画面里（镜头前方、|NDC| < 1）的顶点数（修复轮 B3：静场回头时他在镜头身后）。 */
+export function playerVertsInFrame(w: Scene): number {
+  if (!w.actor.rig.root.visible) return 0;
+  let n = 0;
+  skinnedOf(w.actor.rig.root, (v) => {
+    const q = v.project(w.camera);
+    if (q.z <= 1 && Math.abs(q.x) <= 1 && Math.abs(q.y) <= 1) n++;
+  });
+  return n;
 }
 
 /** 替身（按 id）的世界顶点。 */

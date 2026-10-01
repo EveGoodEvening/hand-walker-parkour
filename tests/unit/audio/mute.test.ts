@@ -37,7 +37,14 @@ const events = (): GameEvent[] => [
   ev('cue', { body: { type: 'rain', intensity: 0.6, seconds: 1 }, segment: '1-1' }, 0.5),
 ];
 
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+/**
+ * 界面音在 40 ms 内去重（audio/ui.ts，按 performance.now）。以前这里用 50 ms 的真实等待隔开两次按键：Node 的定时器按事件循环缓存的
+ * 时间排期，机器忙、循环被同步工作堵住时，50 ms 的定时器可能在真实时间只过了 30 多 ms 时就到点，第二个音被去重掉，测试偶发失败。
+ * 修复轮 B3：引擎就绪之后换成假时钟（setTimeout、Date、performance 一起假），按键之间显式走 50 ms。
+ */
+const fakeClock = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
 describe('验收 6：mute=1 时不创建 AudioContext', () => {
   it('createAudio(mute = true)：NullAudio；解锁、事件、cue、帧、音量、暂停都不碰 AudioContext / OfflineAudioContext', async () => {
@@ -132,16 +139,29 @@ describe('不静音：第一次手势时才创建 AudioContext（§6.1 iOS 解�
     const f = getAudioFactory() as NonNullable<ReturnType<typeof getAudioFactory>>;
     const a = f(bus, { ...DEFAULT_SETTINGS }, false) as AudioEngine;
     await a.unlock();
+    await a.ready;
+    fakeClock();
     bus.emit('screen', { name: 'title' });
     expect(a.screen).toBe('title');
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
-    await new Promise((r) => setTimeout(r, 50));
+    vi.advanceTimersByTime(50);                                          // 过了 40 ms 的去重窗口（假时钟，与机器快慢无关）
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     expect(a.cues(2)).toEqual(['ui:move', 'ui:confirm']);
     bus.emit('screen', { name: 'play' });
-    await new Promise((r) => setTimeout(r, 50));
+    vi.advanceTimersByTime(50);
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
     expect(a.cues(1)).toEqual(['ui:confirm']);                           // 游玩中不发界面音
+    // 去重本身：同一时刻的第二个音不发（以前靠真实等待隔开，这一条测不到）
+    bus.emit('screen', { name: 'title' });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(a.cues(1)).toEqual(['ui:move']);
+    vi.advanceTimersByTime(39);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(a.cues(1)).toEqual(['ui:move']);
+    vi.advanceTimersByTime(2);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(a.cues(1)).toEqual(['ui:confirm']);
   }, 60_000);
 });
 
@@ -263,18 +283,19 @@ describe('U3：第四章结尾卡上的 ↓ 是床单声，不是菜单的「移
       a = f(bus, { ...DEFAULT_SETTINGS }, false) as AudioEngine;
       await a.unlock();
       await a.ready;
+      fakeClock();
       bus.emit('screen', { name: 'outro' });
-      const press = async (key: string) => {
+      const press = (key: string) => {
         document.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
-        await new Promise((r) => setTimeout(r, 50));
+        vi.advanceTimersByTime(50);                                         // 推迟的判断（setTimeout 0）跑完，再过去重窗口
       };
-      for (let i = 0; i < 3; i++) await press('ArrowDown');
+      for (let i = 0; i < 3; i++) press('ArrowDown');
       expect(a.scheduled.filter((x) => x.key === 'uiMove')).toEqual([]);
       expect(a.scheduled.filter((x) => x.key === 'cloth').map((x) => x.bus)).toEqual(['ui', 'ui', 'ui']);
       expect(a.cues(3)).toEqual(['sfx:cloth', 'sfx:cloth', 'sfx:cloth']);
       waiting = false;                                                      // 三下按完（或超时）：↓ 回到按钮之间移动
-      await press('ArrowDown');
-      await press('ArrowUp');
+      press('ArrowDown');
+      press('ArrowUp');
       expect(a.cues(2)).toEqual(['ui:move', 'ui:move']);
       expect(a.scheduled.filter((x) => x.key === 'uiMove').length).toBe(2);
       bus.emit('screen', { name: 'title' });                                // 别的菜单：↓ 立刻发「移动」，不推迟

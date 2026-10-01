@@ -59,6 +59,20 @@ export const SHADOW_EVENT = { tip: 2.5, liesDownTip: 3.9, ratioMin: 3, liesDownR
  * 站立机位看得见的地面从你前方约 1.3 m 起：趴着的头、肩和向前伸的双手都在画面里。拉长倍数限制在 [1, maxStretch]。
  */
 export const LIES_DOWN = { feetGap: 0.1, maxStretch: 2.6 } as const;
+/**
+ * 2-9 pointBack（修复轮 B3 第三轮）：第三只手从影子的胸口伸出来，水平地指向黑板（锚点空间里的方向；静场的锚点不转，
+ * 角色空间 = 锚点空间）。labBoard（WP3）的黑板在主角正前方 3.3 m，「教室后面的黑板」只能按镜头算：镜头从低头看影子的机位
+ * 顺着这只手的方向慢慢转到黑板（camera/shots.ts 的 STILL_TURN_BACK.labBoard）。以前指向右后方 (0.8, 0.2, 0.56)，
+ * 镜头顺着它转过去，身后什么也没有，黑板上的字反而在镜头转回来时写出。手不往上抬：抬高的手被低角度的光拉向前右方，
+ * 投影就不再指着黑板。grow：手伸出来要多少秒（4.4 s 伸出、5.0 s 伸直，5.2 s 镜头才转）。
+ */
+export const POINT_BACK = { dir: [-0.5, 0, -0.866] as const, grow: 0.6 } as const;
+/**
+ * 从静场一开始就画平面影子（按事件光线）的 set（修复轮 B3 第三轮）：2-9 的镜头先低头看影子（「我低头看着自己的影子。……
+ * 趴在地上，和我一样的姿势。」），4.4 s 才多出一只手。以前静场只在影子事件期间画影子，地上是空的，影子到 4.4 s 才凭空出现。
+ * tip / ratioMin：影子的尖离根多远（米）、光线水平 / 竖直比的下限（取代 SHADOW_EVENT.tip / ratioMin）。
+ */
+export const STILL_SHADOW: Readonly<Record<string, { tip: number; ratioMin: number }>> = { labBoard: { tip: 2.5, ratioMin: 3 } };
 /** 沿水平单位方向 (dx, dz) 以点 (px, pz) 为中心拉长 k 倍的矩阵（y 不变）。 */
 export function stretchMatrix(px: number, pz: number, dx: number, dz: number, k: number, out = new THREE.Matrix4()): THREE.Matrix4 {
   const e = k - 1;
@@ -106,6 +120,8 @@ export class PlanarShadowSystem implements ViewSystem {
   private readonly dirTo = new THREE.Vector3();
   private dirK = 1; private dirDur = 1.5;
   private lastT = 0;
+  /** 上一帧的段下标（换段进静场时事件光线直接到位）。 */
+  private segIdx = -1;
   private readonly b = new PoseBuilder();
   private readonly pose = createPose();
   private readonly pose2 = createPose();
@@ -190,16 +206,20 @@ export class PlanarShadowSystem implements ViewSystem {
     const shadowFollower = next.segKind === 'run' && next.follower.mode === 'pressure' && next.follower.hud === 'shadow';
     const mode = WP5.poseTest === 'shadowThreeHands' ? 'threeHands'
       : shadowFollower && (this.mode === 'normal' || this.mode === 'reversed') ? 'chase' : this.mode;
-    const event = mode !== 'normal' && mode !== 'blob';
     const q = this.ctx.quality.planarShadow;
     const still = next.segKind === 'still';
+    // 事件光线：影子事件期间，以及 STILL_SHADOW 的整个静场（2-9：影子从一开始就趴在地上）
+    const stillShadow = still ? STILL_SHADOW[next.still?.set ?? ''] : undefined;
+    const event = (mode !== 'normal' && mode !== 'blob') || (!!stillShadow && mode !== 'blob');
     const planar = WP5.playerVisible && mode !== 'blob' && (event || (q !== 'events' && !still));
     const blob = WP5.playerVisible && !planar && !still;
     const stencil = this.ctx.stencil && !WP5.forceNoStencil;
     this.state.planar = planar; this.state.blob = blob; this.state.stencil = stencil;
     const mat = stencil ? this.matStencil : this.matPlain;
     this.eventK = WP5.poseTest ? (event ? 1 : 0) : clamp(this.eventK + (event ? 1 : -1) * sdt / SHADOW_EVENT.blendSec, 0, 1);
-    if (sdt > 0.25) this.eventK = event ? 1 : 0;
+    // 跳变（> 0.25 s）或换段进了静场：直接到位（静场开头不要看见影子从短拉长）
+    if (sdt > 0.25 || (still && next.segIndex !== this.segIdx)) this.eventK = event ? 1 : 0;
+    this.segIdx = next.segIndex;
     const L = readableLight(this.dir, _L);
     // —— 主影子 ——
     this.main.root.visible = planar;
@@ -215,7 +235,7 @@ export class PlanarShadowSystem implements ViewSystem {
         // 趴下的影子（4-3）本身就躺在地上，靠拉长（LIES_DOWN）伸到前右方，光线用最小的比例
         const r = mode === 'long' ? SHADOW_EVENT.longRatio
           : mode === 'liesDown' ? SHADOW_EVENT.liesDownRatioMin
-          : this.tipRatio(hd, still, h - 0.004, SHADOW_EVENT.tip);
+          : this.tipRatio(hd, still, h - 0.004, stillShadow?.tip ?? SHADOW_EVENT.tip, stillShadow?.ratioMin);
         lightFrom(hd.x, hd.y, r, _E);
         L.lerp(_E, easeInOutSine(this.eventK)).normalize();
         this.state.ratio = r;
@@ -315,10 +335,18 @@ export class PlanarShadowSystem implements ViewSystem {
         b.fkAll();
         return b.finish();
       }
-      case 'threeHands': case 'pointBack': {
+      case 'threeHands': {
         // 从胸口伸出、向外侧指向身后（伸出身体的轮廓，投影才不会埋在身体的影子里）
         _d.set(0.8, 0.2, 0.56).normalize();
         applyThirdHand(b, 'point', WP5.poseTest ? 1 : clamp(u / 1.2, 0, 1), u, { dir: _d });
+        b.fkAll();
+        return b.finish();
+      }
+      case 'pointBack': {
+        // 2-9：指向黑板（POINT_BACK 的注释）
+        const D = POINT_BACK.dir;
+        _d.set(D[0], D[1], D[2]).normalize();
+        applyThirdHand(b, 'point', WP5.poseTest ? 1 : clamp(u / POINT_BACK.grow, 0, 1), u, { dir: _d });
         b.fkAll();
         return b.finish();
       }

@@ -18,7 +18,7 @@ import { Input } from '../input/Input';
 import { DomBatch, h } from './dom';
 import { Hud, type HintSource } from './hud/Hud';
 import { INK_CLASS, inkForSegment } from './hud/ink';
-import { OverlayState, type OverlayOp } from './hud/overlays';
+import { OverlayState, SKIP_KEEP_OVERLAYS, segmentCut, type OverlayOp } from './hud/overlays';
 import { chapterProgress } from './hud/progress';
 import { buildCredits, buildFail, buildIntro, buildPause, type FailData, type IntroData, type OutroData, type PauseData } from './screens/cards';
 import { moveFocus, ScreenEl } from './screens/menus';
@@ -318,7 +318,8 @@ export class UI implements UIAPI {
         // 只有按顺序走到下一段才算看过这段静场。读章再跳转（?seg=<静场>：load 和 goto 各发一次 segment）、
         // 从暂停里重来，都不能让一段还没看过的静场第一次就能跳过。
         if (prev && prev.kind === 'still' && this.chapter && e.data.index === prev.index + 1) this.seenStills.add(`${this.chapter}:${prev.id}`);
-        const cut = !!prev && prev.kind !== e.data.kind && (prev.kind === 'still' || e.data.kind === 'still');
+        const def = this.chapter ? getChapter(this.chapter)?.segments.find((x) => x.id === e.data.id) : undefined;
+        const cut = segmentCut(prev?.kind ?? null, e.data.kind, def?.kind === 'stand' ? def.script : undefined);
         this.overlays.segment(t, cut);
         this.prevSeg = { id: e.data.id, index: e.data.index, kind: e.data.kind };
         this.lookOpen = false;
@@ -456,8 +457,18 @@ export class UI implements UIAPI {
   cueOverlay(b: Extract<EventBody, { type: 'overlay' }>, snap: SimSnapshot): void { this.overlays.apply(b.op as OverlayOp, b.seconds, snap.t); }
 
   // ——————————————————— 每帧 ———————————————————
-  /** Game.skipStill 在跳过之前调用（U4）：到下一个 segment 事件为止，上一段的表现类 cue 不显示，到时清空。 */
-  noteSkip(): void { this.skipping = true; }
+  /**
+   * Game.skipStill 在跳过之前调用（U4）：到下一个 segment 事件为止，上一段的表现类 cue 不显示，到时清空。
+   * 修复轮 B3：模拟在跳过时丢掉叠加层 cue，可是闭眼（5-9 → 5-10）、黑场会留在画面上、进下一段。正在进行的黑场 / 冷色渐变直接走完，
+   * 本段还没到的这类叠加层（含 onDone）按顺序立即应用（终态），下一段开始时和自然看完一样（5-10 开头从 60% 的暗里睁开眼）。
+   */
+  noteSkip(): void {
+    this.skipping = true;
+    const snap = this.snap;
+    if (!snap || snap.segKind === 'run' || !snap.still) return;
+    this.overlays.settle();
+    for (const op of skippedOverlays(snap.chapter, snap.segment, snap.still.t)) this.overlays.apply(op, 0, snap.t);
+  }
 
   /** Game 的实际画质档位（启动时和每次切换时由 Game 调用）。 */
   setQualityTier(t: QualityTier): void { this.tier = t; }
@@ -575,6 +586,20 @@ export class UI implements UIAPI {
       ink: this.root.classList.contains(INK_CLASS), grain: this.layers.grain.classList.contains('on'), tier: this.tier,
     };
   }
+}
+
+/**
+ * 跳过静场 segment（已经放到 tNow 秒）时，本段还没到、会留在画面上的叠加层（SKIP_KEEP_OVERLAYS），按发生的先后：
+ * 先是 events 里 at > tNow 的，再是输入完成后的 onDone（等输入时跳过，onDone 都还没到）。修复轮 B3。
+ */
+export function skippedOverlays(chapter: ChapterId, segment: string, tNow: number): OverlayOp[] {
+  const def = getChapter(chapter)?.segments.find((s) => s.id === segment);
+  if (!def || def.kind === 'run') return [];
+  const keep = (e: { type: string; op?: unknown }): e is { type: 'overlay'; op: OverlayOp } => e.type === 'overlay' && SKIP_KEEP_OVERLAYS.has(e.op as OverlayOp);
+  const evs = (def.events as ReadonlyArray<{ at?: number; type: string; op?: unknown }>).filter((e) => (e.at ?? 0) > tNow + 1e-9);
+  const later = [...evs].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+  const done = [...(def.input?.onDone ?? [])].sort((a, b) => a.at - b.at);
+  return [...later, ...done].filter(keep).map((e) => e.op);
 }
 
 function chapterName(id: ChapterId): string {

@@ -21,6 +21,14 @@ import { C } from './colors';
 import { HIPS, LEGV, type HipsVariant, type Look } from './specials';
 import { NpcTone } from './tone';
 
+/**
+ * 这个人这一帧画不画上身（躯干和没有五官的头）：中、高画质在梦里 / 站立段（upper）和人墙（wall）画；低画质只给人墙画
+ * （special 的 LOW_UPPER 变体）。陈默的上身在他自己的髋部件里（fullUpper），不算在这里。add() 和测试共用。
+ */
+export function drawsUpper(p: Pick<Person, 'upper' | 'wall' | 'look'>, low: boolean): boolean {
+  return (low ? p.wall : p.upper || p.wall) && p.look.hips !== HIPS.fullUpper;
+}
+
 /** 骨架尺寸（米）。站立时髋关节高 0.905，腰带在 1.03–1.07。 */
 export const BODY = { thigh: 0.43, shin: 0.4, ankle: 0.075, stance: 0.115, belt: 0.14 } as const;
 export const STAND_HIP = BODY.thigh + BODY.shin + BODY.ankle;
@@ -439,8 +447,7 @@ export class LegForest {
     _a.makeTranslation(p.dx, p.hipH + p.bob, 0).premultiply(_root);
     if (p.turn !== 0) _a.multiply(_b.makeRotationY(p.turn));
     _a.multiply(_b.makeRotationZ(p.roll)).multiply(_m.makeRotationX(p.lean));
-    // 上身：中、高画质在梦里 / 站立段（upper）和人墙（wall）画；低画质只给人墙画（special 的 LOW_UPPER 变体）
-    const upperOn = (low ? p.wall : p.upper || p.wall) && look.hips !== HIPS.fullUpper;
+    const upperOn = drawsUpper(p, low);
     const hipsHex = look.hips === HIPS.jacket || look.legs === LEGV.bare ? look.shirt : look.pants;
     // 鼓掌时前臂举在胸前（躯干部件），不再垂在身侧
     const armsOn = p.arms && !(upperOn && p.clap > 0);

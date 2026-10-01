@@ -32,3 +32,8 @@
 - （U4）主角的屏幕包围框：`root = scene.getObjectByName('player')`，取它的 SkinnedMesh，`mesh.getVertexPosition(i, v)` 已经带蒙皮（局部坐标），再 `applyMatrix4(mesh.matrixWorld).project(camera)`。读之前先 `__game.render()`，骨骼的 matrixWorld 才是这一帧的。
 - （U4）自动画质切档会同步重建 chunk（SwiftShader 下 150–270 ms）。AutoQuality 只做决定，Game 在下一个静场 / 站立段开头、重来、读章时才切；手选档位立即生效（在菜单里）。
 - （U4）等后台的重命令跑完，用 `until grep -q '^exit' <后台任务的输出文件>; do sleep 5; done`（命令末尾 `echo exit $?`）。不要用 `until ! pgrep -f '<计划文件路径>'`：等待命令自己的命令行里也有这个路径，pgrep 永远能匹配到它自己，循环不会结束。
+- （修复轮 B3）HUD 元素按 3D 画面里的东西让位时，先在 Node 里用游戏的机位投影 set 的几何体（横屏视角固定、竖屏 ×1.3，比例只随宽高比变），得到「指尖在 53–55% 高度」这类与分辨率无关的数，再用 `vh` 写 CSS；只挪 `transform`，栈里照样占位，别的元素不跟着动。页面里的验收：读 DOM 元素的包围框，用 `wp3Color` 取它下面那块画布的颜色，和同一高度画面边上的空地比；临时去掉类名再取一次，就是同一页里的「修复前」。
+- （修复轮 B3）跳过静场时模拟会丢掉叠加层 cue，可闭眼、黑场这类会留在画面上进下一段。界面在 `noteSkip` 里先把正在进行的黑场 / 冷色渐变走完（`settle`），再把本段还没到的持久叠加层（含 onDone）按终态应用；`noteSkip` 读的 `this.snap` 来自最近一帧或最近一个事件，已经发生过的 cue 不会重放。
+- （修复轮 B3 r2）段落切换用不用黑场，统一由 `hud/overlays.ts` 的 `segmentCut(prev, next, script)` 决定：进出静场，以及跑段接七步站立段（5-7 → 5-8：主角从爬行跳到坐姿，5-7 的同学同一帧有了上身，镜头还在追尾的位置）。梦里的站立（4-3）从爬行直接起身，广场上的人一直有上身，不切。别的包让「画面在某一帧突变」时，先用 Node 测出视锥里到底有没有东西变，再决定切不切（`tests/unit/npc/standCut.test.ts`）。
+- （修复轮 B3 r2）可交互的结尾卡（第四章 ↓ ↓ ↓）从出现起就发 `hw-ui-await` = true，到输入完成才收回：提示出来之前卡上还没有按钮，方向键、回车什么也不做，也不该响菜单音。事件只在状态变化时发（`OutroScreen.setQuiet`），离开结尾卡时收回。
+- （修复轮 B3 r3）HUD 给 3D 画面让位时，把整个栈一起挪（transform 放在栈容器上），不要只挪其中一项。只挪节拍点，它就跑到字幕上面（§7.2 的顺序反了），字幕还压在原处的掌心上。栈里绝对定位的子元素（横屏的操作提示）会跟着容器一起平移，要在同一个媒体查询里用相反的 translate 抵消。页面验收读 `.hw-line`、`.hw-hint.on`、`.hw-self` 的包围框，和手的投影包围框比较。

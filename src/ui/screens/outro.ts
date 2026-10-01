@@ -4,6 +4,8 @@
 // 第五章（终章，没有下一章）：两句之间 2.8 s；最后一句之后留 5 s 空白，什么都不出；然后才是统计和按钮，
 // 统计出现 7 s 后自动进入演职卡。
 // 结尾卡期间模拟不推进，这里用真实时间计时。
+// 等输入的开始和结束在 window 上发 OUTRO_AWAIT_EVENT（修复轮 B3）：这段时间里任何键都是结尾卡的输入，声音包不发菜单音。
+// 可交互的卡从一开始就发（B3 r2）：提示出来之前卡上还没有菜单，方向键、回车什么也不做，也就不该响「移动」「确认」。
 import type { Device } from '../../core/types';
 import { button, h } from '../dom';
 import { hintText, STR } from '../strings';
@@ -18,6 +20,17 @@ export const FINAL_OUTRO = { lineGap: 2.8, blankAfter: 5.0 } as const;
 export const CREDITS_AFTER = 7.0;
 /** 第一句开始淡入的时刻。 */
 const FIRST_AT = 0.3;
+/**
+ * 结尾卡开始 / 结束等输入时在 window 上发的事件（detail = true / false，修复轮 B3）。等输入时界面把每一次按键都当作结尾卡的输入
+ * （↓ 是床单上的一下，别的键什么也不做），声音包（audio/ui.ts）据此不发菜单的「移动」「确认」声。
+ */
+export const OUTRO_AWAIT_EVENT = 'hw-ui-await';
+
+function announceAwait(on: boolean): void {
+  try {
+    if (typeof window !== 'undefined' && typeof CustomEvent === 'function') window.dispatchEvent(new CustomEvent(OUTRO_AWAIT_EVENT, { detail: on }));
+  } catch { /* 没有 DOM（单元测试）就不发 */ }
+}
 
 export interface OutroActions {
   next(): void; replay(): void; toTitle(): void; device(): Device;
@@ -30,6 +43,8 @@ export class OutroScreen {
   private waiting: { step: OutroInputStep; taps: number; need: number; resolve: () => void } | null = null;
   private card: HTMLDivElement | null = null;
   private hintEl: HTMLDivElement | null = null;
+  /** 已经在 window 上发了「等输入」（true），还没有收回。 */
+  private quiet = false;
   /** 本卡的时间表（秒，从 build 起算；测试用）：统计出现、演职卡。 */
   timing: { statsAt: number; creditsAt: number | null } = { statsAt: 0, creditsAt: null };
   constructor(private el: HTMLElement, private a: OutroActions) {}
@@ -40,6 +55,14 @@ export class OutroScreen {
     for (const t of this.timers) clearTimeout(t);
     this.timers = [];
     this.waiting = null;
+    this.setQuiet(false);
+  }
+
+  /** 卡上的按键现在不是菜单操作（可交互的卡：从出现到输入完成）。只在变化时发事件。 */
+  private setQuiet(on: boolean): void {
+    if (on === this.quiet) return;
+    this.quiet = on;
+    announceAwait(on);
   }
 
   private later(sec: number, fn: () => void): void { this.timers.push(setTimeout(fn, Math.max(0, sec * 1000))); }
@@ -85,10 +108,12 @@ export class OutroScreen {
     hint.style.animationDelay = `${hintAt.toFixed(2)}s`;
     this.hintEl = hint;
     const t0 = Date.now();
+    this.setQuiet(true);                       // 提示出来之前也没有菜单：键不响
     const done = () => {
       if (!this.waiting) return;
       if (this.waiting.taps === 0) this.a.input?.(step.id, 0);
       this.waiting = null;
+      this.setQuiet(false);
       hint.classList.add('done');
       post.forEach((l, i) => addLine(l, 0.4 + i * gap));
       finish(0.4, post.length, (Date.now() - t0) / 1000);

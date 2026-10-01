@@ -15,7 +15,7 @@ export const SET_SHOTS: Partial<Record<ShotId, SetShot>> = {
   // 2-5：低机位（0.32 m，修复轮 U5）在主角左后方、窗与他之间，对着干净的窗玻璃：窗里的「我」正面坐着、腿垂到地上，
   // 第三只手的掌心贴在玻璃上；主角自己在画面右边缘之外
   windowSeat: { pos: [-0.1, 0.32, 1.0], look: [-1.05, 0.6, -0.25], fov: 55 },
-  // 2-9：背靠实验桌腿坐着，看黑板。修复轮 U5 第二轮：镜头在他左后方的低处、越过他的左肩看黑板，右手边的实验台（x = 1.05，
+  // 2-9：背靠实验桌腿坐着，看黑板（修复轮 B3 第三轮：这是 5.2 s 转过来之后的机位，之前是 STILL_TURN_BACK.labBoard 的低头看影子）。修复轮 U5 第二轮：镜头在他左后方的低处、越过他的左肩看黑板，右手边的实验台（x = 1.05，
   // 钢架腿就在他身旁，「背靠着实验桌的桌腿」）在画面右侧，挡不住黑板；他在画面右边、不和黑板重叠。第一轮把实验台挪到 x = 1.5，桌腿离他 1.1 m
   labBoard: { pos: [-0.55, 0.45, 0.9], look: [0.15, 1.25, -2.6], fov: 60 },
   // 3-5：公交车，车窗在左侧。从过道上方越过主角的头看车窗（修复轮 U5：以前与头同高，车窗里的「我」有一半被他挡住）
@@ -47,12 +47,47 @@ export const SET_SHOT_RETURN: Partial<Record<ShotId, SetShot>> = {
 };
 
 /**
+ * 竖屏（宽高比 < 1）用的另一个机位（修复轮 B3 第三轮）：竖屏视角 ×1.3，但水平视角只有约 40°。2-9 的黑板机位在竖屏里只拍到黑板的右 85%，
+ * 粉笔字「你为什么不站起来？」（贴图里居中、占板宽 86%）的第一个字出画，而这一行字正是回头看见的东西。往后退、抬到 1.1 m、对准黑板中间：
+ * 整行字在画面里（宽高比 0.45 也成立），他在画面右边、头在字的下面（与镜头同高时他的头正好挡住句尾）。
+ */
+export const SET_SHOT_PORTRAIT: Partial<Record<ShotId, SetShot>> = {
+  labBoard: { pos: [-0.45, 1.1, 1.5], look: [0.0, 1.3, -3.3], fov: 60 },
+};
+
+/**
  * 静场里过了某个时刻慢慢推到的近景（修复轮 U5）：5-9 推到枕边的凹陷，主角的身体退出画面。
  * 修复轮 U5 第二轮：推得更近、视角收窄到 40°（以前 52°，8.6 s 时他的头、肩和手臂还占着画面左上的四分之一）。
  */
 export const SET_SHOT_LATE: Partial<Record<ShotId, { after: number; blend: number; shot: SetShot }>> = {
   infirmaryBed: { after: 7.0, blend: 1.2, shot: { pos: [-0.9, 0.55, 0.6], look: [-0.5, -0.02, 0.75], fov: 40 } },
 };
+
+/**
+ * 静场里的回头（`camera` cue turnBack：2-9 5.2 s「它多了一只手」指着的方向、3-10 5.4 s「回头：什么也没有」）。修复轮 B3：
+ * 以前静场只认 SET_SHOTS，turnBack 被丢掉，镜头一直停在原来的静场机位上。修复轮 B3 第三轮：两处都是「我慢慢地转过……」，
+ * 转身用掉 cue 的整段 seconds（2-9 0.8 s、3-10 1.0 s，easeInOutSine），不再是 0.3 s 的甩镜；时刻按段数据算（静场时间的纯函数，
+ * CameraRig.onSegment），跳到静场中间（goto）也对。
+ * 镜头位置直线平移；朝向按 turn 的方向（+1 向左、−1 向右，按镜头自己的朝向）绕竖直轴转，俯仰、注视距离、视角线性插值。
+ * pos / look 相对锚点（主角朝 −z）。「减少晃动」时直接切。
+ *   reveal（labBoard，2-9）：这里的机位是转之前的：镜头在他左后方的高处低头看他和地上的影子（「我低头看着自己的影子」），
+ *     影子的第三只手从 4.4 s 伸出来指向黑板（actors/PlanarShadow.ts 的 POINT_BACK），黑板在画面外；5.2 s 起顺着那只手
+ *     慢慢抬头、转到 SET_SHOTS.labBoard（越过左肩看黑板）并停在那里，6.0 s 的粉笔字就是转过来看见的。WP3 的 set 把黑板放在
+ *     主角正前方，所以「转向身后的黑板」只能按镜头算（DESIGN §10.4 建议条目）。以前反过来：开场就看着空黑板，5.2 s 顺着
+ *     指向右后方的手转过去，身后空无一物，0.2 s 后甩回来，字在镜头转回来时写出。
+ *   hold（bathroomMirror，3-10）：这里的机位是转过去之后的：从他右后方转过去看身后的门和门旁边滴水的毛巾（「只有我背后的卫生间门，
+ *     和门旁边墙上挂着的一条毛巾」），一直停到下一次静场机位切换（10.4 s 关门前最后一眼）。「你想让我站起来？」「站起来之后呢？」
+ *     是对着门问的（「我慢慢地转过身。门还是那扇门。」）。以前 1.0 s 后转回空镜子。
+ * 没有专门机位的静场：原地向左转 160°，TURN_RAMP 秒转过去、到 cue 结束前 TURN_RAMP 秒转回来（与跑段的 turnBack 同速）。
+ */
+export interface StillTurnShot extends SetShot { turn: 1 | -1; mode: 'reveal' | 'hold' }
+export const STILL_TURN_BACK: Partial<Record<ShotId, StillTurnShot>> = {
+  labBoard: { mode: 'reveal', pos: [-0.55, 1.7, 0.8], look: [0.45, 0, -0.7], fov: 45, turn: 1 },
+  bathroomMirror: { mode: 'hold', pos: [0.5, 1.45, 0.6], look: [-0.25, 1.35, 1.65], fov: 66, turn: 1 },
+};
+/** 静场 turnBack 的缺省：原地向左转（弧度）。转过去、转回来各用多少秒。 */
+export const STILL_TURN_DEFAULT_YAW = Math.PI * 160 / 180;
+export const TURN_RAMP = 0.3;
 
 /** 每个 set 的缺省机位（`camera` cue 可以覆盖）。键 = `${set}.${variant}` 或 `${set}`。 */
 export const SET_DEFAULT_SHOT: Partial<Record<string, ShotId>> = {
