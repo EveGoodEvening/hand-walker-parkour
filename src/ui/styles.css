@@ -2,7 +2,7 @@
    粉笔白叠在深墨色上，半透明；动效只用淡入淡出和位移，不做弹跳；只用系统字体栈，不加载 webfont；
    UI 贴边元素让出 safe-area。暗角、颗粒、冷色、黑场都是 DOM 叠加层（不画全屏透明平面，§9.4）。
    HUD 下方是一个自下而上的纵向栈（节拍器 → 平衡线 → 提示 → 字幕），任何分辨率下都不会互相重叠。
-   U4：数数在栈外（约 38% 高度、中线偏左）；横屏时提示挪到右下的空地上；字幕都垫一层很淡的柔边衬底；
+   U4：数数在栈外（约 34% 高度、中线偏左）；横屏时提示挪到右下的空地上；字幕都垫一层很淡的柔边衬底；
    亮场景（#ui.hw-ink-dark，见 hud/ink.ts）里字幕、低语、章名、暂停键、节拍点改用墨色配浅色光晕。 */
 :root {
   --ink: #0d1216; --chalk: #dfe6ea; --dim: #8a979e; --line: #3a464d; --cold: #9fc3d6; --low: #50606a; --paper: #e6e1d6;
@@ -61,10 +61,11 @@
 /* 横屏：提示离开栈，放到右下三分之一的空地上（让开情境按钮 / 「跳过」），垫半透明衬底；字幕仍留在原来的高度 */
 @media (min-aspect-ratio: 1/1) {
   .hw-subs { margin-bottom: 28px; }
-  .hw-hint { position: absolute; right: calc(5% + var(--sar)); bottom: 76px; margin: 0; padding: 0 10px; border-radius: 4px; background: rgba(13,18,22,.55); color: #c9d2d7; }
+  .hw-hint { position: absolute; right: calc(3% + var(--sar)); bottom: 76px; margin: 0; padding: 0 10px; border-radius: 4px; background: rgba(13,18,22,.55); color: #c9d2d7; }
 }
-/* 数数（3-2、3-9）：栈外，约 38% 高度、中线偏左（不压在主角背上）；残影在右上方，晚一个数、淡入慢 0.15 s */
-.hw-count { display: none; position: absolute; top: 38%; right: 54%; transform: translateY(-50%); height: 52px; font: 44px/52px var(--serif); white-space: nowrap;
+/* 数数（3-2、3-9）：栈外，约 34–38% 高度（数字中心 34%，下沿约 41%）、中线偏左，不压在主角背上和头上；
+   残影在右上方，晚一个数、淡入慢 0.15 s */
+.hw-count { display: none; position: absolute; top: 34%; right: 54%; transform: translateY(-50%); height: 52px; font: 44px/52px var(--serif); white-space: nowrap;
   color: rgba(223,230,234,.7); text-shadow: 0 1px 3px rgba(0,0,0,.9), 0 0 4px rgba(13,18,22,.9), 0 0 12px rgba(13,18,22,.8); }
 .hw-count.on { display: block; }
 .hw-count .n { display: inline-block; animation: hw-cnt0 .18s ease-out both; }
@@ -102,12 +103,13 @@
 .hw-notefl .label { font-size: 12px; color: var(--chalk); letter-spacing: .2em; text-shadow: 0 1px 2px rgba(0,0,0,.8); }
 
 /* ——— 亮底墨色模式（U4）：梦里的广场、阴天、日光灯、白瓷砖厕所。墨色字配浅色光晕和浅色衬底 ——— */
-#ui.hw-ink-dark .hw-line { color: rgba(13,18,22,.88); background: rgba(238,241,242,.5); box-shadow: 0 0 12px 6px rgba(238,241,242,.5);
+#ui.hw-ink-dark .hw-line { color: rgba(13,18,22,.92); background: rgba(238,241,242,.58); box-shadow: 0 0 12px 6px rgba(238,241,242,.58);
   text-shadow: 0 0 2px rgba(238,241,242,.95), 0 0 7px rgba(238,241,242,.75); }
-#ui.hw-ink-dark .hw-line.whisper { color: rgba(13,18,22,.82); }
+#ui.hw-ink-dark .hw-line.whisper { color: rgba(13,18,22,.84); }
 #ui.hw-ink-dark .hw-line .sp { color: rgba(13,18,22,.72); }
-#ui.hw-ink-dark .hw-chname { color: var(--ink); opacity: .62; text-shadow: 0 0 2px rgba(238,241,242,.9), 0 0 6px rgba(238,241,242,.6); }
-#ui.hw-ink-dark .hw-chname.faded { opacity: .52; }
+/* 章名：13 px 的细笔画在亮底上，40% / 20% 的墨色只有 2:1 左右，这里提到 80% / 68%（≥ 3:1） */
+#ui.hw-ink-dark .hw-chname { color: var(--ink); opacity: .8; text-shadow: 0 0 2px rgba(238,241,242,.9), 0 0 6px rgba(238,241,242,.6); }
+#ui.hw-ink-dark .hw-chname.faded { opacity: .68; }
 #ui.hw-ink-dark .hw-pausebtn { color: var(--ink); opacity: .75; text-shadow: 0 0 3px rgba(238,241,242,.9); }
 #ui.hw-ink-dark .hw-self .hw-dot { background: var(--ink); }
 #ui.hw-ink-dark .hw-self .hw-dot.lit { box-shadow: 0 0 0 1.5px rgba(238,241,242,.85), 0 0 6px rgba(238,241,242,.9); }
