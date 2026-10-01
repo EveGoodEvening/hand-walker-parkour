@@ -9,7 +9,7 @@ import type { GameEvent } from '../core/events';
 import type { CueContext } from '../core/registry';
 import type { SaveAPI } from '../core/save';
 import type { Settings } from '../core/settings';
-import type { ChapterId, Device, HintId, ScreenName, SimSnapshot, Speaker, TextStyle } from '../core/types';
+import type { AtmosphereId, ChapterId, Device, HintId, QualityTier, ScreenName, SimSnapshot, Speaker, TextStyle } from '../core/types';
 import { urlParams } from '../core/urlParams';
 import { availableChapters, getChapter } from '../levels/chapters/index';
 import { LINES, lineText, type LineEntry } from '../levels/lines';
@@ -17,6 +17,7 @@ import type { EventBody } from '../levels/schema';
 import { Input } from '../input/Input';
 import { DomBatch, h } from './dom';
 import { Hud, type HintSource } from './hud/Hud';
+import { INK_CLASS, inkForSegment } from './hud/ink';
 import { OverlayState, type OverlayOp } from './hud/overlays';
 import { chapterProgress } from './hud/progress';
 import { buildCredits, buildFail, buildIntro, buildPause, type FailData, type IntroData, type OutroData, type PauseData } from './screens/cards';
@@ -40,6 +41,8 @@ export const HINT_SEC = 3.2;
 export const HABIT_DELAY = 1.0;
 /** 「让一下。」之后多久出现低语（§4.2 2-2）。 */
 export const ASK_WHISPER_DELAY = 0.8;
+/** 「不是成心的，只是习惯。」只在清醒的章里出现（梦里没有「习惯」可说；U4）。 */
+export const HABIT_CHAPTERS: ReadonlySet<ChapterId> = new Set<ChapterId>(['ch1', 'ch2', 'ch3']);
 
 const MENU_SCREENS: ReadonlySet<ScreenName> = new Set(['title', 'chapters', 'settings', 'notes', 'pause', 'outro', 'credits', 'fail']);
 const HUD_SCREENS: ReadonlySet<ScreenName> = new Set(['play', 'pause']);
@@ -107,6 +110,14 @@ export class UI implements UIAPI {
   private askWhispered = false;
   /** 调试（__game.ext.uiFlip）：不经模拟强制画面翻转，只用于截图。 */
   forceFlip = false;
+  /** 正在跳过静场（Game.skipStill 通知）：直到下一个 segment 事件，上一段的字幕、纸条翻看、提示一律不显示（U4）。 */
+  private skipping = false;
+  /** atmosphere cue 改过的本段氛围（墨色模式按它判断）；换段时清掉。 */
+  private atmo: { segment: string; id: AtmosphereId } | null = null;
+  private inkKey = '';
+  private inkOn = false;
+  /** Game 的实际画质档位（setQualityTier；颗粒层按它开关，§9.4）。 */
+  private tier: QualityTier | null = null;
 
   // ——————————————————— 挂载 ———————————————————
   mount(root: HTMLElement, cmd: GameCommands, save: SaveAPI): void {
@@ -279,6 +290,8 @@ export class UI implements UIAPI {
         this.prevSeg = null;
         this.lookOpen = false;
         this.askWhispered = false;
+        this.skipping = false;
+        this.atmo = null;
         this.hud.subs.replayed = chapterDone(e.data.id, this.save.load(), this.store.data.completed);
         break;
       }
@@ -289,9 +302,19 @@ export class UI implements UIAPI {
         this.scheduled = [];
         this.fallT = -1;
         this.askWhispered = false;
+        this.skipping = false;
         break;
       case 'segment': {
         const prev = this.prevSeg;
+        if (this.skipping) {
+          // U4：跳过静场时剩下的字幕、纸条翻看、提示都不能挂到下一段上（即使旧 cue 仍然到达）
+          this.skipping = false;
+          this.hud.subs.clear();
+          this.hud.closeNote();
+          this.hud.clearHint();
+          this.scheduled = [];
+        }
+        this.atmo = null;
         // 只有按顺序走到下一段才算看过这段静场。读章再跳转（?seg=<静场>：load 和 goto 各发一次 segment）、
         // 从暂停里重来，都不能让一段还没看过的静场第一次就能跳过。
         if (prev && prev.kind === 'still' && this.chapter && e.data.index === prev.index + 1) this.seenStills.add(`${this.chapter}:${prev.id}`);
@@ -317,16 +340,18 @@ export class UI implements UIAPI {
         this.lookOpen = e.data.context.look;
         if (!e.data.hint) { this.hud.clearPromptHint(); break; }
         const still = snap.segKind !== 'run';
+        // 4-6「你到底想要什么？」下面不出字：附录 B 里「按任意键」只属于失败卡，静场里的 anyKey 只是等输入（U4）
+        if (still && e.data.hint === 'anyKey') { this.hud.clearPromptHint(); break; }
         this.policyHint(e.data.hint, still ? 'still' : 'prompt', t, 600);
         break;
       }
       case 'hit': {
         this.overlays.hit(t);
         if (this.settings?.vibrate && this.device === 'touch') vibrate(25);
-        if (e.data.firstLegHit && !this.store.data.habit) {
+        // 「不是成心的，只是习惯。」是「我」的自述（居中旁白，不按车道声像），不是伸脚的人在解释；梦里不出（U4）
+        if (e.data.firstLegHit && !this.store.data.habit && HABIT_CHAPTERS.has(snap.chapter)) {
           this.store.patch({ habit: true });
-          const pan = e.data.lane * 0.6;
-          this.later(t + HABIT_DELAY, (tt) => this.hud.text(['c1.habit'], 'whisper', undefined, pan, tt));
+          this.later(t + HABIT_DELAY, (tt) => this.hud.text(['c1.habit'], 'narration', undefined, 0, tt));
         }
         break;
       }
@@ -352,7 +377,12 @@ export class UI implements UIAPI {
         }
         break;
       }
-      case 'cue': if (e.data.body.type === 'sfx' && e.data.body.sfx === 'tap' && this.settings?.vibrate && this.device === 'touch') vibrate(15); break;
+      case 'cue': {
+        const body = e.data.body;
+        if (body.type === 'sfx' && body.sfx === 'tap' && this.settings?.vibrate && this.device === 'touch') vibrate(15);
+        if (body.type === 'atmosphere') this.atmo = { segment: snap.segment, id: body.id };
+        break;
+      }
       case 'chapter:end': {
         const id = e.data.id;
         if (!this.store.data.completed.includes(id)) this.store.patch({ completed: [...this.store.data.completed, id] });
@@ -396,11 +426,12 @@ export class UI implements UIAPI {
 
   // ——————————————————— cue（§8.7：text、hint、count、noteOpen、hud、overlay）———————————————————
   cueText(b: Extract<EventBody, { type: 'text' }>, snap: SimSnapshot): void {
-    if (b.style === 'board') return;                        // 黑板字不进字幕（§7.2）
+    if (b.style === 'board' || this.skipping) return;       // 黑板字不进字幕（§7.2）；跳过中的旧字幕不显示
     const ids = (Array.isArray(b.line) ? b.line : [b.line]) as string[];
     this.hud.text(ids, (b.style ?? 'narration') as TextStyle, b.speaker as Speaker | undefined, b.pan ?? 0, snap.t);
   }
   cueHint(b: Extract<EventBody, { type: 'hint' }>, ctx: Pick<CueContext, 'snap' | 'segment'>): void {
+    if (this.skipping) return;
     if (b.hint === 'straighten') {
       // 提示在偏移之前出现：往后找本段下一次腿偏移，显示反方向箭头（B.2）
       const next = ctx.segment.events.find((ev) => ev.at >= ctx.snap.segBeat - 1e-6 && ev.body.type === 'drift');
@@ -408,9 +439,9 @@ export class UI implements UIAPI {
     }
     this.policyHint(b.hint, ctx.snap.segKind === 'run' ? 'cue' : 'still', ctx.snap.t, HINT_SEC);
   }
-  cueCount(b: Extract<EventBody, { type: 'count' }>, snap: SimSnapshot): void { this.hud.countStart(b.from, b.to, b.ghostLag ?? 0, snap.t); }
+  cueCount(b: Extract<EventBody, { type: 'count' }>, snap: SimSnapshot): void { if (!this.skipping) this.hud.countStart(b.from, b.to, b.ghostLag ?? 0, snap.t); }
   cueNoteOpen(b: Extract<EventBody, { type: 'noteOpen' }>, snap: SimSnapshot): void {
-    this.hud.openNote(b.note, noteDef(b.note), snap.t);
+    if (!this.skipping) this.hud.openNote(b.note, noteDef(b.note), snap.t);
     const sv = this.save.load();
     if (!sv.notesOpened.includes(b.note)) this.save.patch({ notesOpened: [...sv.notesOpened, b.note] });
   }
@@ -425,6 +456,21 @@ export class UI implements UIAPI {
   cueOverlay(b: Extract<EventBody, { type: 'overlay' }>, snap: SimSnapshot): void { this.overlays.apply(b.op as OverlayOp, b.seconds, snap.t); }
 
   // ——————————————————— 每帧 ———————————————————
+  /** Game.skipStill 在跳过之前调用（U4）：到下一个 segment 事件为止，上一段的表现类 cue 不显示，到时清空。 */
+  noteSkip(): void { this.skipping = true; }
+
+  /** Game 的实际画质档位（启动时和每次切换时由 Game 调用）。 */
+  setQualityTier(t: QualityTier): void { this.tier = t; }
+
+  /** 当前是否用亮底墨色（只在游玩画面；暂停、失败卡的压暗背景上保持粉笔白）。 */
+  private inkWanted(snap: SimSnapshot): boolean {
+    if (this.current !== 'play') return false;
+    const ov = this.atmo && this.atmo.segment === snap.segment ? this.atmo.id : null;
+    const key = `${snap.chapter}|${snap.segment}|${ov ?? ''}`;
+    if (key !== this.inkKey) { this.inkKey = key; this.inkOn = inkForSegment(snap.chapter, snap.segment, ov); }
+    return this.inkOn;
+  }
+
   /** 设备变化（提示文字随最后一次输入的设备切换，§7.3）。 */
   setDevice(d: Device): void {
     if (d === this.device) return;
@@ -466,6 +512,7 @@ export class UI implements UIAPI {
     b.style(this.layers.cold, 'opacity', String(playing ? ov.cold : 0));
     b.style(this.layers.heat, 'opacity', String(playing ? ov.palmEdge : 0));
     b.cls(this.layers.grain, 'on', playing && this.grainWanted());
+    b.cls(this.root, INK_CLASS, this.inkWanted(snap));
     if (this.canvas) {
       b.style(this.canvas, 'filter', playing ? ov.filter : '');
       // 画面翻转（5-11）：canvas 做 CSS 水平翻转；输入的左右互换由 Game 调 Input.setFlip 完成（§2.2）
@@ -493,7 +540,9 @@ export class UI implements UIAPI {
     b.flush();
   }
 
+  /** 颗粒层按 Game 的实际档位开关（low 不要颗粒，§9.4）；Game 还没告诉档位时按 URL / 设置猜。 */
   private grainWanted(): boolean {
+    if (this.tier) return this.tier !== 'low';
     const p = urlParams();
     const q = p.q ?? (this.settings?.quality === 'auto' || !this.settings ? 'medium' : this.settings.quality);
     return q !== 'low';
@@ -523,6 +572,7 @@ export class UI implements UIAPI {
       canvasTransform: this.canvas?.style.transform ?? '', canvasFilter: this.canvas?.style.filter ?? '',
       black: this.layers.black.style.opacity, seenStills: Array.from(this.seenStills),
       ctxLook: Input.active?.context.look ?? false,
+      ink: this.root.classList.contains(INK_CLASS), grain: this.layers.grain.classList.contains('on'), tier: this.tier,
     };
   }
 }

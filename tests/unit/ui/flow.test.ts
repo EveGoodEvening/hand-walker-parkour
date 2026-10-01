@@ -1,0 +1,209 @@
+// @vitest-environment happy-dom
+// tests/unit/ui/flow.test.ts —— 修复单元 U4 的界面部分：4-6 不借用失败卡文字、亮底墨色模式、结尾卡节奏、颗粒层按实际档位、
+// 跳过静场后清掉上一段的字幕与纸条、稳度低时节拍点轻颤、数数离开底部栈、提示的箭头加粗。
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AtmosphereId, ChapterId } from '../../../src/core/types';
+import { getChapter } from '../../../src/levels/chapters/index';
+import { lineText } from '../../../src/levels/lines';
+import type { EventBody } from '../../../src/levels/schema';
+import { DARK_ATMOSPHERES, INK_ATMOSPHERES, INK_CLASS, inkFor, inkForSegment } from '../../../src/ui/hud/ink';
+import { metronome } from '../../../src/ui/hud/metronome';
+import { CREDITS_AFTER, FINAL_OUTRO, OUTRO_LINE_GAP } from '../../../src/ui/screens/outro';
+import { ev, follower, mountUI, snap } from './helpers';
+
+beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
+afterEach(() => { vi.useRealTimers(); });
+
+const stats = { timeMs: 200_000, falls: 1, stumbles: 0, crashes: 0, lookBacks: 2, notes: [] };
+const outroLines = (ch: ChapterId) => (getChapter(ch)?.outro.lines ?? []).flatMap((l) => ('line' in l ? [lineText(l.line)] : []));
+const delays = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel)).map((e) => parseFloat(e.style.animationDelay));
+
+describe('4-6：静场里的 anyKey 不出失败卡的字', () => {
+  it('静场 prompt { hint: anyKey }：提示为空；失败卡上仍是「按任意键，从检查点重来。」', async () => {
+    const { ui } = await mountUI();
+    ui.show('play');
+    ui.onEvent(ev('segment', { id: '4-6', index: 5, kind: 'still' }), snap({ t: 1, chapter: 'ch4', segment: '4-6', segKind: 'still' }));
+    ui.onEvent(ev('prompt', { hint: 'anyKey', context: { look: false, ask: false } }), snap({ t: 6, chapter: 'ch4', segment: '4-6', segKind: 'still' }));
+    ui.frame(snap({ t: 6.1, chapter: 'ch4', segment: '4-6', segKind: 'still' }), 0);
+    expect(ui.hud.hintEl.textContent).toBe('');
+    expect(ui.hud.hintEl.classList.contains('on')).toBe(false);
+    ui.onEvent(ev('fall', { cause: 'legs', surface: 'plaza' }), snap({ t: 10 }));
+    ui.show('fail', { line: '在梦里，害怕是一种很迟钝的情绪。' });
+    ui.frame(snap({ t: 11.3 }), 0);
+    expect((document.querySelector('[data-screen="fail"] .prompt') as HTMLElement).textContent).toBe('按任意键，从检查点重来。');
+  });
+});
+
+describe('亮底墨色模式', () => {
+  it('氛围到墨色的映射：梦、梦里变灰、阴天、日光灯是墨色；暗的预设永远不是；白瓷砖厕所和医务室在不暗的时候是', () => {
+    const all: AtmosphereId[] = ['morning', 'noon', 'labNorth', 'nightIndoor', 'rainNight', 'busNight', 'homeDark', 'dream', 'dreamGray', 'dawn', 'overcast', 'fluorescent', 'voidDark'];
+    expect(all.filter((a) => inkFor(a))).toEqual(['dream', 'dreamGray', 'overcast', 'fluorescent']);
+    expect([...INK_ATMOSPHERES].every((a) => !DARK_ATMOSPHERES.has(a))).toBe(true);
+    expect(inkFor('morning', { kit: 'washroom' })).toBe(true);
+    expect(inkFor('nightIndoor', { kit: 'washroom' })).toBe(false);
+    expect(inkFor('morning', { set: 'infirmary' })).toBe(true);
+    expect(inkFor('morning', { kit: 'corridor' })).toBe(false);
+  });
+  it('各段：1-3 厕所、4-1、4-4、4-6、5-8、5-9 是墨色；1-2、3-4、3-9、5-11 不是', () => {
+    const on: Array<[ChapterId, string]> = [['ch1', '1-3'], ['ch4', '4-1'], ['ch4', '4-4'], ['ch4', '4-6'], ['ch5', '5-8'], ['ch5', '5-9'], ['ch5', '5-10']];
+    const off: Array<[ChapterId, string]> = [['ch1', '1-2'], ['ch3', '3-4'], ['ch3', '3-9'], ['ch5', '5-11'], ['ch2', '2-8']];
+    for (const [c, s] of on) expect(inkForSegment(c, s), `${s}`).toBe(true);
+    for (const [c, s] of off) expect(inkForSegment(c, s), `${s}`).toBe(false);
+    expect(inkForSegment('ch3', '3-4', 'overcast')).toBe(true);
+  });
+  it('#ui 的类：游玩画面按当前段切换；暂停时回到粉笔白；atmosphere cue 改了氛围就跟着改，换段后恢复段定义', async () => {
+    const { ui, root } = await mountUI();
+    ui.show('play');
+    ui.frame(snap({ t: 1, chapter: 'ch4', segment: '4-1' }), 0);
+    expect(root.classList.contains(INK_CLASS)).toBe(true);
+    ui.show('pause', {});
+    ui.frame(snap({ t: 1.1, chapter: 'ch4', segment: '4-1' }), 0);
+    expect(root.classList.contains(INK_CLASS)).toBe(false);
+    ui.show('play');
+    ui.frame(snap({ t: 2, chapter: 'ch3', segment: '3-4' }), 0);
+    expect(root.classList.contains(INK_CLASS)).toBe(false);
+    const atmo = { type: 'atmosphere', id: 'dream', seconds: 1 } as Extract<EventBody, { type: 'atmosphere' }>;
+    ui.onEvent(ev('cue', { body: atmo, segment: '3-4' }), snap({ t: 3, chapter: 'ch3', segment: '3-4' }));
+    ui.frame(snap({ t: 3.1, chapter: 'ch3', segment: '3-4' }), 0);
+    expect(root.classList.contains(INK_CLASS)).toBe(true);
+    ui.onEvent(ev('segment', { id: '3-5', index: 4, kind: 'still' }), snap({ t: 4, chapter: 'ch3', segment: '3-5', segKind: 'still' }));
+    ui.frame(snap({ t: 4.1, chapter: 'ch3', segment: '3-5', segKind: 'still' }), 0);
+    expect(root.classList.contains(INK_CLASS)).toBe(false);
+  });
+});
+
+describe('结尾卡节奏', () => {
+  it('终章：两句相隔 ≥ 2.5 s；最后一句之后 ≥ 4.5 s 才出统计和按钮；统计出现 ≥ 6 s 后才进演职卡', async () => {
+    vi.useFakeTimers();
+    const { ui, cmd } = await mountUI();
+    ui.show('outro', { chapter: 'ch5', stats, next: null, lines: outroLines('ch5'), notes: { got: 1, total: 1 } });
+    const lines = delays('[data-screen="outro"] .line');
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    for (let i = 1; i < lines.length; i++) expect((lines[i] as number) - (lines[i - 1] as number)).toBeGreaterThanOrEqual(2.5);
+    const statsAt = delays('[data-screen="outro"] .stats')[0] as number;
+    expect(statsAt - (lines.at(-1) as number)).toBeGreaterThanOrEqual(4.5);
+    const menu = document.querySelector('[data-screen="outro"] .hw-outro-actions') as HTMLElement;
+    expect(parseFloat(menu.style.animationDelay)).toBeGreaterThanOrEqual(statsAt);
+    const creditsAt = (ui as unknown as { outroScreen: { timing: { creditsAt: number | null } } }).outroScreen.timing.creditsAt as number;
+    expect(creditsAt - statsAt).toBeGreaterThanOrEqual(6);
+    expect(CREDITS_AFTER).toBeGreaterThanOrEqual(6);
+    expect(FINAL_OUTRO.lineGap).toBeGreaterThanOrEqual(2.5);
+    vi.advanceTimersByTime((statsAt + 5.9) * 1000);
+    expect(cmd.calls).not.toContain('nextChapter');
+    vi.advanceTimersByTime(CREDITS_AFTER * 1000);
+    expect(cmd.calls).toContain('nextChapter');
+  });
+  it('其他章：行间隔 1.6–2.0 s；第四章的输入提示在第一句之后、e2e 按键（2.5 s）之前出现，其余两句同样的间隔', async () => {
+    expect(OUTRO_LINE_GAP).toBeGreaterThanOrEqual(1.6);
+    expect(OUTRO_LINE_GAP).toBeLessThanOrEqual(2.0);
+    for (const ch of ['ch1', 'ch2', 'ch3'] as const) {
+      const { ui } = await mountUI();
+      ui.show('outro', { chapter: ch, stats, next: 'ch5', lines: outroLines(ch), notes: { got: 0, total: 2 } });
+      const d = delays('[data-screen="outro"] .line');
+      expect(d.length).toBe(outroLines(ch).length);
+      for (let i = 1; i < d.length; i++) { const g = (d[i] as number) - (d[i - 1] as number); expect(g).toBeGreaterThanOrEqual(1.6); expect(g).toBeLessThanOrEqual(2.0); }
+      expect(document.querySelector('[data-screen="outro"] .hw-outro-actions')?.textContent).toContain('下一章');
+    }
+    vi.useFakeTimers();
+    const { ui } = await mountUI();
+    ui.show('outro', { chapter: 'ch4', stats, next: 'ch5', lines: outroLines('ch4'), notes: null });
+    const first = delays('[data-screen="outro"] .line')[0] as number;
+    const hintAt = delays('[data-screen="outro"] .hint')[0] as number;
+    expect(hintAt).toBeGreaterThan(first + 0.8);
+    expect(hintAt).toBeLessThan(2.3);
+    vi.advanceTimersByTime(hintAt * 1000 + 10);
+    for (let i = 0; i < 3; i++) window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowDown', key: 'ArrowDown' }));
+    const d = delays('[data-screen="outro"] .line');
+    expect(d.length).toBe(3);
+    const g = (d[2] as number) - (d[1] as number);
+    expect(g).toBeGreaterThanOrEqual(1.6); expect(g).toBeLessThanOrEqual(2.0);
+  });
+});
+
+describe('颗粒层按 Game 的实际档位', () => {
+  it('实际档位 low：没有 on；medium：有', async () => {
+    const { ui } = await mountUI();
+    ui.show('play');
+    const grain = document.querySelector('.hw-grain') as HTMLElement;
+    ui.setQualityTier('low');
+    ui.frame(snap({ t: 1 }), 0);
+    expect(grain.classList.contains('on')).toBe(false);
+    ui.setQualityTier('medium');
+    ui.frame(snap({ t: 2 }), 0);
+    expect(grain.classList.contains('on')).toBe(true);
+  });
+});
+
+describe('跳过静场之后', () => {
+  it('2-9 的字幕和纸条翻看：跳过后进入 2-10，字幕清空、纸条收起；跳过中到达的旧 cue 不显示', async () => {
+    const { ui } = await mountUI();
+    ui.show('play');
+    const s29 = (t: number) => snap({ t, chapter: 'ch2', segment: '2-9', segKind: 'still' });
+    ui.onEvent(ev('chapter:start', { id: 'ch2' }), s29(0));
+    ui.onEvent(ev('segment', { id: '2-9', index: 8, kind: 'still' }), s29(0));
+    ui.cueText({ type: 'text', line: 'c1.empty' } as Extract<EventBody, { type: 'text' }>, s29(1));
+    ui.cueNoteOpen({ type: 'noteOpen', note: 'n1-desk' }, s29(1.5));
+    ui.frame(s29(2), 0);
+    expect(ui.hud.subsEl.children.length).toBe(1);
+    expect(ui.hud.noteCard.classList.contains('on')).toBe(true);
+    ui.noteSkip();
+    ui.cueText({ type: 'text', line: 'c1.inverted' } as Extract<EventBody, { type: 'text' }>, s29(2.1));   // 跳过时补发的旧字幕
+    const s210 = snap({ t: 2.1, chapter: 'ch2', segment: '2-10', segKind: 'run' });
+    ui.onEvent(ev('segment', { id: '2-10', index: 9, kind: 'run' }), s210);
+    ui.frame(s210, 0);
+    expect(ui.hud.subsEl.children.length).toBe(0);
+    expect(ui.hud.currentText()).toEqual([]);
+    expect(ui.hud.noteCard.classList.contains('on')).toBe(false);
+    // 新的一段照常出字
+    ui.cueText({ type: 'text', line: 'c1.empty' } as Extract<EventBody, { type: 'text' }>, snap({ t: 3, chapter: 'ch2', segment: '2-10' }));
+    ui.frame(snap({ t: 3.1, chapter: 'ch2', segment: '2-10' }), 0);
+    expect(ui.hud.subsEl.children.length).toBe(1);
+  });
+});
+
+describe('稳度低时节拍点轻颤（absent 段也看得出来）', () => {
+  it('steady = 1、follower absent：有颤动类；steady = 3：没有；减少晃动：没有', async () => {
+    const base = { t: 3, flashSelf: [-1, -1, -1], flashFollow: [-1, -1, -1], metronome: true, showFollower: true, behindFaded: false, palm: 'none' as const };
+    const absent = follower({ mode: 'absent', hud: 'none', voice: 'none' });
+    expect(metronome({ ...base, steady: 1, follower: absent, reducedMotion: false }).selfTremble).toBe(true);
+    expect(metronome({ ...base, steady: 0, follower: absent, reducedMotion: false }).selfTremble).toBe(true);
+    expect(metronome({ ...base, steady: 3, follower: absent, reducedMotion: false }).selfTremble).toBe(false);
+    expect(metronome({ ...base, steady: 1, follower: absent, reducedMotion: true }).selfTremble).toBe(false);
+    const { ui } = await mountUI();
+    ui.show('play');
+    ui.frame(snap({ t: 1, steady: 1, follower: absent }), 0);
+    expect(ui.hud.selfDots.classList.contains('tremble')).toBe(true);
+    ui.frame(snap({ t: 2, steady: 3, follower: absent }), 0);
+    expect(ui.hud.selfDots.classList.contains('tremble')).toBe(false);
+  });
+});
+
+describe('数数与提示的版面', () => {
+  it('数数不在底部纵向栈里；每出一个新数，数字和残影都换一次动画类（重新淡入）', async () => {
+    const { ui } = await mountUI();
+    ui.show('play');
+    expect(ui.hud.countEl.parentElement).toBe(ui.hud.root);
+    expect(ui.hud.bottom.contains(ui.hud.countEl)).toBe(false);
+    ui.cueCount({ type: 'count', from: 1, to: 4, ghostLag: 1 }, snap({ t: 0 }));
+    const heel = (t: number) => ui.onEvent(ev('contact', { hand: 'L', part: 'heel', t, s: 0, x: 0, surface: 'terrazzo', crisp: false, heavy: false }), snap({ t }));
+    const n = ui.hud.countEl.querySelector('.n') as HTMLElement, g = ui.hud.countEl.querySelector('.ghost') as HTMLElement;
+    heel(0.3); ui.frame(snap({ t: 0.3 }), 0);
+    const a0 = n.classList.contains('alt');
+    heel(0.6); ui.frame(snap({ t: 0.6 }), 0);
+    expect(n.textContent).toBe('二'); expect(g.textContent).toBe('一');
+    expect(n.classList.contains('alt')).toBe(!a0);
+    expect(g.classList.contains('alt')).toBe(!a0);
+  });
+  it('提示的箭头单独一层（加粗）；文字不变', async () => {
+    const { ui } = await mountUI();
+    ui.show('play');
+    ui.cueHint({ type: 'hint', hint: 'taps3' }, { snap: snap({ t: 1 }), segment: { events: [] } as never });
+    ui.frame(snap({ t: 1.1 }), 0);
+    expect(ui.hud.hintEl.textContent).toBe('↓ ↓ ↓');
+    expect(ui.hud.hintEl.querySelectorAll('.k').length).toBe(3);
+    ui.cueHint({ type: 'hint', hint: 'jump' }, { snap: snap({ t: 2 }), segment: { events: [] } as never });
+    ui.frame(snap({ t: 2.1 }), 0);
+    expect(ui.hud.hintEl.textContent).toBe('↑ 撑跃');
+    expect(ui.hud.hintEl.querySelector('.k')?.textContent).toBe('↑');
+  });
+});

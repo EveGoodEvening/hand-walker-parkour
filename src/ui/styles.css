@@ -1,7 +1,9 @@
 /* src/ui/styles.css —— 界面样式（DESIGN.md §7、§5.1 色板 UI 行）。WP8。
    粉笔白叠在深墨色上，半透明；动效只用淡入淡出和位移，不做弹跳；只用系统字体栈，不加载 webfont；
    UI 贴边元素让出 safe-area。暗角、颗粒、冷色、黑场都是 DOM 叠加层（不画全屏透明平面，§9.4）。
-   HUD 下方是一个自下而上的纵向栈（节拍器 → 平衡线 → 数数 → 提示 → 字幕），任何分辨率下都不会互相重叠。 */
+   HUD 下方是一个自下而上的纵向栈（节拍器 → 平衡线 → 提示 → 字幕），任何分辨率下都不会互相重叠。
+   U4：数数在栈外（约 38% 高度、中线偏左）；横屏时提示挪到右下的空地上；字幕都垫一层很淡的柔边衬底；
+   亮场景（#ui.hw-ink-dark，见 hud/ink.ts）里字幕、低语、章名、暂停键、节拍点改用墨色配浅色光晕。 */
 :root {
   --ink: #0d1216; --chalk: #dfe6ea; --dim: #8a979e; --line: #3a464d; --cold: #9fc3d6; --low: #50606a; --paper: #e6e1d6;
   --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif;
@@ -33,28 +35,43 @@
 .hw-hud.paused .hw-bottom, .hw-hud.paused .hw-notefl, .hw-hud.paused .hw-skipbtn { visibility: hidden; }
 .hw-bottom { position: absolute; left: 0; right: 0; bottom: calc(var(--gut) + var(--sab)); display: flex; flex-direction: column; align-items: center; }
 .hw-subs { width: min(92vw, 36em); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; font-size: 18px; }
-.hw-line { max-width: 100%; font-family: var(--serif); font-size: 18px; line-height: 1.5; text-align: center; color: rgba(223,230,234,.9); text-shadow: 0 1px 3px rgba(0,0,0,.85), 0 0 12px rgba(13,18,22,.6); animation: hw-sub .25s ease-out both; }
+.hw-line { box-sizing: border-box; max-width: 100%; padding: 0 .6em; border-radius: .9em; font-family: var(--serif); font-size: 18px; line-height: 1.5; text-align: center; color: rgba(223,230,234,.9);
+  text-shadow: 0 1px 3px rgba(0,0,0,.85), 0 0 12px rgba(13,18,22,.6); animation: hw-sub .25s ease-out both;
+  /* 很淡的柔边衬底（所有场景）：字形底下的背景再花，也压成一块均匀的暗色 */
+  background: rgba(13,18,22,.3); box-shadow: 0 0 12px 6px rgba(13,18,22,.3); }
 .hw-large .hw-line { font-size: 22px; }
 .hw-line.whisper { font-size: 15px; color: rgba(223,230,234,.6); }
 .hw-large .hw-line.whisper { font-size: 18px; }
-/* 低语贴在声像那一侧：用 align-self，而不是 transform（淡入动画的 transform 会盖掉它） */
-.hw-line.side-l { align-self: flex-start; text-align: left; padding-left: 4%; }
-.hw-line.side-r { align-self: flex-end; text-align: right; padding-right: 4%; }
+/* 低语贴在声像那一侧：用 align-self，而不是 transform（淡入动画的 transform 会盖掉它）；衬底跟着字走，所以用 margin 留边 */
+.hw-line.side-l { align-self: flex-start; text-align: left; margin-left: 4%; max-width: 96%; }
+.hw-line.side-r { align-self: flex-end; text-align: right; margin-right: 4%; max-width: 96%; }
 .hw-line .sp { display: block; font-family: var(--sans); font-size: 11px; color: rgba(223,230,234,.7); letter-spacing: .1em; line-height: 1.6; }
 /* 窄屏（竖屏手机）：一行 24 字（B.8 的上限）要排得下，否则每条字幕都折成两行，「最多 2 行」会变成 3–4 行。
-   字号随宽度缩到 24 字正好放下（360 px 约 14 px）；「大字号」是玩家自己选的，宁可折行也保持 18 px。 */
+   字号随宽度缩到 24 字正好放下（360 px 约 14 px，衬底的左右留白收窄到 .2em）；「大字号」是玩家自己选的，宁可折行也保持 18 px。 */
 @media (max-width: 520px) {
   .hw-subs { width: calc(100vw - 12px - var(--sal) - var(--sar)); }
-  .hw-line { font-size: max(12px, min(18px, calc((100vw - 16px - var(--sal) - var(--sar)) / 24.5))); }
-  .hw-line.whisper { font-size: max(11px, min(15px, calc((100vw - 16px - var(--sal) - var(--sar)) / 24.5 * .85))); }
+  .hw-line { padding: 0 .2em; font-size: max(12px, min(18px, calc((100vw - 16px - var(--sal) - var(--sar)) / 24.9))); }
+  .hw-line.whisper { font-size: max(11px, min(15px, calc((100vw - 16px - var(--sal) - var(--sar)) / 24.9 * .85))); }
   .hw-large .hw-line { font-size: 18px; }
   .hw-large .hw-line.whisper { font-size: 15px; }
 }
 .hw-hint { height: 22px; line-height: 22px; margin-top: 6px; max-width: 92vw; font-size: 13px; color: #aeb9bf; letter-spacing: .08em; text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 8px rgba(13,18,22,.75); opacity: 0; transition: opacity .3s; white-space: nowrap; overflow: hidden; text-overflow: clip; }
 .hw-hint.on { opacity: 1; }
-.hw-count { display: none; height: 52px; line-height: 52px; font: 44px/52px var(--serif); opacity: .35; white-space: nowrap; }
+.hw-hint .k { font-weight: 700; font-size: 1.15em; letter-spacing: .04em; }
+/* 横屏：提示离开栈，放到右下三分之一的空地上（让开情境按钮 / 「跳过」），垫半透明衬底；字幕仍留在原来的高度 */
+@media (min-aspect-ratio: 1/1) {
+  .hw-subs { margin-bottom: 28px; }
+  .hw-hint { position: absolute; right: calc(5% + var(--sar)); bottom: 76px; margin: 0; padding: 0 10px; border-radius: 4px; background: rgba(13,18,22,.55); color: #c9d2d7; }
+}
+/* 数数（3-2、3-9）：栈外，约 38% 高度、中线偏左（不压在主角背上）；残影在右上方，晚一个数、淡入慢 0.15 s */
+.hw-count { display: none; position: absolute; top: 38%; right: 54%; transform: translateY(-50%); height: 52px; font: 44px/52px var(--serif); white-space: nowrap;
+  color: rgba(223,230,234,.7); text-shadow: 0 1px 3px rgba(0,0,0,.9), 0 0 4px rgba(13,18,22,.9), 0 0 12px rgba(13,18,22,.8); }
 .hw-count.on { display: block; }
-.hw-count .ghost { color: var(--dim); opacity: .5; margin-left: .4em; font-size: .7em; }
+.hw-count .n { display: inline-block; animation: hw-cnt0 .18s ease-out both; }
+.hw-count .n.alt { animation-name: hw-cnt1; }
+.hw-count .ghost { position: absolute; left: 100%; bottom: 58%; margin-left: .15em; font-size: .7em; line-height: 1; color: rgba(223,230,234,.45);
+  text-shadow: 0 0 2px rgba(13,18,22,.95), 0 0 6px rgba(13,18,22,.9), 0 0 14px rgba(13,18,22,.8); animation: hw-cnt0 .33s ease-out both; }
+.hw-count .ghost.alt { animation-name: hw-cnt1; }
 .hw-count .ghost:empty { display: none; }
 .hw-balance { display: none; position: relative; width: 128px; height: 18px; margin-top: 4px; }
 .hw-balance.on { display: block; }
@@ -66,6 +83,8 @@
 .hw-self { transition: transform .06s linear, opacity .3s; }
 .hw-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--chalk); opacity: .18; box-sizing: border-box; }
 .hw-dot.lit { opacity: 1; box-shadow: 0 0 6px rgba(223,230,234,.7); }
+/* 稳度 ≤ 1：实心点持续轻颤（U4；减少晃动时模型不给 tremble） */
+.hw-self.tremble .hw-dot { animation: hw-tremble .16s steps(2, jump-none) infinite; }
 .hw-self.white .hw-dot { opacity: .95; background: #fff; box-shadow: 0 0 10px rgba(255,255,255,.9); }
 .hw-follow .hw-dot { background: transparent; border: 1.5px solid var(--chalk); }
 .hw-follow .hw-dot.lit { background: rgba(223,230,234,.25); }
@@ -81,6 +100,25 @@
 .hw-notefl .paper { width: 26px; height: 20px; background: var(--paper); transform: rotate(-6deg) scaleX(.2); transform-origin: left center; transition: transform .35s ease-out; box-shadow: 0 1px 2px rgba(0,0,0,.5); }
 .hw-notefl.on .paper { transform: rotate(-6deg); }
 .hw-notefl .label { font-size: 12px; color: var(--chalk); letter-spacing: .2em; text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+
+/* ——— 亮底墨色模式（U4）：梦里的广场、阴天、日光灯、白瓷砖厕所。墨色字配浅色光晕和浅色衬底 ——— */
+#ui.hw-ink-dark .hw-line { color: rgba(13,18,22,.88); background: rgba(238,241,242,.5); box-shadow: 0 0 12px 6px rgba(238,241,242,.5);
+  text-shadow: 0 0 2px rgba(238,241,242,.95), 0 0 7px rgba(238,241,242,.75); }
+#ui.hw-ink-dark .hw-line.whisper { color: rgba(13,18,22,.82); }
+#ui.hw-ink-dark .hw-line .sp { color: rgba(13,18,22,.72); }
+#ui.hw-ink-dark .hw-chname { color: var(--ink); opacity: .62; text-shadow: 0 0 2px rgba(238,241,242,.9), 0 0 6px rgba(238,241,242,.6); }
+#ui.hw-ink-dark .hw-chname.faded { opacity: .52; }
+#ui.hw-ink-dark .hw-pausebtn { color: var(--ink); opacity: .75; text-shadow: 0 0 3px rgba(238,241,242,.9); }
+#ui.hw-ink-dark .hw-self .hw-dot { background: var(--ink); }
+#ui.hw-ink-dark .hw-self .hw-dot.lit { box-shadow: 0 0 0 1.5px rgba(238,241,242,.85), 0 0 6px rgba(238,241,242,.9); }
+#ui.hw-ink-dark .hw-follow:not(.shadow) .hw-dot { border-color: var(--ink); }
+#ui.hw-ink-dark .hw-follow:not(.shadow) .hw-dot.lit { background: rgba(13,18,22,.3); }
+#ui.hw-ink-dark .hw-balance .line { background: rgba(13,18,22,.5); }
+#ui.hw-ink-dark .hw-balance .dot { background: var(--ink); }
+#ui.hw-ink-dark .hw-notefl .label { color: var(--ink); text-shadow: 0 0 2px rgba(238,241,242,.9); }
+@media (max-aspect-ratio: 1/1) {
+  #ui.hw-ink-dark .hw-hint { color: rgba(13,18,22,.85); text-shadow: 0 0 2px rgba(238,241,242,.95), 0 0 7px rgba(238,241,242,.75); }
+}
 
 /* ——— 纸条（HUD 翻看与纸条界面共用）——— */
 .hw-noteopen { display: none; width: min(46vw, 30vh, 260px); aspect-ratio: 4 / 3; margin-bottom: 12px; perspective: 900px; transition: opacity .4s; }
@@ -173,6 +211,9 @@
 
 @keyframes hw-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes hw-sub { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hw-cnt0 { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hw-cnt1 { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hw-tremble { 0% { transform: translate(-.8px, .4px); } 100% { transform: translate(.8px, -.4px); } }
 @keyframes hw-pulse { 0%, 100% { opacity: .15; } 20% { opacity: .9; } 45% { opacity: .15; } }
 @keyframes hw-grain { 0% { background-position: 0 0; } 25% { background-position: -31px 17px; } 50% { background-position: 23px -41px; } 75% { background-position: -13px 29px; } 100% { background-position: 0 0; } }
 @media (max-aspect-ratio: 1/1) {

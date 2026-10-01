@@ -299,7 +299,7 @@ describe('操作提示（附录 B.2）', () => {
     ui.frame(snap({ t: 3.1 }), 0);
     expect(ui.hud.hintEl.textContent).toBe('→ 掰正');
   });
-  it('第一次撞到人腿：1 s 后低语「不是成心的，只是习惯。」，全作只一次', async () => {
+  it('第一次撞到人腿：1 s 后出「不是成心的，只是习惯。」（居中的自述，不是被撞那一侧的低语），全作只一次', async () => {
     const { ui } = await mountUI();
     ui.show('play');
     const hit = (t: number) => ui.onEvent(ev('hit', { severity: 'stumble', kind: 'legs', obstacleId: 1, lane: -1, steady: 2, crowd: false, firstLegHit: true }), snap({ t }));
@@ -308,10 +308,24 @@ describe('操作提示（附录 B.2）', () => {
     expect(ui.hud.currentText()).toEqual([]);
     ui.frame(snap({ t: 11.0 }), 0);
     expect(ui.hud.currentText()).toEqual(['不是成心的，只是习惯。']);
-    expect(ui.hud.subs.lines[0]?.style).toBe('whisper');
+    expect(ui.hud.subs.lines[0]?.style).toBe('narration');
+    const line = ui.hud.subsEl.querySelector('.hw-line') as HTMLElement;
+    expect(line.classList.contains('whisper')).toBe(false);
+    expect(line.classList.contains('side-l') || line.classList.contains('side-r')).toBe(false);
     ui.hud.subs.clear();
     hit(30); ui.frame(snap({ t: 31.5 }), 0);
     expect(ui.hud.currentText()).toEqual([]);
+  });
+  it('「只是习惯」在梦里（第四章）不出字，也不算用掉这一次', async () => {
+    const { ui } = await mountUI();
+    ui.show('play');
+    const hit = (t: number, chapter: 'ch1' | 'ch4') => ui.onEvent(ev('hit', { severity: 'stumble', kind: 'legs', obstacleId: 1, lane: 1, steady: 2, crowd: false, firstLegHit: true }), snap({ t, chapter }));
+    hit(5, 'ch4');
+    ui.frame(snap({ t: 7, chapter: 'ch4' }), 0);
+    expect(ui.hud.currentText()).toEqual([]);
+    hit(10, 'ch1');
+    ui.frame(snap({ t: 11.1 }), 0);
+    expect(ui.hud.currentText()).toEqual(['不是成心的，只是习惯。']);
   });
   it('按文字找 LineId（第二章「让一下。」由 WP2 收录）', () => {
     expect(lineIdByText('喂。')).toBe('c1.hey');

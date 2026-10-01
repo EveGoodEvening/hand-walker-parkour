@@ -1,5 +1,6 @@
 // src/ui/hud/metronome.ts —— 节拍器的视图模型（DESIGN.md §2.6 模式表、§7.2 节拍器）。WP8。纯函数，快照测试覆盖六种模式。
 // 自己：实心点 ●●●，每次落掌按 0 / 26 / 52 ms（三段触地事件）依次点亮 150 ms；亮度按稳度 100 / 80 / 60 / 40%，稳度 0 时轻微颤动。
+//   U4：稳度 ≤ 1 时点本身持续轻颤（selfTremble，CSS 类 tremble）。absent 段没有空心点也没有暗角（§10.2），稳度只剩这里能看出来。
 // 它：空心点 ○○○，横向位移 = 相位差 × 72 px（§2.6 表：36 / 24 / 12 / 0 px），越近越清楚。
 //   hidden / absent：不显示；behind / pressure：左下方；synced：与实心点重叠，受击后按 synced 相位差散开；
 //   ahead：右上方，偏移量随领跑者距离变化（3–12 m → 12–48 px）；from = 'front'（2-10 结尾）也放右上方。
@@ -36,6 +37,8 @@ export interface MetroView {
   selfDx: number;
   selfDy: number;
   selfWhite: boolean;
+  /** 稳度 ≤ 1：实心点持续轻颤（减少晃动时不颤）。 */
+  selfTremble: boolean;
   followVisible: boolean;
   followOpacity: number;
   followKind: 'hollow' | 'shadow';
@@ -80,6 +83,7 @@ export function metronome(i: MetroInput): MetroView {
     selfLit: i.palm === 'heat' ? [true, true, true] : lit(i.flashSelf, i.t),
     selfDx, selfDy,
     selfWhite: i.palm === 'heat',
+    selfTremble: !i.reducedMotion && s <= 1,
     followVisible,
     followOpacity: followVisible ? (FOLLOW_OPACITY[s] as number) : 0,
     followKind: f.hud === 'shadow' ? 'shadow' : 'hollow',
