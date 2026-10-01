@@ -7,7 +7,7 @@
 //   · 5-6 站着的「我」是一个 double（从走廊尽头迎面走来、避开你的车道）加**一个** doubleMod（在 5 m 处停下、指镜子、
 //     第三只手摸脖子）；手势 hold 结束后它自己继续走过你身边（约定见 docs/contract-requests/WP2.md）。
 //   · 停拍、静场略短于表格（5-1 6.4 s、5-3 停拍 2.0 s、5-5 8 s），让非跑动占比 ≤ 25%。5-8 取 13 s（表中 ≤ 15 s）：
-//     起身后每 0.9 s 一步，第 7 步之后 +3.0 s 的「不是。是它们在练习。」、+4.7 s 的「我失败了。」也要显示完（等输入的时间不计入 duration）。
+//     起身后每 0.9 s 一步，第 7 步之后 +3.0 s 的「不是。是它们在练习。」、+4.4 s 的「我失败了。」也要显示完（等输入的时间不计入 duration）。
 //   · 5-11 门牌「高二（7）班」挂在 @214、y 1.3–1.6 m（表中 @200–212；评审修复 U1 之前是 @215、y 1.9–2.1）。@208 翻转时它在横屏镜头前
 //     约 9 m，翻转后约 1 s 内从 4–6 m 处以反字经过 0.92 m 机位的视线带；放在 @206 的话翻转时它已经在镜头旁边，反字根本看不见。
 //     tests/unit/content/chapters.test.ts 的「5-11 门牌」检查。门牌的尺寸和自发光由 WP3 的 shell.ts 负责。
@@ -287,7 +287,7 @@ export default {
         { atStep: 7, type: 'text', line: 'c5.seventh', id: 'seventhFall' },
         { atStep: 7, delay: 1.6, type: 'text', line: 'c5.practiceQ', style: 'other', speaker: 'teacherMa' },
         { atStep: 7, delay: 3.0, type: 'text', line: 'c5.theyPractice', style: 'self', id: 'theyPractice' },
-        { atStep: 7, delay: 4.7, type: 'text', line: 'c5.failed' },                       // 原文紧接着的一段；显示到 12.9 s（段长 13 s）
+        { atStep: 7, delay: 4.4, type: 'text', line: 'c5.failed' },                       // 原文紧接着的一段：11.7 s 出字，显示到 12.95 s（段长 13 s）
       ],
     },
     /* 5-9 医务室：走了七步；纸条背面「现在，你后面没有我了。」；枕边的凹陷；它在前面（静场） */
