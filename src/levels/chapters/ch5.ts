@@ -95,9 +95,9 @@ export default {
         [62.5, ['bollard', '.', 'bollard']],
         [66, ['curb', 'curb', 'curb']],
         [68, ['.', '.', 'leaves']],                  // 湿落叶（软）
-        [70, ['.', 'bin', 'bin']],
+        [70, ['.', 'bollard', 'bollard']],
         [74.5, ['bin', 'bollard', '.']],
-        [78, ['bollard', '.', 'bin']],
+        [78, ['bollard', '.', 'bollard']],
         [81.5, ['curb', 'curb', 'curb']],
         [85, ['.', 'bin', '.']],
         [85, ['.', '.', 'car'], 3],
@@ -364,26 +364,26 @@ export default {
         [16, ['deskBar', 'deskBar', 'deskBar']],     // 课桌
         [20.5, ['.', 'legs', 'legs']],               // 人腿
         [25, ['legs', '.', 'mopBucket']],            // 拖把桶
-        [29.5, ['mopBucket', 'footOut', 'mopBucket']],   // 伸出的脚
+        [29.5, ['chairBar', 'chairBar', 'chairBar']],   // 倒扣的椅子
         [34, ['.', 'legs', 'legs']],
-        [38.5, ['chairBar', 'chairBar', 'chairBar']],   // 倒扣的椅子
+        [38.5, ['deskBar', 'deskBar', 'deskBar']],
         [43, ['legs', '.', 'legs']],
         [46, ['.', '.', 'puddle']],                  // 水洼
         [47.5, ['mopBucket', 'mopBucket', 'mopBucket']],
         [52, ['.', 'cart', '.']],                    // 推车
         [56, ['legs', '.', 'legs']],
-        [72, ['bag', 'footOut', 'bag']],
+        [72, ['deskBar', 'deskBar', 'deskBar']],
         [76, ['.', 'legs', 'cart']],
         [80, ['cart', '.', 'legs']],
-        [84, ['longTable', 'longTable', 'longTable']],
+        [84, ['deskBar', 'deskBar', 'deskBar']],
         [96, ['bag', '.', '.']],                     // @90 偏移进左道约 1 s 后：不掰正就得多跳一次
         [101, ['legs', 'cart', '.']],
         [105, ['cart', '.', 'legs']],
-        [109, ['mopBucket', 'bag', 'mopBucket']],
+        [109, ['deskBar', 'deskBar', 'deskBar']],
         [113, ['.', 'legs', 'legs']],
         [117, ['chairBar', 'chairBar', 'chairBar']],
         [121, ['legs', '.', 'cart']],
-        [125, ['bag', 'mopBucket', 'bag']],
+        [125, ['chairBar', 'chairBar', 'chairBar']],
         [129, ['cart', 'legs', '.']],
         [133, ['deskBar', 'deskBar', 'deskBar']],
         [137, ['legs', '.', 'legs']],
@@ -392,12 +392,12 @@ export default {
         [164, ['deskBar', 'deskBar', 'deskBar']],
         [174.5, ['mopBucket', 'mopBucket', 'mopBucket']],
         [178, ['legs', 'cart', '.']],
-        [181, ['cart', '.', 'legs']],
+        [181.5, ['mopBucket', 'mopBucket', 'mopBucket']],
         [185, ['chairBar', 'chairBar', 'chairBar']],
-        [189, ['.', 'legs', 'cart']],
+        [189, ['legs', '.', 'cart']],
         [193, ['mopBucket', 'mopBucket', 'mopBucket']],
-        [197, ['legs', '.', 'legs']],
-        [201, ['longTable', 'longTable', 'longTable']],
+        [197, ['bag', 'mopBucket', 'bag']],
+        [201, ['chairBar', 'chairBar', 'chairBar']],
         // @208 翻转之后是减速的收束（§2.8）：门牌前后不放障碍，之后每 8–12 拍一行
         [220, ['.', '.', 'mopBucket']],
         [228, ['mopBucket', '.', 'longTable']],

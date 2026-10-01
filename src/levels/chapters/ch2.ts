@@ -198,16 +198,16 @@ export default {
         [10, ['.', 'pipe', '.']],                    // 地面管线
         [16, ['.', 'locker', 'locker']],
         [22, ['mopAcross', 'mopAcross', 'mopAcross']],   // 横放的拖把（本章第一次出现，这一行只有它：R7）
-        [28, ['locker', '.', 'cart']],               // 器材推车
-        [34, ['books', 'pipe', 'books']],
-        [40, ['cart', 'cart', '.']],
-        [46, ['locker', '.', 'locker']],
-        [60, ['pipe', 'pipe', 'pipe']],
+        [28, ['mopAcross', 'mopAcross', 'mopAcross']],
+        [34, ['mopAcross', 'mopAcross', 'mopAcross']],
+        [40, ['cart', '.', 'cart']],                 // 器材推车
+        [46, ['locker', 'locker', '.']],
+        [60, ['mopAcross', 'mopAcross', 'mopAcross']],
         [65, ['.', 'cart', 'locker']],
         [70, ['mopAcross', 'locker', 'locker']],
         [75, ['cart', '.', 'locker']],               // 停拍（@82）之前最后一个动作
         [108, ['mopAcross', 'locker', '.']],         // 检查点、两句文字之后才开始加密
-        [113, ['locker', 'locker', 'pipe']],
+        [113, ['mopAcross', 'mopAcross', 'mopAcross']],
         [118, ['cart', '.', 'locker']],
         [123, ['mopAcross', 'mopAcross', 'mopAcross']],
         [128, ['.', 'cart', 'locker']],
