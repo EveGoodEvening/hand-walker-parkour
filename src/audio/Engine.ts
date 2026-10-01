@@ -67,6 +67,13 @@ const HUSH_EXEMPT_SFX = new Set<SfxId>(['shush']);
  * §4.4、§10.2）。cloth 平时走 npc 总线，屏幕门会把它压到 −70 dB 以下；这时改走界面总线（不在 SCREEN_BUSES 里，音量同样跟「音效」）。
  */
 const SCREEN_EXEMPT_SFX = new Set<SfxId>(['cloth']);
+/**
+ * 标题屏的「地点」（§7.2：背景是早晨的走廊）：房间底噪、走廊混响、没有灯管嗡鸣、没有雨。
+ * key 不同于任何真实地点，所以之后的第一个 segment 一定按章节数据重建。
+ */
+const TITLE_PLACE: Place = { key: 'title', reverb: 'corridor', ambience: 'room', ambLevel: 1, hum: false, rain: 'indoor' };
+/** 回到标题时，之前那一章的环境音、雨、底噪淡出用的时间（秒；τ = 1/3 这个值，1 s 时约 −35 dB，2 s 时约 −70 dB）。 */
+const TITLE_FADE = 0.75;
 /** 同一声膝盖闷响的去重窗口（秒）：GameEvent fall 与 sfx cue 两条路径共用。 */
 const KNEE_DEDUPE = 0.1;
 /** 梦中掌声「先散后齐」：一片掌声刚起来时先是散的，这么久之后才开始对齐（τ 0.6 s）。 */
@@ -557,21 +564,46 @@ export class AudioEngine implements AudioImpl, AudioAPI {
 
   /**
    * 屏幕切换。Game 只把 'screen' 发到 EventBus，不经过 AudioAPI.onEvent，所以 index.ts 订阅总线后调用这里。
-   * 结尾卡和演职卡：所有声音 0.4 s 淡出（底噪也停）；菜单类屏幕：允许界面音。
+   * 结尾卡和演职卡：所有声音约 1.5 s 淡出（底噪也停；床单声例外，见 SCREEN_EXEMPT_SFX）；菜单类屏幕：允许界面音。
+   * 标题：换成标题的底噪（enterTitle）。
    */
   onScreen(name: string): void {
     this.screen = name;
     // 离开暂停菜单（以及从暂停菜单打开的设置）就结束 Game 的暂停：「重来」「回到标题」不会调 suspend(false)
     if (this.gamePaused && name !== 'pause' && name !== 'settings') { this.gamePaused = false; this.applySuspend(); }
     const quiet = name === 'outro' || name === 'credits';
-    if (quiet === this.screenQuiet) return;
-    this.screenQuiet = quiet;
-    if (!this.mixer) return;
-    const now = this.now();
-    for (const b of SCREEN_BUSES) {
-      if (quiet) this.mixer.gate(b).set('screen', 0, now, Infinity, 0.25, 0.3, now);   // 约 1.5 s 内淡到听不见
-      else this.mixer.gate(b).clear('screen', now, 0.3, now);
+    // 之前那一章的声音此刻已经听不见（被屏幕门或失败门压着）：回到标题时直接换掉，不必淡出
+    const muted = this.screenQuiet || this.failing;
+    if (quiet !== this.screenQuiet) {
+      this.screenQuiet = quiet;
+      if (this.mixer) {
+        const now = this.now();
+        for (const b of SCREEN_BUSES) {
+          if (quiet) this.mixer.gate(b).set('screen', 0, now, Infinity, 0.25, 0.3, now);   // 约 1.5 s 内淡到听不见
+          else this.mixer.gate(b).clear('screen', now, 0.3, now);
+        }
+      }
     }
+    if (name === 'title') this.enterTitle(muted);
+  }
+
+  /**
+   * 回到标题（暂停菜单、失败卡、结尾卡、演职卡之后，以及启动后第一次进标题）：之前那一章的环境音、雨、房间底噪
+   * 约 1 s 内淡出，换成标题的底噪（早晨走廊的房间声）；地点、混响、人群、失败和一次性的门一并清掉。
+   * 之后的 chapter:start / segment（开始、继续、选章；U4 回标题时把模拟复位到 1-1 也会发）照常按章节数据恢复——
+   * 下一个 segment 一定按「跳段」处理（soundStateAt 重建地点、环境音、雨）。
+   */
+  private enterTitle(muted: boolean): void {
+    this.jump = true; this.segIndex = -1; this.pendingAmb = null;
+    this.crowd.setSegment(null);
+    this.lights.reset();
+    const now = this.now();
+    if (this.failing) { this.failing = false; if (this.mixer) this.applyFail(false, now); }
+    this.clearTransient();
+    const fade = muted ? 0.05 : TITLE_FADE;
+    this.setPlaceAt(TITLE_PLACE, now, 0.8);
+    this.setRain(0, fade, now);
+    this.setAmbience(TITLE_PLACE.ambience, TITLE_PLACE.ambLevel, fade, now);
   }
 
   // ——————————————————— 地点、环境音、雨 ———————————————————
@@ -613,9 +645,12 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   }
 
   private setPlace(place: Place, snap: SimSnapshot, fade: number): void {
+    this.setPlaceAt(place, this.mixer ? this.clock.peek(snap.t, this.now()) : 0, fade);
+  }
+
+  private setPlaceAt(place: Place, at: number, fade: number): void {
     this.place = place;
     if (!this.mixer) return;
-    const at = this.clock.peek(snap.t, this.now());
     this.mixer.setRainExposure(place.rain, at);
     // Convolver 还没装好：不在这一帧里做 FFT，排到空闲任务的最前面（交叉淡变本来就有 0.8 s，晚几毫秒听不出来）
     if (this.deps.offline || this.mixer.reverbReady(place.reverb)) { this.mixer.setReverb(place.reverb, at, fade); return; }
