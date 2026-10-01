@@ -3,6 +3,7 @@
 //   · 雨（rain.ts，1 次 draw call）与 `rain` cue（CUE_OWNER = WP4）；重来 / goto / 中途读章时按关卡数据复原雨强。
 //   · 户外天空（1 次 draw call，renderOrder backdrop）：只在户外 kit（street / plaza / track）的段里、夜 / 清晨 / 梦中灰暗时画；
 //     颜色 = 当前雾色 × skyGradient 纹理（地平线处与背景无缝）。晨光从前方来，正前方地平线更亮。
+//     天空种类跟着氛围走：段首按 seg.def.atmosphere，段中途的 `atmosphere` cue 立即换（纹理在读章时预建），重来 / goto 按关卡数据复原。
 //   · 3-7 电子栏杆的红光扫动（1 次 draw call，只在栏杆附近可见，只在第三章 compound 变体）。
 //   · 户外纹理注册（TextureBank，WP3）；驱动 WP4 各 set 的 update（CORE 占位 World 不调用 set.update）。
 // 只经 ViewContext 使用 WP3 的 MaterialsAPI、TextureBank（§8.2 规则 2），不 import 其他包的内部文件。
@@ -16,6 +17,7 @@ import type { CompiledChapter, CompiledSegment, RunSegmentDef, StandSegmentDef }
 import { C } from '../kits/outside/lib/colors';
 import { OGeo } from '../kits/outside/lib/geo';
 import { LIVE_SETS } from '../sets/outside/lib/live';
+import { wp4Basic } from '../sets/outside/lib/mats';
 import { registerOutdoorTextures } from '../textures/outdoor';
 import { RainField, RainLevel, rainAt } from './rain';
 
@@ -33,6 +35,31 @@ export function skyKindFor(a: AtmosphereId): SkyKind | null {
 }
 /** 天空的增益：纹理在地平线处的值 × 增益 = 1（与雾色无缝）。 */
 export const SKY_GAIN: Record<SkyKind, number> = { night: 1, dusk: 1, dawn: 1.25 };
+
+interface AtmoCueRef { at: number; body: { type: string; id?: string; timeline?: Array<{ type: string; id?: string }> } }
+
+/** 从关卡数据推算某处（段下标、段内拍号 / 秒）的氛围：段的 atmosphere，再叠上这一处之前的 `atmosphere` cue（与 rainAt 同规则）。 */
+export function atmosphereAt(ch: CompiledChapter | null, segIndex: number, segBeat: number): AtmosphereId | null {
+  const seg = ch?.segments[segIndex];
+  if (!seg) return null;
+  let a = seg.def.atmosphere;
+  for (const e of seg.events as ReadonlyArray<AtmoCueRef>) {
+    if (e.at > segBeat + 1e-6) break;
+    if (e.body.type === 'atmosphere' && e.body.id) a = e.body.id as AtmosphereId;
+    for (const t of e.body.timeline ?? []) if (t.type === 'atmosphere' && t.id) a = t.id as AtmosphereId;
+  }
+  return a;
+}
+
+/** 这一段里出现过的全部氛围（段首 + 段中途的 cue），读章时据此预建天空纹理。 */
+export function atmospheresIn(seg: CompiledSegment): AtmosphereId[] {
+  const out = new Set<AtmosphereId>([seg.def.atmosphere]);
+  for (const e of seg.events as ReadonlyArray<AtmoCueRef>) {
+    if (e.body.type === 'atmosphere' && e.body.id) out.add(e.body.id as AtmosphereId);
+    for (const t of e.body.timeline ?? []) if (t.type === 'atmosphere' && t.id) out.add(t.id as AtmosphereId);
+  }
+  return [...out];
+}
 
 /** 这一段是不是户外（跑段或站立段的 kit 属于户外）。 */
 export function isOutdoorSegment(seg: CompiledSegment | undefined): boolean {
@@ -108,10 +135,7 @@ export class Outdoor implements ViewSystem {
     this.rain = new RainField(ctx.quality.rainLines);
     ctx.scene.add(this.rain.object);
     // 天
-    this.skyMat = ctx.mat.basic({ color: 0xffffff });
-    this.skyMat.fog = false;
-    this.skyMat.depthWrite = false;
-    this.skyMat.toneMapped = false;
+    this.skyMat = wp4Basic(ctx.mat, { color: 0xffffff }, { fog: false, depthWrite: false, toneMapped: false });
     this.sky = new THREE.Mesh(createSkyGeometry(), this.skyMat);
     this.sky.name = 'wp4.sky';
     this.sky.renderOrder = RENDER_ORDER.backdrop;
@@ -137,9 +161,7 @@ export class Outdoor implements ViewSystem {
       g.wallZ(0, -2.3, 2.3, 0.46, 0.49, 0x3a100e, f);
     }
     const geo = g.build();
-    this.sweepMat = ctx.mat.basic({ color: 0xffffff, additive: true, transparent: true, opacity: 0.7 });
-    this.sweepMat.vertexColors = true;
-    this.sweepMat.depthWrite = false;
+    this.sweepMat = wp4Basic(ctx.mat, { color: 0xffffff, additive: true, transparent: true, opacity: 0.7 }, { vertexColors: true, depthWrite: false });
     this.sweep = new THREE.Mesh(geo, this.sweepMat);
     this.sweep.name = 'wp4.barrierSweep';
     this.sweep.renderOrder = RENDER_ORDER.fx;
@@ -154,8 +176,7 @@ export class Outdoor implements ViewSystem {
     // 读章时把本章用得到的天空纹理生成好（游戏过程中不建纹理）
     for (const seg of ch.segments) {
       if (!isOutdoorSegment(seg)) continue;
-      const k = skyKindFor(seg.def.atmosphere);
-      if (k) this.skyTexture(k);
+      for (const a of atmospheresIn(seg)) { const k = skyKindFor(a); if (k) this.skyTexture(k); }
     }
     for (const l of LIVE_SETS.values()) l.prune();
   }
@@ -182,13 +203,19 @@ export class Outdoor implements ViewSystem {
 
   onEvent(e: GameEvent, snap: SimSnapshot): void {
     if (e.type === 'chapter:start') this.level.snap(rainAt(this.chapter, snap.segIndex, snap.segBeat));
+    // 段中途换氛围（例如梦里由白转灰）：天空种类跟着换；纹理读章时已经建好，这里只取缓存
+    else if (e.type === 'cue' && e.data.body.type === 'atmosphere' && this.outdoorNow) this.setSky(skyKindFor(e.data.body.id));
   }
 
   onReset(snap: SimSnapshot): void {
-    // 跳过的 cue 不会再发：按关卡数据复原到这一处的雨强
+    // 跳过的 cue 不会再发：按关卡数据复原到这一处的雨强与氛围
     this.level.snap(rainAt(this.chapter, snap.segIndex, snap.segBeat));
     const seg = this.chapter?.segments[snap.segIndex];
-    if (seg) this.onSegment(seg);
+    if (seg) {
+      this.onSegment(seg);
+      const a = atmosphereAt(this.chapter, snap.segIndex, snap.segBeat);
+      if (this.outdoorNow && a) this.setSky(skyKindFor(a));
+    }
   }
 
   /** rain cue：intensity 在 seconds 秒内渐变（§4.3 3-3 @52：4 s 内 0 → 0.6）。 */

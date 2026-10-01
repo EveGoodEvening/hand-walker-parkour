@@ -18,3 +18,13 @@
 - **test 章只有 32 拍**：长时间的模拟（5 分钟内存检查）每 600 tick 调一次 `__game.goto('t-1', 0)`；`goto` 不重置模拟时间，`t` 会一直往前走。
 - **Node 里测纹理**：CORE 的 `FlatTextureBank` 在没有 `document` 时返回 1×1 白纹理，不会调用生成器；把生成器写成纯函数（size, params → RGBA 数组），单元测试直接检查像素（暖色比例、眨眼帧、天空渐变）。
 - **Material.copy / clone 不复制 onBeforeCompile**：克隆 WP3 打过 LampField 补丁的材质会丢掉补丁。WP4 假设 `MaterialsAPI.lambert()/basic()` 每次返回新实例（CORE 的 ChunkStreamer 也这样用：拿到地面材质后改 `depthWrite`），直接在返回的材质上改 `depthWrite`、模板、透明度，不克隆。
+
+## 2026-10-01（WP4 验收第 1 轮修复）
+
+- **更正上一条「不克隆」**：不能默认 `MaterialsAPI` 每次返回新实例（契约没写，lead 要求不依赖桩的行为）。WP4 取材质、改材质一律经 `render/sets/outside/lib/mats.ts`（`wp4Lambert / wp4Basic / tuneMat / wp4Texture`），别处不直接写 `depthWrite / colorWrite / stencil* / fog / toneMapped / vertexColors`（`tests/unit/outside/mats.test.ts` 扫源码检查）。同一个实例第二次拿到时，要从**第一次拿到时留的原样副本**克隆：直接克隆那个实例会把 WP4 第一次的改动（模板、colorWrite）一起复制过去。克隆后手动带上 `onBeforeCompile`、`customProgramCacheKey`。
+- **静场 set 的状态要按「这一遍」复位**：`Game.loadChapter` 对同一章同一种子不调用 `view.loadChapter`，set 实例会复用；`Sim.retry` / `goto` 不重置模拟时间 `t`。按模拟时间记的时刻（水面碎开、放松）在重玩时会立刻生效。做法：把时刻换算成静场时间记下，在总线的 `segment` / `retry` / `chapter:start` 事件和静场时钟倒退时清零。注意等输入时静场时钟是停着的（`StillRunner` 在 waiting 时不加 clock），按住期间要动的东西用模拟时间。
+- **FrontSide 的单面光带要按法线定绕序**：`OGeo.gtri` 不看法线，左右两侧镜像的三角形很容易一侧全朝外、被背面剔除，却照样占一次 draw call。用 `OGeo.gtriN(a, b, c, …, n)`，并写单元测试检查每个三角形朝着静场机位。
+- **右手掌心朝自己时，拇指在画面右侧**，食指在右、小指在左，中指最长；生命线从拇指与食指之间的右侧掌缘起、绕着右下方的拇指根落到手腕。画手之前先对着自己的手核对一遍左右。
+- **ClampToEdge 的贴图 UV 不要超出 [0, 1]**：超出的部分会把边缘像素拉成条纹。天花板贴图铺满整个房间，吊灯按 `riverYAt(u)` 挂在裂缝上（画布第 0 行对应 UV v = 1，CanvasTexture 默认 flipY）。
+- **调试用的 ViewSystem 只在 `urlParams().debugEnabled` 时注册**，画廊也不往真实总线上发伪造的 cue（`setWaterBreak(root, t)` 直接交给 set）。
+- **本机有 heavy-gate**：`npm run verify`（最后一步是 e2e:smoke）、`node scripts/shot.mjs` 都会开浏览器，必须 `~/.claude/bin/heavy-gate -l <标签> -- <命令>` 并在后台运行；`npm test`、`npm run typecheck` 不需要。

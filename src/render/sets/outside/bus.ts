@@ -1,12 +1,14 @@
 // src/render/sets/outside/bus.ts —— 3-5 公交车（DESIGN.md §4.3、§5.8、§5.9；氛围 busNight）。
 // 「车厢里空无一人，只有最后一排靠窗的位置亮着一盏阅读灯。」「雨刷在挡风玻璃上来回摆动，把路灯切成一段一段的光。」
 // 「我旁边的玻璃上贴着一张广告，边角被水泡得翘起。」—— 车窗是开口（§5.8）：玻璃后面是镜中车厢（按车窗平面把车厢镜像一遍，
-// 调暗），替身（WP5）坐在镜中的座位上；窗外的路灯一段一段地从前往后滑过。阅读灯是冷白色（第三章的暖色只给路灯、烟头、栏杆）。
+// 调暗），替身（WP5）坐在镜中的座位上；窗外的路灯一段一段地从前往后滑过（光带朝车厢里，夹在车窗与窗外夜色之间；
+// 8 m/s ÷ 3.1 m ≈ 2.6 Hz，「减少闪烁」时降到 0.5 Hz，附录 A-10）。阅读灯是冷白色（第三章的暖色只给路灯、烟头、栏杆）。
 // 坐标相对 STILL_ORIGIN：车头朝 −z，左窗在 x = −1.22。主角坐在最后一排左侧靠窗的位置（playerAnchor）。
 // draw call：车厢 1、座椅面料 1、发光 1、光晕 1、玻璃 1、广告 1、窗外滑过的光 1、雨刷 2 = 9（≤ 12）。
 import * as THREE from 'three';
 import type { StillSet, ViewContext } from '../../../core/contracts';
 import { registerSet } from '../../../core/registry';
+import type { Settings } from '../../../core/settings';
 import type { SimSnapshot } from '../../../core/types';
 import { C, mix, shade } from '../../kits/outside/lib/colors';
 import { OGeo, TexGeo, bakeLights, keyRng, mirrorLights, reflectX, type BakeLight } from '../../kits/outside/lib/geo';
@@ -85,7 +87,16 @@ function fabric(tg: TexGeo, tint: number): void {
   for (const z of ROWS) for (const x of z === 0 ? [-0.85, -0.4] : [-0.85, -0.4, 0.4, 0.85]) cushion(x, z);
 }
 
-interface BusAnim { lights: THREE.Mesh; wipers: THREE.Mesh[]; glowMat: THREE.MeshBasicMaterial }
+interface BusAnim { lights: THREE.Mesh; wipers: THREE.Mesh[]; glowMat: THREE.MeshBasicMaterial; settings: Readonly<Settings> }
+
+/** 窗外路灯的间距（米）与车速（米/秒）：光带掠过车窗的频率 = 车速 ÷ 间距。 */
+export const PASSING_PERIOD = 3.1, BUS_SPEED = 8;
+/** 「减少闪烁」时光带掠过的频率（附录 A-10、§7.3：0.5 Hz 的平滑明暗）。 */
+export const PASSING_HZ_REDUCED = 0.5;
+/** 光带每秒掠过车窗几次。 */
+export function passingHz(reducedFlicker: boolean): number { return reducedFlicker ? PASSING_HZ_REDUCED : BUS_SPEED / PASSING_PERIOD; }
+/** 窗外滑过的光带所在的平面（车窗与窗外夜色之间）。 */
+export const PASSING_X = W + 0.01;
 
 /** 烘焙光源：最后一排的阅读灯（冷白）、挡风玻璃外的夜色、右侧车窗透进来的街上的微光。 */
 export const BUS_LIGHTS: readonly BakeLight[] = [
@@ -148,21 +159,22 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   ad.tri([ax, ay0, cz], [ax, cy, az1], [ax + 0.04, ay0 + 0.1, az1 + 0.02], [0.99, 0.01], [0.99, 0.01], [0.99, 0.01], 0xc9d0d4);
   bakeLights(ad, BUS_LIGHTS, BUS_AMBIENT);
   b.texturedBasic(ad, 'adRunner', {}, 'ad');
-  // 窗外滑过的路灯光：几道竖直的光带，从车头往车尾移动（update 里平移，循环）
+  // 窗外滑过的路灯光：几道竖直的光带，从车头往车尾移动（update 里平移，循环）。
+  // 光带朝车厢里（左窗朝 +x、右窗朝 −x），材质是 FrontSide：绕序按法线定，否则从车里看全被背面剔除
   const lg = new OGeo();
   for (let i = 0; i < 4; i++) {
-    const z = -i * 3.1;
-    for (const x of [BUS_WALL_X - 0.02, -BUS_WALL_X + 0.02]) {
-      const f = (x < 0 ? 1 : -1) as 1 | -1;
+    const z = -i * PASSING_PERIOD;
+    for (const x of [-PASSING_X, PASSING_X]) {
+      const n: [number, number, number] = [x < 0 ? 1 : -1, 0, 0];
       const col = mix(0x1a1f22, C.lampGold, 0.55), dark = 0x000000;
       const y0 = WIN_Y0, y1 = WIN_Y1, w2 = 0.35;
-      lg.gtri([x, y0, z], [x, y1, z], [x, y0, z - w2 * f], col, col, dark);
-      lg.gtri([x, y1, z], [x, y1, z - w2 * f], [x, y0, z - w2 * f], col, dark, dark);
-      lg.gtri([x, y0, z + w2 * f], [x, y1, z + w2 * f], [x, y0, z], dark, dark, col);
-      lg.gtri([x, y1, z + w2 * f], [x, y1, z], [x, y0, z], dark, col, col);
+      lg.gtriN([x, y0, z], [x, y1, z], [x, y0, z - w2], col, col, dark, n);
+      lg.gtriN([x, y1, z], [x, y1, z - w2], [x, y0, z - w2], col, dark, dark, n);
+      lg.gtriN([x, y0, z + w2], [x, y1, z + w2], [x, y0, z], dark, dark, col, n);
+      lg.gtriN([x, y1, z + w2], [x, y1, z], [x, y0, z], dark, col, col, n);
     }
   }
-  const lights = b.glow(lg, 'passingLights', 0.8);
+  const lights = b.glow(lg, 'passingLights', 0.5);              // 克制：淡淡掠过，不是一整块金色
   lights.matrixAutoUpdate = true;
   // 雨刷：挡风玻璃上两根，绕下方的支点摆动
   const wipers: THREE.Mesh[] = [];
@@ -175,16 +187,16 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
     m.matrixAutoUpdate = true;
     wipers.push(m);
   }
-  const anim: BusAnim = { lights, wipers, glowMat: glowMesh.material as THREE.MeshBasicMaterial };
+  const anim: BusAnim = { lights, wipers, glowMat: glowMesh.material as THREE.MeshBasicMaterial, settings: ctx.settings };
   liveList('bus').add({ variant, root: b.root, update: (t, snap) => animate(anim, t, snap) });
   animate(anim, 0, null);
   return b.root;
 }
 
 function animate(a: BusAnim, t: number, _snap: SimSnapshot | null): void {
-  // 路灯每 3.1 m 一盏，车速约 8 m/s：光带从车头滑到车尾
-  const period = 3.1, speed = 8;
-  a.lights.position.z = ((t * speed) % period) + 1.2;
+  // 路灯每 3.1 m 一盏，车速约 8 m/s：光带从车头滑到车尾（≈ 2.6 Hz）；「减少闪烁」时慢到 0.5 Hz（设置随时生效）
+  const speed = passingHz(a.settings.reducedFlicker) * PASSING_PERIOD;
+  a.lights.position.z = ((t * speed) % PASSING_PERIOD) + 1.2;
   // 雨刷：周期 1.4 s（与 WP7 的雨刷声一致），±35°
   const ph = Math.sin((t / 1.4) * Math.PI * 2);
   for (const w of a.wipers) w.rotation.z = -0.6 + ph * 0.6;

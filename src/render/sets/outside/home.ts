@@ -8,10 +8,13 @@ import type { StillSet, ViewContext } from '../../../core/contracts';
 import { registerSet } from '../../../core/registry';
 import { C, shade } from '../../kits/outside/lib/colors';
 import { OGeo, TexGeo, bakeLights, keyRng, type BakeLight } from '../../kits/outside/lib/geo';
+import { riverYAt } from '../../textures/outdoor';
 import { liveList } from './lib/live';
 import { SetBuild, glowDisc, roomShell } from './lib/setkit';
 
 const X0 = -2.7, X1 = 2.7, Z0 = -5.6, Z1 = 2.6, H = 2.7;
+/** 吊灯挂在裂缝上（「从墙角延伸到吊灯」）：天花板贴图铺满整个房间（u 沿 x、v 沿 z，画布第 0 行在 z = Z1）。 */
+export const HOME_LAMP: readonly [number, number] = [0.4, Z0 + (1 - riverYAt((0.4 - X0) / (X1 - X0))) * (Z1 - Z0)];
 /** 烘焙光源：没关的电视（冷蓝）、窗外的夜色、卫生间门缝下一线更暗的光。 */
 export const HOME_LIGHTS: readonly BakeLight[] = [
   { p: [2.4, 1.2, -1.4], color: 0x7f98a8, intensity: 1.4, radius: 4.6 },
@@ -55,8 +58,9 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   g.wallX(X0 + 0.01, -2.6, -4.0, 2.1, 2.2, 0x39434a, 1);
   g.box([X0 + 0.12, 1.55, -2.5], [0.2, 1.8, 0.35], 0x1f262b);         // 窗帘（拉开一半）
   // 吊灯（关着）：裂缝一直延伸到这里
-  g.segment([0.4, H, -1.8], [0.4, H - 0.5, -1.8], 0.02, 0.02, 0x2a3136);
-  g.prism(0.4, -1.8, H - 0.72, H - 0.5, 0.3, 8, 0x353f46, null, 0.12);
+  const [lx, lz] = HOME_LAMP;
+  g.segment([lx, H, lz], [lx, H - 0.5, lz], 0.02, 0.02, 0x2a3136);
+  g.prism(lx, lz, H - 0.72, H - 0.5, 0.3, 8, 0x353f46, null, 0.12);
   bakeLights(g, HOME_LIGHTS, HOME_AMBIENT);
   b.baked(g, 'room');
   // 发光：没关的电视（冷蓝白，没有画面）、窗
@@ -74,13 +78,13 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
     gl.wallX(X0 + 0.02, z + 0.004, z - 0.004, y, y + l, 0x2e3c46, 1);
   }
   const glow = b.glow(gl, 'tvLight');
-  // 天花板 + 裂缝（河）
+  // 天花板 + 裂缝（河）：贴图铺满整个天花板，UV 在 [0, 1] 里（ClampToEdge 不会拉出边缘像素的条纹）
   const tg = new TexGeo();
   // 朝下（从房间里看）：a → d → c → b
   const cell = 0.45;
   for (let x = X0; x < X1 - 1e-6; x += cell) for (let z = Z0; z < Z1 - 1e-6; z += cell) {
     const x1 = Math.min(X1, x + cell), z1 = Math.min(Z1, z + cell);
-    const u = (q: number) => (q - X0) / (X1 - X0), v = (q: number) => ((q - Z0) / (Z1 - Z0)) * 1.6;
+    const u = (q: number) => (q - X0) / (X1 - X0), v = (q: number) => (q - Z0) / (Z1 - Z0);
     tg.quad([x, H, z1], [x, H, z], [x1, H, z], [x1, H, z1], [u(x), v(z1)], [u(x), v(z)], [u(x1), v(z)], [u(x1), v(z1)], 0xffffff);
   }
   bakeLights(tg, HOME_LIGHTS, HOME_AMBIENT);

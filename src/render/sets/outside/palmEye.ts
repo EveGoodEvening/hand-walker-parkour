@@ -1,6 +1,7 @@
 // src/render/sets/outside/palmEye.ts —— 4-4 掌心（DESIGN.md §4.4；氛围 dream）。
 // 「我把右手举到眼前。掌心里有一只眼睛。它很小，嵌在生命线和智慧线交叉的地方……我眨了一下眼睛，它也眨了一下。」
-// 近景：举在镜头前的右手（掌心朝镜头，手指朝上），掌心贴 palmEye 纹理（4 帧眨眼，约每 2.6 s 眨一次）；
+// 近景：举在镜头前的右手（掌心朝镜头，手指朝上）。右手掌心朝向自己时，拇指在画面右侧（+x），食指在右、小指在左，
+// 前臂从右下方（右肩那边）伸进画面；掌心贴 palmEye 纹理（4 帧眨眼，约每 2.6 s 眨一次），生命线绕着右侧的拇指根；
 // 身后是空了的梦中广场（「广场又安静了。我独自一人站着。」）：发白的地面、雾。没有选项 UI（§4.4、D12）。
 // 坐标相对 STILL_ORIGIN，镜头按 palmEye 机位（0, 0.8, 0.5）看向 −z。draw call：掌心 1、手 1、地面 1 = 3。
 import * as THREE from 'three';
@@ -35,15 +36,16 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   const h = new OGeo();
   const skin = C.skin, crease = C.lines;
   const top = PY + PH;
-  const fingers: Array<[number, number, number]> = [[-0.072, 0.075, 0.034], [-0.025, 0.09, 0.036], [0.023, 0.088, 0.036], [0.068, 0.07, 0.032]];
+  // [dx, 长, 宽]：从左到右是小指、无名指、中指、食指（右手掌心朝自己）；中指最长，小指最短最细
+  const fingers: Array<[number, number, number]> = [[-0.068, 0.07, 0.032], [-0.023, 0.088, 0.036], [0.025, 0.09, 0.036], [0.072, 0.075, 0.034]];
   for (const [dx, len, w] of fingers) {
     const x = PX + dx;
     h.wallZ(PZ - 0.002, x - w / 2, x + w / 2, top - 0.01, top + len, skin, 1);
     h.fan([[x - w / 2, top + len, PZ - 0.002], [x + w / 2, top + len, PZ - 0.002], [x + w * 0.3, top + len + 0.012, PZ - 0.002], [x - w * 0.3, top + len + 0.012, PZ - 0.002]], skin, [0, 0, 1]);
     for (const k of [0.35, 0.68]) h.wallZ(PZ - 0.001, x - w * 0.42, x + w * 0.42, top + len * k - 0.0015, top + len * k + 0.0015, crease, 1);
   }
-  // 拇指：从掌的一侧斜着伸出去（右手掌心朝向自己时，拇指在左边）
-  h.fan([[PX - PW, PY + 0.01, PZ - 0.002], [PX - PW, PY - 0.05, PZ - 0.002], [PX - PW - 0.07, PY + 0.03, PZ - 0.002], [PX - PW - 0.075, PY + 0.07, PZ - 0.002], [PX - PW - 0.03, PY + 0.06, PZ - 0.002]], shade(skin, 0.97), [0, 0, 1]);
+  // 拇指：从掌的右侧斜着伸出去（右手掌心朝向自己时，拇指在右边，+x）
+  h.fan([[PX + PW, PY + 0.01, PZ - 0.002], [PX + PW, PY - 0.05, PZ - 0.002], [PX + PW + 0.07, PY + 0.03, PZ - 0.002], [PX + PW + 0.075, PY + 0.07, PZ - 0.002], [PX + PW + 0.03, PY + 0.06, PZ - 0.002]], shade(skin, 0.97), [0, 0, 1]);
   // 手腕、前臂（袖子）斜向下方出画
   h.wallZ(PZ - 0.004, PX - 0.075, PX + 0.08, PY - PH - 0.07, PY - PH + 0.005, shade(skin, 0.95), 1);
   h.face([PX - 0.09, PY - PH - 0.06, PZ - 0.004], [PX + 0.095, PY - PH - 0.06, PZ - 0.004], [PX + 0.13, PY - PH - 0.4, PZ + 0.1], [PX - 0.06, PY - PH - 0.42, PZ + 0.1], C.uniform, [0, 0, 1]);

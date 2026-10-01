@@ -3,10 +3,10 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { QUALITY, resolveQuality } from '../../../src/core/quality';
 import { getCueHandler } from '../../../src/core/registry';
-import type { CompiledChapter, CompiledSegment } from '../../../src/levels/schema';
+import type { CompiledChapter, CompiledSegment, RunSegmentDef } from '../../../src/levels/schema';
 import { hsv, isWarm } from '../../../src/render/kits/outside/lib/colors';
 import { RAIN_COLOR, RAIN_MAX_LINES, RainField, RainLevel, createRainGeometry, rainAt } from '../../../src/render/weather/rain';
-import { Outdoor, createSkyGeometry, isOutdoorSegment, skyKindFor, sweepAnchors } from '../../../src/render/weather/outdoor';
+import { Outdoor, atmosphereAt, createSkyGeometry, isOutdoorSegment, skyKindFor, sweepAnchors } from '../../../src/render/weather/outdoor';
 import { TIERS, obstacle, segment, snapshot, viewContext } from './helpers';
 
 function chapterOf(segs: CompiledSegment[]): CompiledChapter {
@@ -122,6 +122,33 @@ describe('`rain` cue 与户外系统（§8.7）', () => {
     expect(o.level.at(0)).toBeCloseTo(0.6);
     o.setQuality(resolveQuality('high', 1));
     expect(o.rain.geometry.drawRange.count).toBe(2400);
+  });
+  it('段中途的 atmosphere cue 换天空（纹理读章时已建好，换的时候不建）；重来 / goto 按关卡数据复原', async () => {
+    const ctx = viewContext('low');
+    const kinds: string[] = [];
+    const get = ctx.tex.get.bind(ctx.tex);
+    ctx.tex.get = (id, p) => { if (id === 'skyGradient') kinds.push(String(p?.kind)); return get(id, p); };
+    const o = new Outdoor();
+    o.init(ctx);
+    const dream = segment({ kit: 'plaza', variant: 'bright', events: [{ at: 20, body: { type: 'atmosphere', id: 'dreamGray', seconds: 3 } }] });
+    (dream.def as RunSegmentDef).atmosphere = 'dream';
+    const ch = chapterOf([dream]);
+    await o.loadChapter(ch);
+    expect(kinds).toContain('dusk');
+    const before = kinds.length;
+    o.onSegment(dream);
+    expect(o.skyKind).toBe(null);
+    o.onEvent({ type: 'cue', tick: 0, data: { body: { type: 'atmosphere', id: 'dreamGray', seconds: 3 }, segment: dream.def.id } }, snapshot());
+    expect(o.skyKind).toBe('dusk');
+    o.frame(snapshot(), snapshot({ t: 5, segIndex: 0 }), 1, 0);
+    expect(o.sky.visible).toBe(true);
+    expect(kinds.length).toBe(before);
+    expect(atmosphereAt(ch, 0, 10)).toBe('dream');
+    expect(atmosphereAt(ch, 0, 25)).toBe('dreamGray');
+    o.onReset(snapshot({ segIndex: 0, segBeat: 10 }));
+    expect(o.skyKind).toBe(null);
+    o.onReset(snapshot({ segIndex: 0, segBeat: 30 }));
+    expect(o.skyKind).toBe('dusk');
   });
   it('逐帧推进不建任何几何体或纹理（5 分钟内存不增长的前提）', async () => {
     const ctx = viewContext('medium');

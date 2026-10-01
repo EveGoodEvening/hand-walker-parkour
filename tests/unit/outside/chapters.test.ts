@@ -8,6 +8,8 @@ import { createRng } from '../../../src/core/rng';
 import { FlatMaterials, FlatTextureBank } from '../../../src/core/fallbacks';
 import { getKit } from '../../../src/core/registry';
 import { ChapterSurfaces } from '../../../src/core/surfaces';
+// compile() 是 CompiledChapter 的唯一来源（CORE 的 Game 也直接 import 它）：这里有意用真实的 compile 做集成测试，
+// WP1 改了 compile 的语义时这个测试应该跟着失败，提醒 WP4 的锚点函数（gateSpan 等）同步。
 import { compile } from '../../../src/levels/compile';
 import type { ChapterDef, RunSegmentDef } from '../../../src/levels/schema';
 import { isWarm, hsv, C } from '../../../src/render/kits/outside/lib/colors';

@@ -215,6 +215,19 @@ export function genPlazaTile(size: number, _p: TexParams = {}): Img {
 }
 
 /** 天花板上的裂缝。shape = 'river'（从墙角蜿蜒到吊灯，像一条安静的河）或 'hand'（像一只张开的手，五根手指朝着你）。 */
+/** 天花板裂缝「河」的主干（归一化坐标，u 向右，y 向下；u 单调增）：从左上角的墙角爬到右下。 */
+export const RIVER_MAIN: ReadonlyArray<readonly [number, number]> = [[0.02, 0.05], [0.18, 0.2], [0.26, 0.38], [0.44, 0.44], [0.55, 0.6], [0.72, 0.68], [0.9, 0.9]];
+/** 主干在横坐标 u 处的 y（折线插值；摆动 ±0.01 不计）。set 用它把吊灯挂在裂缝上。 */
+export function riverYAt(u: number): number {
+  const m = RIVER_MAIN;
+  if (u <= (m[0] as readonly [number, number])[0]) return (m[0] as readonly [number, number])[1];
+  for (let i = 0; i + 1 < m.length; i++) {
+    const [ax, ay] = m[i] as readonly [number, number], [bx, by] = m[i + 1] as readonly [number, number];
+    if (u <= bx) return ay + ((u - ax) / (bx - ax)) * (by - ay);
+  }
+  return (m[m.length - 1] as readonly [number, number])[1];
+}
+
 export function genCeilingCrack(size: number, p: TexParams = {}): Img {
   const im = img(size, size);
   const shape = p.shape === 'hand' ? 'hand' : 'river';
@@ -246,7 +259,7 @@ export function genCeilingCrack(size: number, p: TexParams = {}): Img {
     strokePolyline(im, px, wd * S, crack, 0.95);
   };
   if (shape === 'river') {
-    const main: Array<[number, number]> = [[0.02, 0.05], [0.18, 0.2], [0.26, 0.38], [0.44, 0.44], [0.55, 0.6], [0.72, 0.68], [0.9, 0.9]];
+    const main = RIVER_MAIN.map(([u, v]) => [u, v] as [number, number]);
     draw(main, 0.006, 1);
     for (let i = 0; i < 5; i++) {
       const a = main[1 + i] as [number, number];
@@ -266,18 +279,33 @@ export function genCeilingCrack(size: number, p: TexParams = {}): Img {
   return im;
 }
 
+/**
+ * 掌纹（右手掌心朝向自己；归一化坐标，u 向右，y 向下，第 0 行是指根，最后一行是手腕）。
+ * 拇指在右侧（u → 1）：生命线从拇指与食指之间的掌缘起，向掌心鼓出去，绕过右下方的拇指根，落到手腕；
+ * 智慧线从拇指一侧起，穿过生命线，斜向左下的小指一侧；感情线从小指一侧的掌缘起，往右上收到食指与中指之间。
+ */
+export const PALM_LIFE = { cx: 0.95, cy: 0.7, rx: 0.46, ry: 0.4, a0: 0.76 * Math.PI, a1: 1.48 * Math.PI } as const;
+export const PALM_HEAD: ReadonlyArray<readonly [number, number]> = [[0.93, 0.4], [0.58, 0.46], [0.36, 0.52], [0.12, 0.6]];
+export const PALM_HEART: ReadonlyArray<readonly [number, number]> = [[0.03, 0.26], [0.25, 0.22], [0.48, 0.2], [0.66, 0.15], [0.74, 0.07]];
+/** 眼睛：嵌在生命线与智慧线交叉的地方。 */
+export const PALM_EYE = { x: 0.58, y: 0.46 } as const;
+/** 生命线上的点（a ∈ [a0, a1]）。 */
+export function palmLifeAt(a: number): [number, number] {
+  return [PALM_LIFE.cx + Math.cos(a) * PALM_LIFE.rx, PALM_LIFE.cy + Math.sin(a) * PALM_LIFE.ry];
+}
+
 /** 掌心里的眼睛：4 帧（睁、半闭、闭、半闭）横排。皮肤、掌纹、掌根茧用 §5.1 的色值；眼白偏冷。 */
 export function genPalmEye(size: number, _p: TexParams = {}): Img {
   const F = Math.max(64, Math.round(size / 2));
   const im = img(F * 4, F);
   const skin = rgb(0xc9b8a6), crease = rgb(0x8c8279), callus = rgb(0x9b8f82), white = rgb(0xd3d8d6), iris = rgb(0x3a4046), pupil = rgb(0x0d1216), lid = rgb(0xb8a896);
   const opens = [1, 0.5, 0, 0.5];
-  // 掌纹（归一化坐标，y 向下）：生命线（弧）、智慧线、感情线
+  // 掌纹：生命线（弧）、智慧线、感情线（见 PALM_*）
   const life: Array<[number, number]> = [];
-  for (let i = 0; i <= 16; i++) { const a = Math.PI * (0.62 + (i / 16) * 0.55); life.push([0.66 + Math.cos(a) * 0.36, 0.28 + Math.sin(a) * 0.62]); }
-  const head: Array<[number, number]> = [[0.3, 0.36], [0.45, 0.43], [0.6, 0.47], [0.8, 0.52]];
-  const heart: Array<[number, number]> = [[0.26, 0.24], [0.45, 0.22], [0.62, 0.26], [0.84, 0.28]];
-  const eye = { x: 0.43, y: 0.43 };            // 生命线与智慧线交叉处
+  for (let i = 0; i <= 16; i++) life.push(palmLifeAt(PALM_LIFE.a0 + (i / 16) * (PALM_LIFE.a1 - PALM_LIFE.a0)));
+  const head = PALM_HEAD.map(([u, v]) => [u, v] as [number, number]);
+  const heart = PALM_HEART.map(([u, v]) => [u, v] as [number, number]);
+  const eye = PALM_EYE;
   for (let f = 0; f < 4; f++) {
     const open = opens[f] as number;
     const ox = f * F;

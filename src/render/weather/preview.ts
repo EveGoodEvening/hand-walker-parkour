@@ -5,7 +5,7 @@
 //   __game.ext.wp4('scene', ch, seg, beat, ticks, fallback?)  先试真实章节（集成后可用）；章节还没实现时回落到画廊。
 //   __game.ext.wp4('off')                         撤掉预览。
 // 预览系统 order 95（在镜头 60 之后）：覆盖镜头、雾、背景、光与 LampField 的增益 / 颜色；wp4.outdoor 负责雨、天、栏杆红光。
-// 预览时新建几何体（调试用），正式游戏过程中不会调用。
+// 预览时新建几何体（调试用），正式游戏过程中不会调用；不带 test / debug 参数时预览系统根本不注册。
 import * as THREE from 'three';
 import type { KitChunkContext, Opening, ViewContext, ViewSystem } from '../../core/contracts';
 import { CHUNK_LEN, RENDER_ORDER } from '../../core/constants';
@@ -19,7 +19,9 @@ import { OBSTACLES, type ObstacleKind } from '../../levels/obstacles';
 import { C } from '../kits/outside/lib/colors';
 import { OGeo, triCount } from '../kits/outside/lib/geo';
 import { LIVE_SETS } from '../sets/outside/lib/live';
+import { wp4Basic, wp4Lambert } from '../sets/outside/lib/mats';
 import { crawlerFigure } from '../sets/outside/lib/setkit';
+import { setWaterBreak } from '../sets/outside/water';
 import { outdoor, skyKindFor } from './outdoor';
 
 export const PREVIEW_X = 400;
@@ -137,11 +139,9 @@ export class Preview implements ViewSystem {
     const group = new THREE.Group();
     group.name = 'wp4.preview';
     const geos: THREE.BufferGeometry[] = [];
-    const matFloor = this.ctx.mat.lambert({ vertexColors: true, flat: true });
-    matFloor.depthWrite = false;
-    const matStatic = this.ctx.mat.lambert({ vertexColors: true, flat: true });
-    const matEmi = this.ctx.mat.basic({ color: 0xffffff });
-    matEmi.vertexColors = true;
+    const matFloor = wp4Lambert(this.ctx.mat, { vertexColors: true, flat: true }, { depthWrite: false });
+    const matStatic = wp4Lambert(this.ctx.mat, { vertexColors: true, flat: true });
+    const matEmi = wp4Basic(this.ctx.mat, { color: 0xffffff }, { vertexColors: true });
     const perChunk: Array<{ s0: number; calls: number; tris: number }> = [];
     const lamps = [];
     const n = Math.ceil((s1 - s0) / CHUNK_LEN - 1e-6);
@@ -211,6 +211,8 @@ export class Preview implements ViewSystem {
     const set = getSet(setId);
     if (!set || set.id !== setId) throw new Error(`wp4 preview: set ${setId} not registered`);
     const root = set.build(this.ctx, variant);
+    // 4-6 的碎开时刻直接交给 set（不往总线上发伪造的 cue）
+    if (setId === 'water') setWaterBreak(root, o.breakAt ?? null);
     const group = new THREE.Group();
     group.name = 'wp4.preview';
     const oz = -(this.last?.player.s ?? 0);
@@ -227,7 +229,6 @@ export class Preview implements ViewSystem {
     const stats = { kind: 'set', key, drawCalls: calls, surfaces: set.surfaces?.(variant).map((s) => s.id) ?? [], stencil: this.ctx.stencil };
     this.active = { group, geos: [], atmo: o.atmo ?? pr.atmo, cam, t: o.t ?? 0, setId, variant, setOpts: o, stats, lit: 1,
       live: o.live ? { simT0: this.last?.t ?? 0, t0: o.t ?? 0 } : null, rain: 0 };
-    if (o.breakAt !== undefined) this.ctx.bus.emit('cue', { id: 'waterBreaks', body: { type: 'beat' }, segment: 'wp4preview' });
     return stats;
   }
 
@@ -271,15 +272,14 @@ export class Preview implements ViewSystem {
     if (a.setId) {
       const so = a.setOpts ?? {};
       const still = { set: a.setId, variant: a.variant, t: a.t, duration: 12, prompt: (so.prompt ?? null) as never, held: so.held ?? 0 };
-      let simT = next.t;
-      if (so.breakAt !== undefined) simT = next.tick / 120 + (a.t - so.breakAt);
-      LIVE_SETS.get(a.setId)?.update(a.t, { ...next, t: simT, still } as SimSnapshot, a.variant);
+      LIVE_SETS.get(a.setId)?.update(a.t, { ...next, still } as SimSnapshot, a.variant);
     }
   }
 }
 
 export const preview = new Preview();
-registerViewSystem(preview);
+// 只在 ?test=1 / ?debug=… 下挂进 View（正式游戏里不多一个 ViewSystem）；__game.ext.wp4 同样只在这时可用
+if (urlParams().debugEnabled) registerViewSystem(preview);
 
 type GameHook = { start(ch: string, o: { segment?: string; beat?: number; skipCards?: boolean }): Promise<void>; step(n: number): unknown };
 

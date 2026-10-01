@@ -146,6 +146,15 @@ export class OGeo extends GeoBuilder {
     return this;
   }
 
+  /** 逐顶点颜色的三角形，绕序按法线 n 自动决定（n 指向「正面」，FrontSide 材质只从这一侧看得见）。 */
+  gtriN(a: V3, b: V3, c: V3, ha: number, hb: number, hc: number, n: V3): this {
+    _ab.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    _ac.set(c[0] - a[0], c[1] - a[1], c[2] - a[2]);
+    _n.crossVectors(_ab, _ac);
+    if (_n.x * n[0] + _n.y * n[1] + _n.z * n[2] >= 0) return this.gtri(a, b, c, ha, hb, hc);
+    return this.gtri(a, c, b, ha, hc, hb);
+  }
+
   /** 三角形数（非索引几何体）。 */
   get triangles(): number { return this.vertexCount / 3; }
 }

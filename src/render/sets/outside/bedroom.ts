@@ -10,10 +10,13 @@ import { registerSet } from '../../../core/registry';
 import type { SimSnapshot } from '../../../core/types';
 import { C } from '../../kits/outside/lib/colors';
 import { OGeo, TexGeo, bakeGeometry, bakeLights, heightGrid, type BakeLight } from '../../kits/outside/lib/geo';
+import { riverYAt } from '../../textures/outdoor';
 import { liveList } from './lib/live';
 import { SetBuild, glowDisc, roomShell } from './lib/setkit';
 
 const X0 = -2.2, X1 = 2.2, Z0 = -3.2, Z1 = 2.4, H = 2.7;
+/** 吊灯挂在裂缝上（「从墙角爬到吊灯的位置」）：天花板贴图铺满整个房间（u 沿 x、v 沿 z，画布第 0 行在 z = Z1）。 */
+export const BED_LAMP: readonly [number, number] = [0.45, Z0 + (1 - riverYAt((0.45 - X0) / (X1 - X0))) * (Z1 - Z0)];
 const BED = { x0: -0.58, x1: 0.58, zHead: 1.95, zFoot: -0.72, top: 0.5 };
 const KNEE_Z = 0.25, LEG_X = 0.13;
 /** 烘焙光源：窗帘缝里漏进来的一线冷光（天还没亮），外加床头一点点反光。 */
@@ -23,8 +26,11 @@ export const BED_LIGHTS: readonly BakeLight[] = [
 ];
 const BED_AMBIENT = 0x0e1317;
 
-/** 膝盖抬起的高度（米）：右、左。prompt / held 来自快照（静场输入），relaxAt = 输入完成的时刻（之后慢慢放平）。 */
-export function kneeHeights(t: number, prompt: string | null, held: number, relaxAt: number | null, holdSec = 2.5): { r: number; l: number } {
+/**
+ * 膝盖抬起的高度（米）：右、左。prompt / held 来自快照（静场输入），relaxAt = 输入完成的时刻（之后慢慢放平）。
+ * tw：挣动用的时钟。等输入时静场时钟停着（StillRunner），所以按住期间的挣动用模拟时间（缺省 = t）。
+ */
+export function kneeHeights(t: number, prompt: string | null, held: number, relaxAt: number | null, holdSec = 2.5, tw = t): { r: number; l: number } {
   if (relaxAt !== null && t >= relaxAt) {
     const k = Math.max(0, 1 - (t - relaxAt) / 1.2);
     return { r: 0.1 * k * k, l: 0 };
@@ -32,7 +38,7 @@ export function kneeHeights(t: number, prompt: string | null, held: number, rela
   if (prompt === 'hold' || prompt === 'fist') {
     const p = Math.min(1, held / holdSec);
     // 在手下轻轻挣动（像一条鱼在网里），越按越弱
-    return { r: 0.18 - 0.1 * p + 0.022 * (1 - p) * Math.sin(t * 17), l: 0.03 * (1 - p) * Math.max(0, Math.sin(t * 5)) };
+    return { r: 0.18 - 0.1 * p + 0.022 * (1 - p) * Math.sin(tw * 17), l: 0.03 * (1 - p) * Math.max(0, Math.sin(tw * 5)) };
   }
   if (t < 0.3) return { r: 0, l: 0 };
   // 右脚先起、保持、落下；左脚跟着一遍；右脚又来（周期 2.4 s）
@@ -85,8 +91,9 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   g.box([-0.6, 0.45, -2.35], [0.42, 0.04, 0.42], 0x2a3237);
   g.box([-0.6, 0.72, -2.15], [0.42, 0.5, 0.04], 0x2a3237);
   // 吊灯（关着）：裂缝一直延伸到这里
-  g.segment([0.5, H, -0.6], [0.5, H - 0.4, -0.6], 0.02, 0.02, 0x2a3136);
-  g.prism(0.5, -0.6, H - 0.6, H - 0.4, 0.28, 8, 0x353f46, null, 0.1);
+  const [lx, lz] = BED_LAMP;
+  g.segment([lx, H, lz], [lx, H - 0.4, lz], 0.02, 0.02, 0x2a3136);
+  g.prism(lx, lz, H - 0.6, H - 0.4, 0.28, 8, 0x353f46, null, 0.1);
   bakeLights(g, BED_LIGHTS, BED_AMBIENT);
   b.baked(g, 'room');
   // 发光：窗帘缝（冷）
@@ -101,10 +108,10 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   const grid = heightGrid(BED.x0 - 0.1, BED.x1 + 0.1, BED.zFoot - 0.12, 1.3, Math.round(16 * q), Math.round(22 * q), 0.6, (x, z) => blanketHeight(x, z, 0, 0));
   bakeGeometry(grid.geometry, BED_LIGHTS, BED_AMBIENT);
   b.texturedBasic(grid.geometry, 'bedSheet', {}, 'blanket', true);
-  // 天花板 + 裂缝（河）：ceiling 变体照得更清楚
+  // 天花板 + 裂缝（河）：铺满整个房间（roomShell 不画天花板），UV 在 [0, 1] 里；ceiling 变体照得更清楚
   const tg = new TexGeo();
   const tint = variant === 'ceiling' ? 0xffffff : 0xb0b0b0;
-  const cx0 = -1.8, cx1 = 2.0, cz0 = -2.2, cz1 = 1.6, cell = 0.4;
+  const cx0 = X0, cx1 = X1, cz0 = Z0, cz1 = Z1, cell = 0.4;
   for (let x = cx0; x < cx1 - 1e-6; x += cell) for (let z = cz0; z < cz1 - 1e-6; z += cell) {
     const x1 = Math.min(cx1, x + cell), z1 = Math.min(cz1, z + cell);
     const u = (q: number) => (q - cx0) / (cx1 - cx0), v = (q: number) => (q - cz0) / (cz1 - cz0);
@@ -113,20 +120,25 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   // ceiling 变体：躺着往上看，天花板被窗帘缝的光照得更清楚一点
   bakeLights(tg, variant === 'ceiling' ? [...BED_LIGHTS, { p: [0.2, 1.2, -0.4], color: 0x3a4a55, intensity: 1.0, radius: 3.2 }] : BED_LIGHTS, BED_AMBIENT);
   b.texturedBasic(tg, 'ceilingCrack', { shape: 'river' }, 'ceiling');
-  let relaxAt: number | null = null, sawPrompt = false, lastR = -1, lastL = -1;
+  // 放松的时刻属于「这一遍」：段切换、重来、读章（同一章同一种子时 set 实例会复用）和静场时钟倒退时清零
+  let relaxAt: number | null = null, sawPrompt = false, lastR = -1, lastL = -1, lastT = 0, curR = 0, curL = 0;
+  const newPass = () => { relaxAt = null; sawPrompt = false; };
+  const unsub = [ctx.bus.on('segment', newPass), ctx.bus.on('retry', newPass), ctx.bus.on('chapter:start', newPass)];
+  const height = (x: number, z: number) => blanketHeight(x, z, curR, curL);   // 复用同一个闭包，变形时不分配
   const update = (t: number, snap: SimSnapshot | null) => {
+    if (t + 1e-6 < lastT || t < 0.05) newPass();
+    lastT = t;
     const st = snap?.still ?? null;
     const prompt = st?.prompt ?? null;
     if (prompt === 'hold' || prompt === 'fist') sawPrompt = true;
     else if (sawPrompt && relaxAt === null) relaxAt = t;
-    if (t < 0.05) { relaxAt = null; sawPrompt = false; }
-    const { r, l } = variant === 'ceiling' ? { r: 0, l: 0 } : kneeHeights(t, prompt, st?.held ?? 0, relaxAt);
+    const { r, l } = variant === 'ceiling' ? { r: 0, l: 0 } : kneeHeights(t, prompt, st?.held ?? 0, relaxAt, 2.5, snap?.t ?? t);
     if (Math.abs(r - lastR) < 1e-4 && Math.abs(l - lastL) < 1e-4) return;
-    lastR = r; lastL = l;
-    grid.update((x, z) => blanketHeight(x, z, r, l));
+    lastR = r; lastL = l; curR = r; curL = l;
+    grid.update(height);
   };
   update(0, null);
-  liveList('bedroom').add({ variant, root: b.root, update });
+  liveList('bedroom').add({ variant, root: b.root, update, dispose: () => { for (const u of unsub) u(); } });
   return b.root;
 }
 

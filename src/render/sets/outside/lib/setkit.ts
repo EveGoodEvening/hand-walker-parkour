@@ -1,11 +1,12 @@
 // src/render/sets/outside/lib/setkit.ts —— WP4 静场 set 的公共工具（DESIGN.md §5、§5.8、§5.9、§8.4 StillSet）。
-// 材质只经 ViewContext.mat（WP3 的 MaterialsAPI；合并前用 CORE 桩）创建：Lambert（顶点色、平面着色）与 Basic。
+// 材质只经 ViewContext.mat（WP3 的 MaterialsAPI；合并前用 CORE 桩）创建，并且只经 ./mats.ts 的适配层改状态：Lambert（顶点色、平面着色）与 Basic。
 // 每个 set ≤ 12 次 draw call（§8.10 WP4 验收 1）；这里每加一个 mesh 就是一次 draw call，count 字段记账，单元测试核对。
 import * as THREE from 'three';
 import type { ViewContext } from '../../../../core/contracts';
 import { registerOutdoorTextures, type TexParams } from '../../../textures/outdoor';
 import { C, mix, shade } from '../../../kits/outside/lib/colors';
 import { type OGeo, type TexGeo, type V3 } from '../../../kits/outside/lib/geo';
+import { type MatTune, wp4Basic, wp4Lambert, wp4Texture } from './mats';
 
 export class SetBuild {
   readonly root = new THREE.Group();
@@ -24,62 +25,50 @@ export class SetBuild {
   }
 
   /** 顶点色 Lambert（静态陈设）。 */
-  lambert(g: OGeo, name = 'static'): THREE.Mesh {
+  lambert(g: OGeo, name = 'static', tune?: MatTune): THREE.Mesh {
     const geo = g.build();
     this.ctx.mat.ensureChalkAttr(geo);
-    return this.add(new THREE.Mesh(geo, this.ctx.mat.lambert({ vertexColors: true, flat: true })), name);
+    return this.add(new THREE.Mesh(geo, wp4Lambert(this.ctx.mat, { vertexColors: true, flat: true }, tune)), name);
   }
   /** 烘焙了光照的顶点色 Basic（暗场景：bakeLights 之后用它；不受半球光影响，雾照常）。 */
   baked(g: OGeo, name = 'baked'): THREE.Mesh {
     const geo = g.build();
     this.ctx.mat.ensureChalkAttr(geo);
-    const m = this.ctx.mat.basic({ color: 0xffffff });
-    m.vertexColors = true;
-    return this.add(new THREE.Mesh(geo, m), name);
+    return this.add(new THREE.Mesh(geo, wp4Basic(this.ctx.mat, { color: 0xffffff }, { vertexColors: true })), name);
   }
   /** 贴纹理的 Basic（暗场景里烘焙过顶点色的贴图面：天花板、广告、座椅面料）。 */
   texturedBasic(g: TexGeo | THREE.BufferGeometry, tex: string, p: TexParams = {}, name = tex, repeat = false): THREE.Mesh {
     const geo = g instanceof THREE.BufferGeometry ? g : g.build();
-    const m = this.ctx.mat.basic({ color: 0xffffff, map: this.texture(tex, p, repeat) });
-    m.vertexColors = true;
+    const m = wp4Basic(this.ctx.mat, { color: 0xffffff, map: this.texture(tex, p, repeat) }, { vertexColors: true });
     return this.add(new THREE.Mesh(geo, m), name);
   }
-  /** 顶点色 Basic（发光体：灯、亮着的屏幕、窗光）。 */
-  emissive(g: OGeo, name = 'emissive'): THREE.Mesh {
+  /** 顶点色 Basic（发光体：灯、亮着的屏幕、窗光）。tune 给遮罩之类的特殊状态。 */
+  emissive(g: OGeo, name = 'emissive', tune: MatTune = {}): THREE.Mesh {
     const geo = g.build();
-    const m = this.ctx.mat.basic({ color: 0xffffff });
-    m.vertexColors = true;
-    return this.add(new THREE.Mesh(geo, m), name);
+    return this.add(new THREE.Mesh(geo, wp4Basic(this.ctx.mat, { color: 0xffffff }, { vertexColors: true, ...tune })), name);
   }
   /** 加法混合的光晕（顶点色：中心亮、边缘黑），不写深度。 */
   glow(g: OGeo, name = 'glow', opacity = 1): THREE.Mesh {
     const geo = g.build();
-    const m = this.ctx.mat.basic({ color: 0xffffff, additive: true, transparent: true, opacity });
-    m.vertexColors = true;
-    m.depthWrite = false;
+    const m = wp4Basic(this.ctx.mat, { color: 0xffffff, additive: true, transparent: true, opacity }, { vertexColors: true, depthWrite: false });
     return this.add(new THREE.Mesh(geo, m), name, 12);
   }
   /** 半透明（玻璃、水汽、水面）。 */
-  glass(g: OGeo | TexGeo, opacity: number, name = 'glass', map: THREE.Texture | null = null): THREE.Mesh {
+  glass(g: OGeo | TexGeo, opacity: number, name = 'glass', map: THREE.Texture | null = null, tune: MatTune = {}): THREE.Mesh {
     const geo = g.build();
     const o: { color: number; transparent: boolean; opacity: number; map?: THREE.Texture } = { color: 0xffffff, transparent: true, opacity };
     if (map) o.map = map;
-    const m = this.ctx.mat.basic(o);
-    m.vertexColors = true;
-    m.depthWrite = false;
+    const m = wp4Basic(this.ctx.mat, o, { vertexColors: true, depthWrite: false, ...tune });
     return this.add(new THREE.Mesh(geo, m), name, 10);
   }
   /** 贴纹理的 Lambert（广告、面料、床单、天花板裂缝、掌心）。 */
   textured(g: TexGeo | THREE.BufferGeometry, tex: string, p: TexParams = {}, name = tex, repeat = false): THREE.Mesh {
     const geo = g instanceof THREE.BufferGeometry ? g : g.build();
     const map = this.texture(tex, p, repeat);
-    const m = this.ctx.mat.lambert({ vertexColors: true, map, flat: true });
-    return this.add(new THREE.Mesh(geo, m), name);
+    return this.add(new THREE.Mesh(geo, wp4Lambert(this.ctx.mat, { vertexColors: true, map, flat: true })), name);
   }
   texture(id: string, p: TexParams = {}, repeat = false): THREE.Texture {
-    const t = this.ctx.tex.get(id, p);
-    if (repeat && t.wrapS !== THREE.RepeatWrapping) { t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true; }
-    return t;
+    return wp4Texture(this.ctx.tex, id, p, repeat);
   }
   /** 统计 draw call：可见的 Mesh / Line / Points 各算一次。 */
   static drawCalls(o: THREE.Object3D): number {

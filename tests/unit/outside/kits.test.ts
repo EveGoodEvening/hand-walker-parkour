@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import type { KitChunk } from '../../../src/core/contracts';
 import { getKit } from '../../../src/core/registry';
 import type { KitId } from '../../../src/core/types';
-import { KIT_VARIANTS } from '../../../src/levels/kitSymbols';
 import { C, hsv, isWarm } from '../../../src/render/kits/outside/lib/colors';
 import { triCount } from '../../../src/render/kits/outside/lib/geo';
 import { HALF, ROOM_DEPTH } from '../../../src/render/kits/outside/lib/kit';
@@ -40,6 +39,10 @@ function buildAll(kit: KitId, variant: string, tier: 'low' | 'medium' | 'high'):
   return chunkContexts(seg, tier).map((ctx) => ({ ctx, chunk: k.build(ctx) }));
 }
 
+/** DESIGN.md §8.5 的 KIT_VARIANTS（户外三个 kit）。照抄设计文档，不 import WP2 的 levels/kitSymbols.ts（§8.2 规则 2）。 */
+const KIT_VARIANTS = {
+  street: ['schoolGate', 'alley', 'shopStreet', 'compound', 'dawn'], plaza: ['bright', 'gray'], track: ['default'],
+} as const satisfies Partial<Record<KitId, readonly string[]>>;
 const OUTDOOR: Array<[KitId, string]> = (['street', 'plaza', 'track'] as const).flatMap((k) => KIT_VARIANTS[k].map((v) => [k, v] as [KitId, string]));
 
 describe('户外 kit 注册（§5.9、§8.4 KIT_VARIANTS）', () => {
