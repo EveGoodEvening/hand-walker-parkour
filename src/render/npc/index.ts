@@ -10,9 +10,11 @@ import { registerArchetype, registerCueHandler, registerDebug, registerViewSyste
 import type { CrowdOp, HitSeverity } from '../../core/types';
 import { urlParams } from '../../core/urlParams';
 import type { CompiledObstacle } from '../../levels/schema';
+import { LANE_WIDTH } from '../../core/constants';
 import { factoryOf, type ArchetypeDef } from './archetype';
+import { FOOT_CENTER } from './behaviors';
 import { ARCHETYPE_DEFS } from './defs';
-import { Crawlers } from './Crawlers';
+import { CRAWL, Crawlers } from './Crawlers';
 import { LegForest, newPerson } from './LegForest';
 import { ObstacleView } from './ObstacleView';
 import { obstacleState } from './simBridge';
@@ -22,40 +24,59 @@ import { STAGE_NAMES, makeStage, toStage, type StageName } from './stage';
 export const npcView = new ObstacleView(ARCHETYPE_DEFS);
 registerViewSystem(npcView);
 
-/** legs / crawler 的契约工厂：独立使用时各自建一片小森林（ObstacleView 内部不走这里）。 */
+/**
+ * legs / crawler 的契约工厂（§8.4 ArchetypePool）：独立使用时各自建一片小森林（ObstacleView 内部不走这里）。
+ * 槽位语义与 ArchetypePoolImpl 相同：place(slot) 按槽位持久放置并记住各自的 t；hide(slot) 只去掉这一个槽位。
+ */
 function delegateFactory(def: ArchetypeDef): ArchetypeFactory {
   return {
     id: def.id,
-    create(ctx: ViewContext): ArchetypePool {
-      const slots: CompiledObstacle[] = [];
+    create(ctx: ViewContext, capacity: number): ArchetypePool {
+      const slots: Array<CompiledObstacle | undefined> = [];
+      const slotT: number[] = [];
       const st = { active: true, ds: 0, x0: 0, x1: 0, amount: 1 };
+      const each = (fn: (o: CompiledObstacle, t: number) => void) => slots.forEach((o, i) => { if (o) fn(o, slotT[i] ?? 0); });
+      let redraw: () => void;
+      let object: THREE.Object3D;
       if (def.delegate === 'crawlers') {
-        const cr = new Crawlers(); cr.init(ctx, 32);
+        const cr = new Crawlers(); cr.init(ctx, capacity || 32);
         const color = new THREE.Color(0x9aa3a6);
-        const redraw = (t: number) => {
+        redraw = () => {
           cr.begin();
-          for (const o of slots) {
-            if (!o) continue;
+          each((o, t) => {
             obstacleState(o, t, Number.POSITIVE_INFINITY, st);
-            cr.add({ x: (st.x0 + st.x1) / 2, y: 0, z: -((o.s0 + o.s1) / 2 + st.ds), yaw: 0, dist: t * 3, color, phase: 0 }, true);
-          }
+            const sp = o.behavior.type === 'walk' ? o.behavior.speed : 0;
+            const zc = -((o.s0 + o.s1) / 2 + st.ds);
+            cr.add({ x: (st.x0 + st.x1) / 2, y: 0, z: zc + (sp < 0 ? CRAWL.centerZ : -CRAWL.centerZ), yaw: sp < 0 ? Math.PI : 0, dist: Math.abs(sp) * t, color, phase: 0 }, true);
+          });
           cr.end();
         };
-        return { object: cr.group, place(slot, o, t) { slots[slot] = o; redraw(t); }, hit(_s: number, _v: HitSeverity) { /* 人不会被碰倒 */ }, hide(slot) { slots.length = Math.min(slots.length, slot); redraw(0); } };
+        object = cr.group;
+      } else {
+        const f = new LegForest(); f.init(ctx, capacity || 32);
+        const p = newPerson(lookFor('student', 1, 'delegate'));
+        p.arms = true;
+        redraw = () => {
+          f.begin();
+          each((o, t) => {
+            obstacleState(o, t, Number.POSITIVE_INFINITY, st);
+            const lanes = Math.max(1, Math.round((st.x1 - st.x0 - 2 * o.halfW) / LANE_WIDTH) + 1);
+            const gap = lanes > 1 ? (st.x1 - st.x0 - 2 * o.halfW) / (lanes - 1) : 0;
+            for (let i = 0; i < lanes; i++) {
+              p.x = st.x0 + o.halfW + gap * i; p.z = -((o.s0 + o.s1) / 2 + st.ds) - FOOT_CENTER;
+              f.add(p);
+            }
+          });
+          f.end();
+        };
+        object = f.group;
       }
-      const f = new LegForest(); f.init(ctx, 32);
-      const p = newPerson(lookFor('student', 1, 'delegate'));
-      const redraw = (t: number) => {
-        f.begin();
-        for (const o of slots) {
-          if (!o) continue;
-          obstacleState(o, t, Number.POSITIVE_INFINITY, st);
-          p.x = (st.x0 + st.x1) / 2; p.z = -((o.s0 + o.s1) / 2 + st.ds);
-          f.add(p);
-        }
-        f.end();
+      return {
+        object,
+        place(slot, o, t) { slots[slot] = o; slotT[slot] = t; redraw(); },
+        hit() { /* 人不会被碰倒 */ },
+        hide(slot) { slots[slot] = undefined; redraw(); },
       };
-      return { object: f.group, place(slot, o, t) { slots[slot] = o; redraw(t); }, hit() { /* 人不会被碰倒 */ }, hide(slot) { slots.length = Math.min(slots.length, slot); redraw(0); } };
     },
   };
 }

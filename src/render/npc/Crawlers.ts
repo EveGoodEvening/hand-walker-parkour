@@ -9,25 +9,29 @@ import { InstPool } from './InstPool';
 import { applyNpcPatch, PartBuilder } from './material';
 import { C } from './colors';
 
-/** 身体尺寸：肩高 0.46、髋高 0.34、头 0.56；长度沿 z，头在 −z（朝前爬）。几何体沿 z 从 −0.46 到 +0.675，中心偏 +0.11。 */
-export const CRAWL = { shoulderY: 0.46, shoulderZ: -0.25, shoulderX: 0.19, arm: 0.44, stride: 1.1, centerZ: 0.11 } as const;
+/**
+ * 身体尺寸：肩高 0.46、髋高 0.34；长度沿 z，头在 −z（朝前爬）。碰撞盒是 0.60 宽 × 1.10 长 × 0.55 高（obstacles.ts crawler），
+ * 模型的外沿都在它的 ±5 cm 内（WP6 验收 4）：两肩外沿 ±0.29，背和头顶不超过 0.57，手臂向前摆到头前面一点，脚跟在 +0.6。
+ * 几何体沿 z 从约 −0.52（前摆的手）到 +0.615（鞋跟），centerZ 是它的中点，放置时减掉，让模型居中在碰撞盒里。
+ */
+export const CRAWL = { shoulderY: 0.46, shoulderZ: -0.22, shoulderX: 0.25, arm: 0.44, stride: 1.1, swing: 0.42, centerZ: 0.05 } as const;
 
 function bodyGeo(): THREE.BufferGeometry {
   const b = new PartBuilder();
   const shirt = 0xffffff, pants = 0x7e878b;
   b.variant(0, () => {
-    b.with({ tint: 1 }, () => b.segment([0, 0.34, 0.15], [0, 0.45, -0.25], 0.34, 0.2, shirt, { colors: { '+y': 0xe2e2e2 } }));
+    b.with({ tint: 1 }, () => b.segment([0, 0.34, 0.15], [0, 0.45, -0.22], 0.4, 0.2, shirt, { colors: { '+y': 0xe2e2e2 } }));
     b.with({ chalk: 1 }, () => {
-      for (const s of [-1, 1]) b.segment([s * 0.16, 0.44, 0.15], [s * 0.16, 0.55, -0.25], 0.018, 0.012, C.chalkWhite);
+      for (const s of [-1, 1]) b.segment([s * 0.18, 0.44, 0.15], [s * 0.18, 0.55, -0.22], 0.018, 0.012, C.chalkWhite);
     });
-    // 头：脸朝前下方（−z），从后面只看得见头发
-    b.box([0, 0.55, -0.37], [0.16, 0.18, 0.19], C.hair, { colors: { '-z': C.skin, '-y': C.skin } });
-    b.box([0, 0.47, -0.33], [0.07, 0.07, 0.07], C.skin);
+    // 头：低垂在两肩之间，脸朝前下方（−z），从后面只看得见头发
+    b.box([0, 0.47, -0.355], [0.16, 0.18, 0.19], C.hair, { colors: { '-z': C.skin, '-y': C.skin } });
+    b.box([0, 0.42, -0.3], [0.07, 0.07, 0.07], C.skin);
     b.box([0, 0.33, 0.2], [0.33, 0.14, 0.2], pants);
     for (const s of [-1, 1]) {
-      b.segment([s * 0.1, 0.3, 0.2], [s * 0.12, 0.12, 0.42], 0.13, 0.12, pants);
-      b.segment([s * 0.12, 0.12, 0.42], [s * 0.13, 0.08, 0.6], 0.1, 0.1, pants);
-      b.box([s * 0.13, 0.08, 0.64], [0.09, 0.08, 0.07], C.shoe, { colors: { '+z': C.sole, '+y': C.sole } });
+      b.segment([s * 0.1, 0.3, 0.2], [s * 0.12, 0.12, 0.4], 0.13, 0.12, pants);
+      b.segment([s * 0.12, 0.12, 0.4], [s * 0.13, 0.08, 0.55], 0.1, 0.1, pants);
+      b.box([s * 0.13, 0.08, 0.58], [0.09, 0.08, 0.07], C.shoe, { colors: { '+z': C.sole, '+y': C.sole } });
     }
   });
   return b.build();
@@ -37,8 +41,8 @@ function armGeo(): THREE.BufferGeometry {
   // 肩在原点，手臂向下 0.44 m，手掌平放
   const b = new PartBuilder();
   b.variant(0, () => {
-    b.with({ tint: 1 }, () => b.box([0, -0.2, 0], [0.075, 0.4, 0.08], 0xffffff, { colors: { '+z': 0xe2e2e2 } }));
-    b.box([0, -0.43, 0.03], [0.07, 0.03, 0.1], C.skin);
+    b.with({ tint: 1 }, () => b.box([0, -0.2, 0], [0.08, 0.4, 0.08], 0xffffff, { colors: { '+z': 0xe2e2e2 } }));
+    b.box([0, -0.43, 0.02], [0.075, 0.03, 0.09], C.skin);
   });
   return b.build();
 }
@@ -85,8 +89,8 @@ export class Crawlers {
     _a.compose(_v.set(c.x, c.y + bob, c.z), _q, _one);
     this.body.push(_a, 0, 0, c.color);
     for (const s of [-1, 1] as const) {
-      // 左右手交替前摆 ±30°（支撑时几乎竖直）
-      const swing = 0.52 * Math.sin(ph + (s < 0 ? 0 : Math.PI));
+      // 左右手交替前后摆（支撑时几乎竖直）
+      const swing = CRAWL.swing * Math.sin(ph + (s < 0 ? 0 : Math.PI));
       _m.copy(_a).multiply(_r.makeTranslation(s * CRAWL.shoulderX, CRAWL.shoulderY, CRAWL.shoulderZ));
       _m.multiply(_r.makeRotationX(swing + 0.15));
       this.arms.push(_m, 0, 0, c.color);

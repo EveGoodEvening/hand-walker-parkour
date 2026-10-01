@@ -582,5 +582,130 @@
         "eval": "__game.ext.npcStats()"
       }
     ]
+  },
+  {
+    "out": "shots/visual/WP6/ch1-feet-mid.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=ch1&seg=1-1&beat=5",
+    "ops": [
+      {
+        "steps": 20
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ch1-feet-mid-hitbox.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=ch1&seg=1-1&beat=5&debug=hitbox",
+    "ops": [
+      {
+        "steps": 20
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/stretch-mid-retract.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('stretch', { ahead: -10 })"
+      },
+      {
+        "steps": 60
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/hitbox-forest.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1&debug=hitbox",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('forest')"
+      },
+      {
+        "steps": 60
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/hitbox-chenmo-squat.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=ch1&seg=1-2&beat=104&debug=hitbox",
+    "ops": [
+      {
+        "steps": 300
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/hitbox-dream-crawlers.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1&debug=hitbox",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('dream', { ahead: -6 })"
+      },
+      {
+        "steps": 30
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/night-rf.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1&rf=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('night', { ahead: -2 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ch1-feet-mid-side.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=ch1&seg=1-1&beat=4",
+    "autopilot": false,
+    "ops": [
+      {
+        "eval": "__game.setInvincible(true)"
+      },
+      {
+        "eval": "__game.input('right')"
+      },
+      {
+        "steps": 50
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ch1-feet-mid-side-hitbox.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=ch1&seg=1-1&beat=4&debug=hitbox",
+    "autopilot": false,
+    "ops": [
+      {
+        "eval": "__game.setInvincible(true)"
+      },
+      {
+        "eval": "__game.input('right')"
+      },
+      {
+        "steps": 50
+      }
+    ]
   }
 ]

@@ -38,13 +38,15 @@ export interface Person {
   targetL: THREE.Vector3 | null;
   /** 低画质的腿变体提示：'auto' 按角度选。 */
   seated: boolean; squat: boolean;
+  /** 垂在身侧的前臂（障碍里的人；髋部件多一个实例，不增加 draw call）。 */
+  arms: boolean;
 }
 
 export function newPerson(look: Look): Person {
   return {
     x: 0, y: 0, z: 0, yaw: 0, hipH: STAND_HIP, stance: BODY.stance,
     hipL: 0, hipR: 0, kneeL: 0, kneeR: 0, legYawL: 0, legYawR: 0, footYawL: 0, footYawR: 0,
-    lean: 0, roll: 0, dx: 0, bob: 0, turn: 0, look, upper: false, clap: 0, glow: 0, targetL: null, seated: false, squat: false,
+    lean: 0, roll: 0, dx: 0, bob: 0, turn: 0, look, upper: false, clap: 0, glow: 0, targetL: null, seated: false, squat: false, arms: false,
   };
 }
 
@@ -53,17 +55,21 @@ export function newPerson(look: Look): Person {
 // 所以部件尽量用单个盒子，变体只放必须不同的形状。
 const W = 0xffffff, G1 = 0xdadada;
 
-/** 盒子：+z 面（朝前的那一面）写 aChalk，暗场里腿的正面有一层很淡的粉笔光（R12），其余面不写。 */
+/**
+ * 盒子：四个竖直面（±x、±z）都写 aChalk，上下两面不写。暗场里腿的剪影有一层很淡的粉笔光（R12），
+ * 而且与朝向无关：背对、侧身的人朝镜头的那一面同样有粉笔。
+ */
+export const LEG_CHALK = 0.5;
 function chalkBox(b: PartBuilder, c: [number, number, number], size: [number, number, number], hex: number, chalk: number, colors: Partial<Record<string, number>> = {}): void {
-  b.with({ chalk: 0 }, () => b.box(c, size, hex, { faces: '+x-x+y-y-z', colors }));
-  b.with({ chalk }, () => b.box(c, size, colors['+z'] ?? hex, { faces: '+z' }));
+  b.with({ chalk: 0 }, () => b.box(c, size, hex, { faces: '+y-y', colors }));
+  b.with({ chalk }, () => b.box(c, size, hex, { faces: '+x-x+z-z', colors }));
 }
 
 function shoeGeo(): THREE.BufferGeometry {
   // 鞋：鞋面着色（instanceColor），浅色鞋底不着色。脚踝在原点，鞋尖朝 +z。
   const b = new PartBuilder();
   b.variant(0, () => {
-    b.with({ tint: 1 }, () => b.box([0, -0.032, 0.055], [0.1, 0.066, 0.25], W, { colors: { '+y': G1 } }));
+    b.with({ tint: 1 }, () => chalkBox(b, [0, -0.032, 0.055], [0.1, 0.066, 0.25], W, LEG_CHALK, { '+y': G1 }));
     b.box([0, -0.068, 0.055], [0.106, 0.014, 0.262], C.sole, { faces: '+x-x+z-z-y' });
   });
   return b.build();
@@ -72,12 +78,12 @@ function shoeGeo(): THREE.BufferGeometry {
 /** 小腿 / 大腿：关节在原点，向下 len。变体 0 普通裤腿，1 两侧白条（运动裤），2 光腿 / 丝袜（裙装，更细）。 */
 function legSegGeo(len: number, w: number, d: number): THREE.BufferGeometry {
   const b = new PartBuilder();
-  b.variant(0, () => b.with({ tint: 1 }, () => chalkBox(b, [0, -len / 2, 0], [w, len, d], W, 0.5, { '-z': G1 })));
+  b.variant(0, () => b.with({ tint: 1 }, () => chalkBox(b, [0, -len / 2, 0], [w, len, d], W, LEG_CHALK, { '-z': G1 })));
   b.variant(1, () => {
-    b.with({ tint: 1 }, () => chalkBox(b, [0, -len / 2, 0], [w, len, d], W, 0.5, { '-z': G1 }));
+    b.with({ tint: 1 }, () => chalkBox(b, [0, -len / 2, 0], [w, len, d], W, LEG_CHALK, { '-z': G1 }));
     for (const s of [-1, 1]) b.box([s * (w / 2 + 0.002), -len / 2, 0], [0.004, len, 0.018], C.uniformStripe, { faces: s > 0 ? '+x' : '-x' });
   });
-  b.variant(2, () => b.with({ tint: 1 }, () => chalkBox(b, [0, -len / 2, 0], [w * 0.72, len, d * 0.72], W, 0.5)));
+  b.variant(2, () => b.with({ tint: 1 }, () => chalkBox(b, [0, -len / 2, 0], [w * 0.72, len, d * 0.72], W, LEG_CHALK)));
   return b.build();
 }
 
@@ -85,7 +91,7 @@ function legSegGeo(len: number, w: number, d: number): THREE.BufferGeometry {
 function legMergedGeo(): THREE.BufferGeometry {
   const b = new PartBuilder();
   const L = BODY.thigh + BODY.shin;
-  b.variant(0, () => b.with({ tint: 1 }, () => chalkBox(b, [0, -L / 2, 0], [0.135, L, 0.14], W, 0.5, { '-z': G1 })));
+  b.variant(0, () => b.with({ tint: 1 }, () => chalkBox(b, [0, -L / 2, 0], [0.135, L, 0.14], W, LEG_CHALK, { '-z': G1 })));
   return b.build();
 }
 
@@ -94,8 +100,22 @@ function arms(b: PartBuilder, skip?: 1 | -1): void {
   for (const s of [-1, 1]) if (skip !== s) b.box([s * 0.235, -0.04, 0.02], [0.062, 0.3, 0.07], C.skin, { colors: { '+y': G1 } });
 }
 
+/**
+ * 障碍里的人垂在身侧的前臂（袖子着色 + 手）：外沿在 |x| = ARM.x + ARM.w / 2 ≈ 0.28，手垂到离地约 0.72 m。
+ * 人腿障碍的碰撞盒半宽 0.26，人的腿和髋只有 ±0.2；手臂让剪影的外沿落在碰撞盒 ±5 cm 内（WP6 验收 4）。
+ * 只给障碍里的人加（髋部件的一个额外实例），路边的人不加：走廊里路边那一条只有 0.48 m 宽，加了手臂会穿墙。
+ */
+export const ARM = { x: 0.247, w: 0.064, top: 0.115, wrist: -0.1, hand: -0.185 } as const;
+function hangingArms(b: PartBuilder): void {
+  for (const s of [-1, 1]) {
+    b.with({ tint: 1 }, () => chalkBox(b, [s * ARM.x, (ARM.top + ARM.wrist) / 2, 0], [ARM.w, ARM.top - ARM.wrist, 0.082], W, LEG_CHALK, { '+y': G1 }));
+    b.with({ chalk: LEG_CHALK }, () => b.box([s * ARM.x, (ARM.wrist + ARM.hand) / 2, 0.004], [ARM.w - 0.008, ARM.wrist - ARM.hand, 0.07], C.skin, { faces: '+x-x+z-z-y' }));
+  }
+}
+
+/** 胯部：下沿在髋关节下 5 cm（离地 0.855 m，高于玩家碰撞盒的最高 0.85 m），大腿的上端从下面插进来。 */
 function pelvis(b: PartBuilder): void {
-  b.with({ tint: 1 }, () => b.box([0, 0.02, 0], [0.4, 0.18, 0.23], W, { colors: { '+y': G1 }, faces: '+x-x+z-z-y' }));
+  b.with({ tint: 1 }, () => b.box([0, 0.03, 0], [0.4, 0.16, 0.23], W, { colors: { '+y': G1 }, faces: '+x-x+z-z-y' }));
   b.box([0, 0.125, 0], [0.41, 0.04, 0.238], C.hair);
 }
 
@@ -104,6 +124,9 @@ function headAt(b: PartBuilder, y: number, long = false): void {
   b.box([0, y + 0.15, 0.01], [0.17, 0.24, 0.18], C.skin, { colors: { '+y': C.hair, '-z': C.hair } });
   b.box([0, y + (long ? 0.14 : 0.22), -0.075], [0.18, long ? 0.26 : 0.12, 0.05], C.hair, { faces: '+x-x-z+y+z' });
 }
+
+/** 陈默的上身：躯干高度、脖子（头底）高度（相对髋关节）。 */
+export const CHEN_UPPER = { torso: 0.42, neck: 0.56 } as const;
 
 function hipsGeo(): THREE.BufferGeometry {
   const b = new PartBuilder();
@@ -116,10 +139,11 @@ function hipsGeo(): THREE.BufferGeometry {
   b.variant(HIPS.jacket, () => {
     // 周主任：灰夹克下摆到大腿中部；右手在身侧夹着烟，烟头一明一灭（glow）
     b.with({ tint: 1 }, () => b.box([0, -0.02, 0], [0.44, 0.46, 0.27], W, { colors: { '+y': G1 } }));
+    // 夹烟的手抬在腰带高度（离地 0.86 m 以上），烟头不伸出碰撞盒正面 5 cm 以外
     arms(b, 1);
-    b.segment([0.26, 0.1, 0.0], [0.28, -0.12, 0.12], 0.065, 0.065, C.skin);
-    b.segment([0.28, -0.11, 0.14], [0.29, -0.09, 0.23], 0.013, 0.013, 0xe4e8e4);
-    b.with({ glow: 1 }, () => b.box([0.29, -0.088, 0.238], [0.022, 0.022, 0.022], C.cigarette));
+    b.segment([0.25, 0.1, 0.0], [0.265, -0.05, 0.08], 0.062, 0.062, C.skin);
+    b.segment([0.265, -0.045, 0.1], [0.275, -0.03, 0.17], 0.013, 0.013, 0xe4e8e4);
+    b.with({ glow: 1 }, () => b.box([0.275, -0.028, 0.178], [0.022, 0.022, 0.022], C.cigarette));
   });
   b.variant(HIPS.books, () => {
     // 班长：双手在身前抱着一摞作业本（只看得见本子的下沿）
@@ -128,18 +152,19 @@ function hipsGeo(): THREE.BufferGeometry {
     b.box([0, 0.05, 0.22], [0.46, 0.1, 0.3], 0xd9dee3, { colors: { '+z': 0x9fb2c0, '-y': 0x9fb2c0 } });
   });
   b.variant(HIPS.fullUpper, () => {
-    // 陈默：完整的上身（校服、没有五官的头）
+    // 陈默：完整的上身（校服、没有五官的头）。躯干比普通人短一点（蹲着时头顶正好在碰撞盒上沿，头和镜头一样高）
     pelvis(b);
-    b.box([0, 0.4, 0], [0.4, 0.52, 0.22], C.uniform, { colors: { '+y': 0x2b4466 } });
-    for (const s of [-1, 1]) b.segment([s * 0.24, 0.62, 0], [s * 0.26, 0.08, 0.05], 0.08, 0.08, C.uniform);
+    b.box([0, CHEN_UPPER.torso / 2 + 0.14, 0], [0.4, CHEN_UPPER.torso, 0.22], C.uniform, { colors: { '+y': 0x2b4466 } });
+    for (const s of [-1, 1]) b.segment([s * 0.24, CHEN_UPPER.neck - 0.04, 0], [s * 0.26, 0.08, 0.05], 0.08, 0.08, C.uniform);
     for (const s of [-1, 1]) b.box([s * 0.26, 0.03, 0.06], [0.05, 0.1, 0.08], C.skin);
-    headAt(b, 0.66);
+    headAt(b, CHEN_UPPER.neck);
   });
   b.variant(HIPS.trackPants, () => {
     pelvis(b);
     for (const s of [-1, 1]) b.box([s * 0.202, 0.0, 0], [0.004, 0.18, 0.03], C.uniformStripe, { faces: s > 0 ? '+x' : '-x' });
   });
   b.variant(HIPS.noHands, () => pelvis(b));
+  b.variant(HIPS.arms, () => hangingArms(b));
   return b.build();
 }
 
@@ -277,6 +302,8 @@ export class LegForest {
     const hipsV = upperOn && look.hips === HIPS.trousers ? HIPS.noHands : look.hips;
     const hipsHex = look.hips === HIPS.jacket || look.legs === LEGV.bare ? look.shirt : look.pants;
     this.pool('hips').push(_a, hipsV, p.glow, _col.setHex(hipsHex));
+    // 鼓掌时前臂举在胸前（躯干部件），不再垂在身侧
+    if (p.arms && !(upperOn && p.clap > 0)) this.pool('hips').push(_a, HIPS.arms, 0, _col.setHex(look.shirt));
     if (upperOn && look.hips !== HIPS.fullUpper) {
       _col.setHex(look.shirt);
       if (this.tier === 'high') {

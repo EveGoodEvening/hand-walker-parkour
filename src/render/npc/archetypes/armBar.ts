@@ -4,11 +4,19 @@
 // 伸出的手臂（reach）：两侧各跪着一个人（kneeler 原型的 reachL / reachR 变体），手臂横过车道，手在中间碰到一起。
 import * as THREE from 'three';
 import { defineArchetype, type PlaceCtx } from '../archetype';
+import { reducedPulse } from '../behaviors';
 import { C } from '../colors';
 import { barLine, slitShadow, stripedBar } from '../shapes';
 import { KNEELER_CROWD } from './kneeler';
 
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1);
+
+/** 红灯最亮时的自发光强度。 */
+export const LAMP_PEAK = 1.6;
+/** 红灯的明暗：0.8 Hz 脉动（0.5 → 1 倍峰值）；「减少闪烁」时 0.5 Hz 平滑明暗、最低 0.4 倍峰值（§7.3）。 */
+export function lampGlow(t: number, reducedFlicker: boolean): number {
+  return LAMP_PEAK * (reducedFlicker ? reducedPulse(t) : 0.75 + 0.25 * Math.sin(t * Math.PI * 1.6));
+}
 
 /** 红灯沿杆的位置（−1..1），往返周期 2.4 s。 */
 export function lampSweep(t: number): number {
@@ -122,8 +130,7 @@ export default defineArchetype({
         _p.set(cx + lampSweep(c.t) * half, c.floorY, -(o.s0 + o.s1) / 2);
         _q.identity();
         _m.compose(_p, _q, _s);
-        const pulse = 0.75 + 0.25 * Math.sin(c.t * Math.PI * 1.6);
-        p.push(_m, p.variantIndex('barrierLamp'), 1.6 * pulse);
+        p.push(_m, p.variantIndex('barrierLamp'), lampGlow(c.t, c.reducedFlicker));
       }
       return true;
     }

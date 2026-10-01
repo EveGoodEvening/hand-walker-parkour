@@ -146,3 +146,40 @@ export function clapClosed(t: number, phase: number): boolean {
 export function tremble(t: number, seed: number): { roll: number; pitch: number } {
   return { roll: 0.02 * Math.sin(t * 37 + seed * 1.3), pitch: 0.014 * Math.sin(t * 29 + seed * 2.1) };
 }
+
+/** 确定性的 0..1 散列（热路径里不分配 rng 对象）。 */
+export function hash01(n: number): number {
+  const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/**
+ * 人腿障碍里每个人的朝向（由障碍 id 和人的序号决定，不随时间变）：60% 朝玩家，40% 背对，各带 ±STAND_YAW.jitter 的随机偏转；
+ * 其中约 30% 的人上身（胯和垂着的手）再扭过去 ±STAND_YAW.twist，像在和旁边的人说话。
+ * 碰撞盒是 0.52 × 0.30 的横长方形（halfW 0.26、depth 0.30），人要横着「填满」它：整个人侧身时剪影只有 0.26 宽，
+ * 比碰撞盒窄 13 cm（危险方向：玩家会撞上看不见的部分），所以脚和腿只取朝前 / 朝后两种朝向，侧身只扭上身。
+ * 这些姿势下模型外沿与碰撞盒的偏差 ≤ 5 cm 由 tests/unit/npc/archetypes.test.ts 逐个检查。
+ */
+export const STAND_YAW = { jitter: 0.1, twist: 0.3 } as const;
+export function obstacleYaw(id: number, i: number): number {
+  const r = hash01(id * 31 + i * 7);
+  const j = (hash01(id * 13 + i) - 0.5) * 2 * STAND_YAW.jitter;
+  return r < 0.6 ? j : Math.PI + j;
+}
+/** 上身扭转角（弧度，0 = 不扭）。 */
+export function obstacleTwist(id: number, i: number): number {
+  const r = hash01(id * 17 + i * 3);
+  return r < 0.3 ? (hash01(id * 23 + i) < 0.5 ? 1 : -1) * STAND_YAW.twist : 0;
+}
+
+/** 人的鞋子相对脚踝前移（鞋尖在前）。障碍里的人沿朝向后退这么多，脚和腿的前后沿居中在碰撞盒里。 */
+export const FOOT_CENTER = 0.045;
+
+/**
+ * 「减少闪烁」（§7.3、附录 A-10）：明灭的光源一律换成 0.5 Hz 的平滑明暗，最低不低于峰值的 0.4。返回 0.4..1（乘峰值用）。
+ */
+export const REDUCED_FLICKER = { hz: 0.5, min: 0.4 } as const;
+export function reducedPulse(t: number): number {
+  const u = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 * REDUCED_FLICKER.hz);
+  return REDUCED_FLICKER.min + (1 - REDUCED_FLICKER.min) * u;
+}

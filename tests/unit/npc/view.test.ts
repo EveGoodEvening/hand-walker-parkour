@@ -5,9 +5,14 @@ import type { QualityTier, SimSnapshot } from '../../../src/core/types';
 import { OBSTACLES, OBSTACLE_KINDS } from '../../../src/levels/obstacles';
 import { getChapter } from '../../../src/levels/chapters/index';
 import type { ChapterDef } from '../../../src/levels/schema';
-import { makeStage, toStage, type StageName } from '../../../src/render/npc/stage';
+import { customStage, makeStage, toStage, type StageName } from '../../../src/render/npc/stage';
 import { chapter, runSeg } from '../core/helpers';
-import { ViewDriver, makeView } from './helpers';
+import { ViewDriver, fakeCtx, makeView, stageView } from './helpers';
+import { LegForest, newPerson } from '../../../src/render/npc/LegForest';
+import { EMBER_PEAK, emberGlow, lookFor } from '../../../src/render/npc/specials';
+import { LAMP_PEAK, lampGlow } from '../../../src/render/npc/archetypes/armBar';
+import { reducedPulse } from '../../../src/render/npc/behaviors';
+import { OVERTAKE_LIFE } from '../../../src/render/npc/ObstacleView';
 
 /** 一帧里本系统可见的 InstancedMesh 数（≈ draw call）。 */
 function visible(meshes: THREE.InstancedMesh[]): number { return meshes.filter((m) => m.visible && m.count > 0).length; }
@@ -198,14 +203,51 @@ describe('事件反应：让一下、安静的一秒、碰倒、拾取', () => {
     const { view, vd } = withStage('high', 'forest', 30);
     const snap = vd.d.snap;
     view.onEvent({ type: 'hit', tick: snap.tick, data: { severity: 'stumble', kind: 'legs', obstacleId: -1, lane: 0, steady: 2, crowd: true, firstLegHit: false } }, snap);
-    const shoes = () => { const p = view.forest.pool('shoe'); return Array.from(p.mesh.instanceMatrix.array.slice(0, p.n * 16)).map((x) => Math.round(x * 1e4)); };
-    // 静止期间：玩家在动（车道外的路边人按 s 进出窗口），所以只比较凝视以外的路边人——这里直接比较动画时钟
     const t0 = view.time;
     vd.step(30);
     expect(view.time).toBeGreaterThan(t0);
-    void shoes;
     expect(view.animClock(t0 + 0.5)).toBeCloseTo(view.animClock(t0), 6);
     expect(view.animClock(t0 + 2)).toBeGreaterThan(view.animClock(t0) + 0.5);
+  });
+
+  it('安静的一秒（看渲染矩阵）：站着的人、路边走路的人位置和腿姿一起停；碰撞盒还在走的行人位置和腿姿一起动，不滑行', () => {
+    // 路边走路的人和障碍在同一个舞台里，按 x 区分：|x| ≥ 1.5 是路边的人
+    const { view, vd } = stageView('high', [
+      { kind: 'legs', lane: -1, at: 16, behavior: { type: 'walk', speed: 1.2 } },
+      { kind: 'legs', lane: 1, at: 16 },
+    ], { steps: 30, groups: [{ id: 'w', kind: 'walkers', from: 0, to: 40, side: 'both', density: 1 }] });
+    const snap = vd.d.snap;
+    view.onEvent({ type: 'hit', tick: snap.tick, data: { severity: 'stumble', kind: 'legs', obstacleId: -1, lane: 0, steady: 2, crowd: true, firstLegHit: false } }, snap);
+    const grab = () => {
+      const m = new THREE.Matrix4(), v = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+      const out = { walker: [] as number[], stand: [] as number[], decor: [] as number[], walkerThigh: [] as number[], standThigh: [] as number[] };
+      const hips = view.forest.pool('hips');
+      for (let i = 0; i < hips.n; i++) {
+        hips.matrixAt(i, m).decompose(v, q, sc);
+        if (Math.abs(v.x) >= 1.5) out.decor.push(v.x, v.z);
+        else if (v.x < 0) out.walker.push(v.z); else out.stand.push(v.z);
+      }
+      const th = view.forest.pool('thigh');
+      for (let i = 0; i < th.n; i++) {
+        th.matrixAt(i, m).decompose(v, q, sc);
+        if (Math.abs(v.x) >= 1.4) continue;             // 路边的人在 |x| = 1.58，大腿在 1.46 以外
+        (v.x < 0 ? out.walkerThigh : out.standThigh).push(q.x, q.y, q.z, q.w);
+      }
+      return out;
+    };
+    vd.step(12);
+    const a = grab();
+    vd.step(60);                                       // 仍在 1 s 的静止里
+    const b = grab();
+    expect(a.walker.length).toBeGreaterThan(0);
+    expect(a.decor.length).toBeGreaterThan(4);
+    // 站着的人、路边走路的人：一动不动
+    expect(b.stand).toEqual(a.stand);
+    expect(b.standThigh).toEqual(a.standThigh);
+    expect(b.decor).toEqual(a.decor);
+    // 行人障碍：碰撞盒按段内时间继续走（0.5 s × 1.2 m/s），腿也跟着迈步
+    expect((a.walker[0] ?? 0) - (b.walker[0] ?? 0)).toBeCloseTo(0.6, 2);
+    expect(b.walkerThigh.some((x, i) => Math.abs(x - (a.walkerThigh[i] ?? x)) > 0.01)).toBe(true);
   });
 
   it('low 被碰到：记住碰倒时刻，0.3 s 内向前倒下；retry 后复原', () => {
@@ -263,7 +305,196 @@ describe('5 分钟内存不增长（验收 6）', () => {
       }
     }
     expect(census()).toEqual(c0);
-    expect(view.internalSizes().gazeMemo).toBeLessThan(400);
+    // 「进入 3 m」的凝视记录 20 s 后清掉：只剩最近 20 s 里经过的人
+    expect(view.internalSizes().gazeMemo).toBeLessThan(120);
     expect(view.internalSizes().gazeEvents).toBeLessThan(40);
+  });
+});
+
+describe('凝视记录的清理', () => {
+  it('人走过去 20 s 以后，「进入 3 m」的记录被清掉（不累积到重来）', () => {
+    const { view, vd } = withStage('high', 'forest', 1);
+    for (let i = 0; i < 20 && view.internalSizes().gazeMemo === 0; i++) vd.step(30);
+    expect(view.internalSizes().gazeMemo).toBeGreaterThan(0);
+    // 玩家站到很远的地方（没有人在 3 m 内），时间过去 25 s
+    const far = { ...vd.d.snap, t: vd.d.snap.t + 25, player: { ...vd.d.snap.player, s: vd.d.snap.player.s + 500 } };
+    view.frame(far, far, 1, 0);
+    expect(view.internalSizes().gazeMemo).toBe(0);
+  });
+});
+
+describe('R12：人腿的粉笔与朝向无关', () => {
+  it('朝玩家、背对、侧身时，腿朝镜头（+z）的那些面都写了 aChalk', () => {
+    for (const tier of ['low', 'high'] as QualityTier[]) {
+      const f = new LegForest(); f.init(fakeCtx(tier));
+      for (const yaw of [0, Math.PI, Math.PI / 2, -Math.PI / 2, 0.7]) {
+        const p = newPerson(lookFor('student', 1, 'r12'));
+        p.yaw = yaw; p.arms = true;
+        f.begin(); f.add(p); f.end();
+        let facing = 0, chalked = 0;
+        const m = new THREE.Matrix4(), nm = new THREE.Matrix3(), n = new THREE.Vector3();
+        for (const id of (tier === 'low' ? ['leg'] : ['shin', 'thigh']) as Array<'leg' | 'shin' | 'thigh'>) {
+          const pool = f.pool(id);
+          const geo = pool.mesh.geometry;
+          const nor = geo.getAttribute('normal'), hw = geo.getAttribute('aHw'), ch = geo.getAttribute('aChalk');
+          for (let i = 0; i < pool.n; i++) {
+            pool.matrixAt(i, m);
+            nm.getNormalMatrix(m);
+            const v = pool.variantAt(i);
+            for (let k = 0; k < nor.count; k += 3) {
+              const vi = hw.getX(k);
+              if (vi >= 0 && Math.abs(vi - v) > 0.5) continue;
+              n.set(nor.getX(k), nor.getY(k), nor.getZ(k)).applyMatrix3(nm).normalize();
+              if (n.z < 0.5) continue;
+              facing++;
+              if (ch.getX(k) > 0 && ch.getX(k + 1) > 0 && ch.getX(k + 2) > 0) chalked++;
+            }
+          }
+        }
+        expect(facing, `${tier} yaw ${yaw}`).toBeGreaterThan(0);
+        expect(chalked, `${tier} yaw ${yaw}`).toBe(facing);
+      }
+    }
+  });
+});
+
+describe('伸进过道的脚：坐着的那个人', () => {
+  it('人坐在车道外沿自己的椅子上；路边 seatedRow 里坐在同一位置的人去掉，不叠成两个', () => {
+    const groups = [{ id: 'row', kind: 'seatedRow' as const, from: 0, to: 30, side: 'R' as const, density: 1 }];
+    const d = customStage([{ kind: 'footOut', lane: 1, at: 10 }], 100, 0, { groups });
+    const seatX = 1.1 + 0.72, seatS = 100 + 10 + 0.15;
+    const clash = (list: typeof d.decor) => list.filter((x) => Math.abs(x.x - seatX) < 0.6 && Math.abs(x.s - seatS) < 0.9).length;
+    expect(clash(d.decor)).toBeGreaterThan(0);
+    const { view } = makeView('high');
+    const st = toStage('stretch', d, 0, 100, false);
+    view.setStage(st);
+    expect(clash(st.decor)).toBe(0);
+    expect(st.decor.length).toBeGreaterThan(10);
+  });
+});
+
+describe('crowd cue、特殊 NPC、4-3 超过你的人', () => {
+  it('组名拼错：不做任何事，只警告一次；\'*\' 作用于全部组', () => {
+    const { view, vd } = withStage('high', 'forest', 10);
+    const stand = { ...vd.d.snap, segKind: 'stand' as const };
+    const clapVariants = () => { view.frame(stand, stand, 1, 0); const p = view.forest.pool('torso'); const vs = new Set<number>(); for (let i = 0; i < p.n; i++) vs.add(p.variantAt(i)); return vs; };
+    view.crowdOp('forestl_typo', 'applaud', stand);
+    view.crowdOp('forestl_typo', 'applaud', stand);
+    expect(view.warnings.length).toBe(1);
+    expect([...clapVariants()]).toEqual([0]);
+    view.crowdOp('forestL', 'applaud', stand);           // 只有这一组鼓掌
+    const vs = clapVariants();
+    expect(vs.has(0)).toBe(true);
+    expect(vs.has(1) || vs.has(2)).toBe(true);
+  });
+
+  it('周主任（暖色的烟头）只在第三章出现；其他章节里同名的人按普通人画', () => {
+    for (const [id, want] of [['ch3', true], ['ch2', false]] as const) {
+      const def = chapter([runSeg({ id: 'z', beats: 60, items: [{ at: 14, lane: 0, kind: 'legs', id: 'directorZhou' }], follower: { mode: 'hidden', steady: 3 } })], { id });
+      const { view } = makeView('high');
+      const vd = new ViewDriver(view, def);
+      vd.d.sim.setInvincible(true);
+      vd.step(20);
+      const hips = view.forest.pool('hips');
+      let jacket = false, glow = 0;
+      for (let i = 0; i < hips.n; i++) { if (hips.variantAt(i) === 2) jacket = true; glow = Math.max(glow, hips.glowAt(i)); }
+      expect(jacket, id).toBe(want);
+      expect(glow > 0, id).toBe(want);
+    }
+  });
+
+  it('crawlOvertake：离开本段就收掉；最多持续 OVERTAKE_LIFE 秒', () => {
+    const { view, vd } = stageView('high', []);
+    // 4-3：玩家站着不动（站立段），爬行的人从身后两侧超过去
+    const base = { ...vd.d.snap, segKind: 'stand' as const };
+    const at = (dt: number) => { const sn = { ...base, t: base.t + dt }; view.frame(sn, sn, 1, 0); return sn; };
+    view.crowdOp('*', 'crawlOvertake', at(0));
+    at(2);
+    expect(view.stats.crawlers).toBeGreaterThan(0);
+    view.onEvent({ type: 'segment', tick: base.tick + 1, data: { index: 0, id: 'next', kind: 'run' } } as never, { ...base, t: base.t + 2 });
+    at(2.1);
+    expect(view.stats.crawlers).toBe(0);
+    // 同一时刻发出的 cue 不被段事件清掉；过了寿命自己消失
+    const s3 = at(3);
+    view.crowdOp('*', 'crawlOvertake', s3);
+    view.onEvent({ type: 'segment', tick: base.tick + 2, data: { index: 0, id: 'next', kind: 'run' } } as never, s3);
+    at(5);
+    expect(view.stats.crawlers).toBeGreaterThan(0);
+    at(3 + OVERTAKE_LIFE + 0.1);
+    expect(view.stats.crawlers).toBe(0);
+  });
+});
+
+describe('减少闪烁（§7.3、附录 A-10）', () => {
+  it('周主任的烟头、电子栏杆的红灯：0.5 Hz 平滑明暗，最低不低于峰值的 0.4；关闭时仍是原来的明灭', () => {
+    const run = (reduced: boolean) => {
+      const { view, vd } = stageView('high', [{ kind: 'legs', lane: 0, at: 30, id: 'directorZhou' }, { kind: 'barrierArm', lane: 'all', at: 34 }]);
+      (view.ctx.settings as { reducedFlicker?: boolean }).reducedFlicker = reduced;
+      const ember: number[] = [], lamp: number[] = [], ts: number[] = [];
+      const armBar = view.pools.get('armBar');
+      for (let k = 0; k < 48; k++) {
+        vd.step(10);
+        const hips = view.forest.pool('hips');
+        let g = 0;
+        for (let i = 0; i < hips.n; i++) g = Math.max(g, hips.glowAt(i));
+        let l = 0;
+        if (armBar) for (let i = 0; i < armBar.pool.n; i++) l = Math.max(l, armBar.pool.glowAt(i));
+        ember.push(g); lamp.push(l); ts.push(view.time);
+      }
+      return { ember, lamp, ts };
+    };
+    const on = run(true), off = run(false);
+    for (const [arr, peak] of [[on.ember, EMBER_PEAK], [on.lamp, LAMP_PEAK]] as const) {
+      expect(Math.min(...arr)).toBeGreaterThanOrEqual(0.4 * peak - 1e-6);
+      expect(Math.max(...arr)).toBeLessThanOrEqual(peak + 1e-6);
+      arr.forEach((g, i) => expect(g).toBeCloseTo(peak * reducedPulse(on.ts[i] ?? 0), 5));
+    }
+    expect(reducedPulse(0.25)).toBeCloseTo(reducedPulse(2.25), 9);   // 周期 2 s = 0.5 Hz
+    expect(Math.min(...off.ember)).toBeLessThan(0.4 * EMBER_PEAK);   // 不开的时候烟头明灭得更深
+    expect(emberGlow(1.234, false)).not.toBeCloseTo(emberGlow(1.234, true), 3);
+    expect(lampGlow(1.234, true)).toBeCloseTo(LAMP_PEAK * reducedPulse(1.234), 9);
+  });
+});
+
+describe('centerShoes 与多车道平铺', () => {
+  it('centerShoes：站着的人转向走廊中央，走路的人不横着走；受击的凝视照样叠加', () => {
+    const { view, vd } = stageView('high', [], { groups: [
+      { id: 'w', kind: 'walkers', from: 0, to: 30, side: 'both', density: 1 },
+      { id: 'l', kind: 'lineSides', from: 0, to: 30, side: 'both', density: 1 },
+    ] });
+    view.crowdOp('*', 'centerShoes', vd.d.snap);
+    vd.step(2);
+    const hips = view.forest.pool('hips');
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3();
+    let walkers = 0, standers = 0;
+    // 路边：走路的人在 |x| = 1.58、站着的在 1.57–1.62（都是 1.5 以外）。走路的人的朝向是 0 或 π，站着的转到 ±π/2 附近
+    for (let i = 0; i < hips.n; i++) {
+      hips.matrixAt(i, m).decompose(v, q, new THREE.Vector3());
+      const yaw = e.setFromQuaternion(q, 'YXZ').y;
+      if (Math.abs(Math.abs(yaw) - Math.PI / 2) < 0.4) standers++;
+      else if (Math.abs(yaw) < 0.2 || Math.abs(Math.abs(yaw) - Math.PI) < 0.2) walkers++;
+    }
+    expect(standers).toBeGreaterThan(4);
+    expect(walkers).toBeGreaterThan(4);
+    // 受击：附近的鞋尖从「朝中央」再转向玩家
+    const shoeYaws = () => { const p = view.forest.pool('shoe'); const out: number[] = []; for (let i = 0; i < p.n; i++) { p.matrixAt(i, m).decompose(v, q, new THREE.Vector3()); out.push(e.setFromQuaternion(q, 'YXZ').y); } return out; };
+    const before = shoeYaws();
+    const snap = vd.d.snap;
+    view.onEvent({ type: 'hit', tick: snap.tick, data: { severity: 'stumble', kind: 'legs', obstacleId: -1, lane: 0, steady: 2, crowd: false, firstLegHit: false } }, snap);
+    vd.step(60);
+    const after = shoeYaws();
+    expect(after.length).toBe(before.length);
+    expect(after.some((y, i) => Math.abs(y - (before[i] ?? y)) > 0.1)).toBe(true);
+  });
+
+  it('跨两条车道的书包：每条车道一个名义宽度的书包，不横向拉伸；外沿在碰撞盒的 x0 / x1 上', () => {
+    const { view } = stageView('high', [{ kind: 'bag', lane: [0, 1], at: 8 }]);
+    const pool = view.pools.get('lowBox');
+    expect(pool?.pool.n).toBe(2);
+    const m = new THREE.Matrix4(), v = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+    const xs: number[] = [];
+    for (let i = 0; i < (pool?.pool.n ?? 0); i++) { pool?.pool.matrixAt(i, m).decompose(v, q, sc); xs.push(v.x); expect(sc.x).toBeCloseTo(1, 6); }
+    expect(xs.sort((a, b) => a - b)[0]).toBeCloseTo(0, 6);
+    expect(xs[1]).toBeCloseTo(1.1, 6);
   });
 });

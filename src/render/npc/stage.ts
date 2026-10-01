@@ -10,7 +10,7 @@ import type { Stage } from './ObstacleView';
 export const STAGE_NAMES = ['gallery-low', 'gallery-bar', 'gallery-block', 'gallery-soft', 'forest', 'stretch', 'specials', 'dream', 'night'] as const;
 export type StageName = (typeof STAGE_NAMES)[number];
 
-interface Spec { kind: ObstacleKind; lane: Lane | Lane[] | 'all'; at: number; behavior?: Behavior; id?: string; len?: number; note?: string }
+export interface Spec { kind: ObstacleKind; lane: Lane | Lane[] | 'all'; at: number; behavior?: Behavior; id?: string; len?: number; note?: string }
 
 function segmentOf(s0: number, floorY: number, kit: KitId, groups: NpcGroupDef[]): CompiledSegment {
   const def = {
@@ -59,6 +59,9 @@ function gallery(cls: 'low' | 'bar' | 'block' | 'soft', start = 2.4): Spec[] {
   }
   return out;
 }
+
+/** 舞台搭在测试章的走廊里（墙在 ±1.8）：路边的人一律用走廊的人群范围，否则广场、食堂的人群都在墙后面，看不见。 */
+export const STAGE_BAND: readonly [number, number] = [1.54, 1.6];
 
 export interface StageData { obstacles: CompiledObstacle[]; decor: Decor[]; groups: GroupInfo[]; segment: CompiledSegment; kit: KitId; follow: boolean }
 
@@ -136,9 +139,22 @@ export function makeStage(name: StageName, s0: number, floorY: number, seed = 7)
   segment.obstacles = build(specs, s0, 900000);
   const decor: Decor[] = [];
   const gi: GroupInfo[] = [];
-  expandSegment(seed, segment, decor, gi);
+  expandSegment(seed, segment, decor, gi, STAGE_BAND);
   decor.sort((a, b) => a.s - b.s);
   return { obstacles: segment.obstacles, decor, groups: gi, segment, kit, follow };
+}
+
+/** 用给定的障碍（和可选的人群）搭一个舞台（单元测试按障碍逐个检查画面用）。 */
+export function customStage(specs: Spec[], s0: number, floorY: number, o: { kit?: KitId; groups?: NpcGroupDef[]; idBase?: number; seed?: number } = {}): StageData {
+  const kit = o.kit ?? 'corridor';
+  const groups = o.groups ?? [];
+  const segment = segmentOf(s0, floorY, kit, groups);
+  segment.obstacles = build(specs, s0, o.idBase ?? 900000);
+  const decor: Decor[] = [];
+  const gi: GroupInfo[] = [];
+  expandSegment(o.seed ?? 7, segment, decor, gi, STAGE_BAND);
+  decor.sort((a, b) => a.s - b.s);
+  return { obstacles: segment.obstacles, decor, groups: gi, segment, kit, follow: false };
 }
 
 export function toStage(name: StageName, d: StageData, t0: number, s0: number, follow?: boolean): Stage {

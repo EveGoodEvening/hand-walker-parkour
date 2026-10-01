@@ -136,6 +136,50 @@ describe('注册（§8.2 规则 3、§8.7）', () => {
   });
 });
 
+describe('契约 ArchetypePool 的槽位语义（legs / crawler 的独立工厂）', () => {
+  it('place × 3 → hide(1)：只去掉槽位 1，其余两个按各自 place 时的 t 留着', () => {
+    const ctx = fakeCtx('low');
+    for (const id of ['legs', 'crawler'] as const) {
+      const pool = getArchetype(id)?.create(ctx, 8);
+      expect(pool).toBeDefined();
+      if (!pool) continue;
+      const ob = (n: number, lane: -1 | 0 | 1): CompiledObstacle => ({
+        id: n, kind: id, cls: 'block', archetype: id, lanes: [lane], beat: 4, s0: 4, s1: 4.3, y0: 0, y1: 1, halfW: 0.3,
+        behavior: { type: 'walk', speed: 2 }, npc: true, params: {},
+      });
+      const meshName = id === 'legs' ? 'npc:hips' : 'crawler:body';
+      const people = () => {
+        const out: Array<{ x: number; z: number }> = [];
+        pool.object.traverse((o) => {
+          const m = o as THREE.InstancedMesh;
+          if (!m.isInstancedMesh || m.name !== meshName) return;
+          const mat = new THREE.Matrix4(), v = new THREE.Vector3();
+          for (let i = 0; i < m.count; i++) {
+            m.getMatrixAt(i, mat); v.setFromMatrixPosition(mat);
+            // legs 的髋部件每人两个实例（胯 + 垂着的手），位置相同：去重
+            if (!out.some((q) => Math.abs(q.x - v.x) < 1e-6 && Math.abs(q.z - v.z) < 1e-6)) out.push({ x: v.x, z: v.z });
+          }
+        });
+        return out.sort((a, b) => a.x - b.x);
+      };
+      pool.place(0, ob(0, -1), 0);
+      pool.place(1, ob(1, 0), 1);
+      pool.place(2, ob(2, 1), 2);
+      expect(people().map((p) => Math.round(p.x * 10) / 10), id).toEqual([-1.1, 0, 1.1]);
+      const before = people();
+      pool.hide(1);
+      const after = people();
+      expect(after.map((p) => Math.round(p.x * 10) / 10), id).toEqual([-1.1, 1.1]);
+      // 留下的两个位置不变（各自的 t：0 与 2，walk 2 m/s → 沿 s 差 4 m）
+      expect(after[0]?.z).toBeCloseTo(before[0]?.z ?? NaN, 6);
+      expect(after[1]?.z).toBeCloseTo(before[2]?.z ?? NaN, 6);
+      expect((after[0]?.z ?? 0) - (after[1]?.z ?? 0)).toBeCloseTo(4, 1);
+      pool.hide(0); pool.hide(2);
+      expect(people().length).toBe(0);
+    }
+  });
+});
+
 describe('更新耗时（验收 2：40 个可见 NPC ≤ 1 ms / 帧）', () => {
   it('LegForest：40 人（高画质，全部部件）平均每帧 < 1 ms', () => {
     const ctx = fakeCtx('high');

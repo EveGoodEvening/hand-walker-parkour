@@ -8,6 +8,7 @@
 //   班长       npc 组 id ∈ {monitor, banzhang}：只有脚和一摞作业本的下沿，渐远
 //   梦里的男生  kneeler + fallInto 行为，或 id ∈ {dreamBoy, boy}：干净的裤脚和鞋
 import { createRng } from '../../core/rng';
+import { reducedPulse } from './behaviors';
 import type { KitId } from '../../core/types';
 import type { CompiledObstacle, NpcGroupDef } from '../../levels/schema';
 import { C } from './colors';
@@ -59,7 +60,7 @@ export function specialOfGroup(g: NpcGroupDef): SpecialId | null {
 
 // ——— 外观 ———
 /** 髋部件的变体号（LegForest 的 hips 几何体）。 */
-export const HIPS = { trousers: 0, skirt: 1, jacket: 2, books: 3, fullUpper: 4, trackPants: 5, noHands: 6 } as const;
+export const HIPS = { trousers: 0, skirt: 1, jacket: 2, books: 3, fullUpper: 4, trackPants: 5, noHands: 6, arms: 7 } as const;
 export type HipsVariant = (typeof HIPS)[keyof typeof HIPS];
 /** 腿部件的变体号：0 普通裤腿；1 两侧白条（运动裤）；2 光腿 / 丝袜（裙装）。 */
 export const LEGV = { plain: 0, stripe: 1, bare: 2 } as const;
@@ -122,8 +123,14 @@ export function specialLook(sp: SpecialId): Look {
   }
 }
 
-/** 周主任的烟头：一明一灭，「像某种小型的心跳」（约 0.8 Hz 的平滑明暗，远低于 3 Hz 闪烁上限）。 */
-export function emberGlow(t: number): number {
+/** 烟头最亮时的自发光强度。 */
+export const EMBER_PEAK = 1.6;
+/**
+ * 周主任的烟头：一明一灭，「像某种小型的心跳」（约 0.8 Hz，0.35 → 1.6，远低于 3 Hz 闪烁上限）。
+ * 「减少闪烁」打开时换成 0.5 Hz 的平滑明暗，最低是峰值的 0.4（§7.3）。
+ */
+export function emberGlow(t: number, reducedFlicker = false): number {
+  if (reducedFlicker) return EMBER_PEAK * reducedPulse(t);
   const u = 0.5 + 0.5 * Math.sin(t * Math.PI * 1.6);
-  return 0.35 + 1.25 * u * u;
+  return 0.35 + (EMBER_PEAK - 0.35) * u * u;
 }

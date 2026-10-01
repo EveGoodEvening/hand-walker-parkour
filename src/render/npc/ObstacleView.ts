@@ -20,18 +20,34 @@ import { OBSTACLES } from '../../levels/obstacles';
 import type { CompiledChapter, CompiledObstacle, CompiledSegment, RunSegmentDef } from '../../levels/schema';
 import { ArchetypePoolImpl, createArchetypeMaterial, type ArchetypeDef, type PlaceCtx } from './archetype';
 import {
-  GAZE_MAX, GAZE_TOTAL, clapClosed, gazeAmount, gazeSince, idleSway, partOffset, shiftBlend, silenceClock, silenceLevel, tremble, walkPose,
-  type WalkPose,
+  FOOT_CENTER, GAZE_MAX, GAZE_TOTAL, clapClosed, gazeAmount, gazeSince, hash01, idleSway, obstacleTwist, obstacleYaw, partOffset, shiftBlend, silenceClock,
+  silenceLevel, tremble, walkPose, type WalkPose,
 } from './behaviors';
 import { CRAWL, Crawlers, type Crawler } from './Crawlers';
 import { expandChapter, lowerBound, type Decor, type GroupInfo } from './crowds';
 import { HitboxDebug } from './hitboxDebug';
 import { BODY, LegForest, STAND_HIP, newPerson, type Person } from './LegForest';
 import { KNEELER_BOY, KNEELER_CROWD } from './archetypes/kneeler';
+import { footSeat } from './archetypes/footOut';
 import { obstacleState, type ObstacleState } from './simBridge';
-import { crowdOfKit, emberGlow, itemIdOf, lookFor, specialLook, specialOfObstacle, type Look, type SpecialId } from './specials';
+import { HIPS, crowdOfKit, emberGlow, itemIdOf, lookFor, specialLook, specialOfObstacle, type Look, type SpecialId } from './specials';
 
 const DEG = Math.PI / 180;
+/**
+ * 障碍里的人凝视时鞋尖最多转多少（鞋尖转 0.6 倍、腿转 0.4 倍）：鞋绕脚踝转，转太多鞋尖会从碰撞盒正面缩回、
+ * 或从侧面伸出 5 cm 以外（验收 4）。路边的人不受这个限制。
+ */
+export const OBSTACLE_GAZE_MAX = 35 * DEG;
+/**
+ * 陈默的蹲姿：髋高、髋角、膝角（弧度）、膝盖外分、鞋尖外转、上身前倾，以及整个人沿 −s 后退的距离（让蹲姿的前后沿居中在碰撞盒里）。
+ */
+export const CHEN_SQUAT: { hipH: number; hip: number; knee: number; legYaw: number; footYaw: number; lean: number; back: number } = {
+  hipH: 0.215, hip: 125 * DEG, knee: 140 * DEG, legYaw: 0.45, footYaw: 0.15, lean: 0.4, back: 0.147,
+};
+/** 「进入 3 m」的凝视记录多久之后清掉（秒）：人早已在身后、被裁掉，不再遍历到。 */
+const GAZE_MEMO_TTL = 20;
+/** 4-3「从两侧超过你」的爬行者最多持续多久（秒）；离开本段也清掉。 */
+export const OVERTAKE_LIFE = 16;
 const wrapPi = (a: number) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 
 /** 一段「凝视事件」：t 时刻以 (s, x) 为中心、半径 r 内的人把鞋尖转向玩家（hit / ask / crowd turnShoes）。 */
@@ -83,6 +99,7 @@ export class ObstacleView implements ViewSystem {
   private looks = new Map<number, Look>();
   stage: Stage | null = null;
   private lastT = 0;
+  private lastPrune = 0;
   /** 最近一帧的快照（调试扩展触发 crowd / ask / hit 时用）。 */
   lastSnap: SimSnapshot | null = null;
   readonly stats: ObstacleViewStats = { people: 0, crawlers: 0, instances: {}, updateMs: 0, drawMeshes: 0 };
@@ -104,7 +121,7 @@ export class ObstacleView implements ViewSystem {
     this.defs = defs;
     this.pc = {
       o: null as unknown as CompiledObstacle, st: this.st, floorY: 0, tSeg: 0, beat: -1, t: 0, knockedAt: null,
-      chapter: 'ch1', kit: 'placeholder', playerX: 0, playerS: 0, partX: 0, bps: 5,
+      chapter: 'ch1', kit: 'placeholder', playerX: 0, playerS: 0, partX: 0, bps: 5, reducedFlicker: false,
       side: (id, m, variant, glow, color) => { const p = this.pools.get(id); if (p) p.push(m, p.variantIndex(variant), glow ?? 0, color); },
     };
   }
@@ -136,22 +153,27 @@ export class ObstacleView implements ViewSystem {
   async loadChapter(ch: CompiledChapter): Promise<void> {
     this.chapter = ch;
     const { decor, groups } = expandChapter(ch.seed, ch.segments);
-    this.decor = decor;
     this.groups = groups;
     this.groupState = groups.map(() => ({ gaze: null, applaud: -1, overtake: -1, overtakeS: 0 }));
     this.specials.clear(); this.looks.clear(); this.chenFoot.clear(); this.chenFootIds.clear();
-    for (const seg of ch.segments) this.indexSegment(seg, ch.seed);
+    for (const seg of ch.segments) this.indexSegment(seg, ch.seed, ch.def.id);
+    this.decor = this.withoutSeatClash(decor, ch.segments.flatMap((sg) => sg.obstacles));
     this.resetState();
     this.taken.clear();
   }
 
-  /** 识别特殊 NPC、给人腿障碍定外观、把陈默和他的脚连起来。 */
-  private indexSegment(seg: CompiledSegment, seed: number): void {
+  /**
+   * 识别特殊 NPC、给人腿障碍定外观、把陈默和他的脚连起来。
+   * 周主任（灰夹克 + 暖色的烟头）只在第三章（和调试舞台）出现：暖色只允许出现在第三章（附录 A-9），
+   * 其他章节里 id 碰巧是 zhou / director 的人按普通人画。
+   */
+  private indexSegment(seg: CompiledSegment, seed: number, chapterId: string): void {
     if (seg.kind !== 'run') return;
     const def = seg.def as RunSegmentDef;
     const crowd = crowdOfKit(def.kit);
     for (const o of seg.obstacles) {
-      const sp = specialOfObstacle(o, def.kit, def.variant);
+      let sp = specialOfObstacle(o, def.kit, def.variant);
+      if (sp === 'directorZhou' && !zhouAllowed(chapterId)) sp = null;
       if (sp) this.specials.set(o.id, sp);
       if (o.archetype === 'legs') this.looks.set(o.id, sp ? specialLook(sp) : lookFor(crowd, seed, `obs:${o.id}`));
     }
@@ -163,6 +185,20 @@ export class ObstacleView implements ViewSystem {
       const foot = byId ?? near;
       if (foot) { this.chenFoot.set(o.id, foot); this.chenFootIds.add(foot.id); }
     }
+  }
+
+  /**
+   * 伸脚的人坐在车道外沿自己的椅子上（archetypes/footOut.ts）。路边 seatedRow 里坐在同一个位置的人去掉，免得两个人、两把椅子叠在一起。
+   */
+  private withoutSeatClash(decor: Decor[], obstacles: readonly CompiledObstacle[]): Decor[] {
+    const seats: Array<{ x: number; s: number }> = [];
+    for (const o of obstacles) {
+      if (o.kind !== 'footOut' || this.chenFootIds.has(o.id)) continue;
+      obstacleState(o, 0, -1, this.st2);
+      seats.push(footSeat(o, this.st2.x0, this.st2.x1));
+    }
+    if (seats.length === 0) return decor;
+    return decor.filter((d) => d.kind !== 'person' || d.pose === 'walk' || !seats.some((q) => Math.abs(d.x - q.x) < 0.6 && Math.abs(d.s - q.s) < 0.9));
   }
 
   private resetState(): void {
@@ -179,7 +215,10 @@ export class ObstacleView implements ViewSystem {
     const groups = stage ? stage.groups : this.groups;
     this.groupState = groups.map(() => ({ gaze: null, applaud: -1, overtake: -1, overtakeS: 0 }));
     this.resetState();
-    if (stage) this.indexSegment(stage.segment, 7);
+    if (stage) {
+      this.indexSegment(stage.segment, 7, 'stage');
+      stage.decor = this.withoutSeatClash(stage.decor, stage.obstacles);
+    }
   }
 
   onEvent(e: GameEvent, snap: SimSnapshot): void {
@@ -188,6 +227,9 @@ export class ObstacleView implements ViewSystem {
       case 'segment':
         this.segStartT = t; this.segIndex = e.data.index;
         this.globalOp.applaud = -1;
+        // 「从两侧超过你」只属于发 cue 的那一段（4-3）：离开本段就收掉，免得被下一段更快的玩家反超
+        if (this.globalOp.overtake >= 0 && this.globalOp.overtake < t) this.globalOp.overtake = -1;
+        for (const g of this.groupState) if (g.overtake >= 0 && g.overtake < t) g.overtake = -1;
         break;
       case 'hit': {
         const o = this.findObstacle(e.data.obstacleId);
@@ -232,14 +274,18 @@ export class ObstacleView implements ViewSystem {
     return undefined;
   }
 
-  /** crowd cue（§8.7，WP6 唯一处理者）。group 为 NpcGroupDef.id；找不到或为 '*' 时作用于全部组。 */
+  /**
+   * crowd cue（§8.7，WP6 唯一处理者）。group 为 NpcGroupDef.id；'*'（或空）作用于本章全部组。
+   * 找不到的组名不做任何事，只在控制台警告一次：数据里的拼写错误不应让整章人群一起转鞋尖或鼓掌。
+   */
   crowdOp(group: string, op: CrowdOp, snap: SimSnapshot): void {
     const t = snap.t;
     const groups = this.stage ? this.stage.groups : this.groups;
     const states = this.groupState;
-    const idx = groups.map((g, i) => (g.key === group || g.def.id === group ? i : -1)).filter((i) => i >= 0);
-    const targets = idx.length ? idx : groups.map((_, i) => i);
-    const all = idx.length === 0;
+    const all = group === '*' || group === '';
+    const idx = all ? [] : groups.map((g, i) => (g.key === group || g.def.id === group ? i : -1)).filter((i) => i >= 0);
+    if (!all && idx.length === 0) { this.warnOnce(`npc: crowd cue 的组「${group}」不存在（op ${op}），已忽略；作用于全部组请写 '*'`); return; }
+    const targets = all ? groups.map((_, i) => i) : idx;
     for (const i of targets) {
       const st = states[i] ?? (states[i] = { gaze: null, applaud: -1, overtake: -1, overtakeS: 0 });
       switch (op) {
@@ -258,6 +304,15 @@ export class ObstacleView implements ViewSystem {
       if (op === 'normal') { this.globalOp.applaud = -1; this.globalOp.overtake = -1; }
       if (op === 'turnShoes' && groups.length === 0) this.gazeEvents.push({ t, s: snap.player.s, x: snap.player.x, r: 60, group: -1 });
     }
+  }
+
+  private readonly warned = new Set<string>();
+  /** 已警告过的消息（测试用）。 */
+  get warnings(): readonly string[] { return [...this.warned]; }
+  private warnOnce(msg: string): void {
+    if (this.warned.has(msg)) return;
+    this.warned.add(msg);
+    if (typeof console !== 'undefined') console.warn(msg);
   }
 
   // ——————————————————— 每帧 ———————————————————
@@ -286,6 +341,7 @@ export class ObstacleView implements ViewSystem {
     const speed = Math.max(0, N.speed);
     const bps = next.segKind === 'run' ? Math.max(0.5, N.cadence || speed / Math.max(0.3, N.stride)) : 4.8;
     this.lastT = t;
+    this.pruneGazeMemo(t);
     const fog = this.ctx.scene.fog as THREE.Fog | null;
     const fogFar = fog && 'far' in fog ? fog.far : 60;
     const ahead = Math.min(this.ctx.quality.chunksAhead * 12 + 6, fogFar + 4);
@@ -293,7 +349,7 @@ export class ObstacleView implements ViewSystem {
     const tAnim = silenceClock(t, this.silences);
     const hush = silenceLevel(t, this.silences);
     const pc = this.pc;
-    pc.t = t; pc.playerX = px; pc.playerS = s; pc.bps = bps;
+    pc.t = t; pc.playerX = px; pc.playerS = s; pc.bps = bps; pc.reducedFlicker = this.reducedFlicker;
     pc.chapter = this.stage ? 'stage' : (this.chapter?.def.id ?? 'ch1') as ChapterId;
     const ctx = this.fctx;
     ctx.s = s; ctx.px = px; ctx.t = t; ctx.tAnim = tAnim; ctx.beat = beat; ctx.tSeg = tSeg; ctx.speed = speed; ctx.bps = bps;
@@ -395,13 +451,15 @@ export class ObstacleView implements ViewSystem {
   }
 
   // ——— 人腿障碍：一人一道；陈默；周主任；马老师 ———
+  // 每个人站在车道中心（多车道的人墙：外侧两人的外沿正好落在碰撞盒的 x0 / x1 上），沿朝向后退 FOOT_CENTER 让鞋的前后沿居中；
+  // 垂在身侧的前臂让剪影的横向外沿 ≈ 碰撞盒半宽（验收 4）。朝向只取几种不会让剪影比碰撞盒窄的角度（obstacleYaw）。
   private legsObstacle(o: CompiledObstacle, st: ObstacleState, seg: CompiledSegment, f: FrameCtx, cur: boolean, kit: KitId, variant: string, floorY: number): void {
     const look = this.looks.get(o.id) ?? this.fallbackLook;
     const sp = this.specials.get(o.id);
     const p = this.person;
     if (sp === 'chenMo') { this.chenMo(o, st, seg, f, cur, look, floorY); return; }
     const lanes = Math.max(1, Math.round((st.x1 - st.x0 - 2 * o.halfW) / LANE_WIDTH) + 1);
-    const w = (st.x1 - st.x0) / lanes;
+    const gap = lanes > 1 ? (st.x1 - st.x0 - 2 * o.halfW) / (lanes - 1) : 0;
     const zc = -((o.s0 + o.s1) / 2 + st.ds);
     const b = o.behavior;
     // 人墙移动（shift）：1.2 s 前鞋尖先转过去，碰撞切换时平移
@@ -418,35 +476,42 @@ export class ObstacleView implements ViewSystem {
       shiftTurn = bl.turn * Math.sign(after - before);
     }
     for (let i = 0; i < lanes; i++) {
-      const cx = st.x0 + w * (i + 0.5) + shiftDx;
+      const cx = st.x0 + o.halfW + gap * i + shiftDx;
       this.resetPerson(p, look);
       // 让一下：单人往外侧让；多人从中间分开（「前面两个女生分开一条缝」）
       const part = this.pc.partX;
       const mid = (lanes - 1) / 2;
       p.x = cx + (lanes > 1 ? Math.abs(part) * (i < mid ? -1 : i > mid ? 1 : Math.sign(part)) : part);
       p.y = floorY; p.z = zc;
-      const r = hash01(o.id * 31 + i * 7);
+      p.arms = look.hips !== HIPS.jacket && look.hips !== HIPS.books && look.hips !== HIPS.fullUpper;
       if (b.type === 'walk') {
         p.yaw = b.speed > 0 ? Math.PI : 0;
-        walkPose(Math.abs(b.speed) * f.tAnim + i * 0.3 + o.id, this.walk);
+        // 走路的人在「安静的一秒」里也不停：碰撞盒按段内时间继续移动，步态按走过的距离（= 碰撞盒的位移），画面和碰撞一起动
+        walkPose(Math.abs(b.speed) * this.pc.tSeg + i * 0.3 + o.id, this.walk);
         this.applyWalk(p);
       } else {
-        // 朝向（由 id 决定，不随时间变）：45% 朝玩家，25% 背对，30% 侧身
-        const j = (hash01(o.id * 13 + i) - 0.5) * 0.6;
-        p.yaw = sp ? 0 : r < 0.45 ? j : r < 0.7 ? Math.PI + j : (hash01(o.id * 17 + i) < 0.5 ? 1 : -1) * Math.PI / 2;
+        p.yaw = sp ? 0 : obstacleYaw(o.id, i);
+        p.turn = sp ? 0 : obstacleTwist(o.id, i);
         this.applyIdle(p, f.tAnim, (o.id * 0.137 + i * 0.31) % 1);
       }
+      // 鞋尖在脚踝前面：站着的人沿朝向后退，让鞋的前后沿居中（走路的人两只脚前后摆，本来就对称）
+      if (b.type !== 'walk') { p.x -= Math.sin(p.yaw) * FOOT_CENTER; p.z -= Math.cos(p.yaw) * FOOT_CENTER; }
       if (shiftTurn !== 0) { const turn = shiftTurn * 70 * DEG; p.footYawL += turn; p.footYawR += turn; p.legYawL += turn * 0.3; p.legYawR += turn * 0.3; }
-      this.applyGaze(p, o.id * 8 + i, (o.s0 + o.s1) / 2 + st.ds, f, 'turnShoes', -1);
+      // 障碍里的人只转鞋尖和腿（上身扭过去会让垂着的手伸出碰撞盒）
+      this.applyGaze(p, o.id * 8 + i, (o.s0 + o.s1) / 2 + st.ds, f, 'turnShoes', -1, b.type === 'walk', OBSTACLE_GAZE_MAX, 0);
       p.upper = look.upper || f.stand;
       if (p.upper && this.globalOp.applaud >= 0) p.clap = clapClosed(f.tAnim, hash01(o.id + i)) ? 2 : 1;
-      if (sp === 'directorZhou') p.glow = emberGlow(f.t);
+      if (sp === 'directorZhou') p.glow = emberGlow(f.t, this.reducedFlicker);
       this.forest.add(p);
     }
-    void seg; void variant;
+    void seg; void variant; void kit;
   }
 
-  /** 陈默：蹲在过道里（头与你的视线齐平）→ 到点起身 → 让到一边，一只脚留在过道里（§4.1 1-2）。 */
+  /**
+   * 陈默：蹲在过道里（头与你的视线齐平）→ 到点起身 → 让到一边，一只脚留在过道里（§4.1 1-2）。
+   * 蹲姿（CHEN_SQUAT）收在碰撞盒（0.70 宽 × 0.50 深 × 1.00 高）里：膝盖外分、上身前倾，整个人沿 −s 退 back 米让前后沿居中，
+   * 头顶正好在碰撞盒上沿（≈ 1.0 m，和镜头一样高）。偏差 ≤ 5 cm 由 tests/unit/npc/archetypes.test.ts 检查。
+   */
   private chenMo(o: CompiledObstacle, st: ObstacleState, seg: CompiledSegment, f: FrameCtx, cur: boolean, look: Look, floorY: number): void {
     const p = this.person;
     this.resetPerson(p, look);
@@ -465,14 +530,16 @@ export class ObstacleView implements ViewSystem {
     const fs = foot ? (foot.s0 + foot.s1) / 2 : (o.s0 + o.s1) / 2 + 2;
     const destX = fx + side * 0.56, destZ = -(fs + 0.3);
     const e = easeInOutSine(step);
-    p.x = lerp(cx, destX, e); p.z = lerp(zc - 0.03, destZ, e); p.y = floorY;
-    p.yaw = 0;
     const r = easeInOutSine(rise);
-    p.hipH = lerp(0.3, STAND_HIP, r);
-    p.hipL = p.hipR = lerp(110 * DEG, 0, r);
-    p.kneeL = p.kneeR = lerp(145 * DEG, 0, r);
-    p.legYawL = -lerp(0.35, 0.04, r); p.legYawR = lerp(0.35, 0.04, r);
-    p.lean = lerp(0.45, 0, r);
+    const S = CHEN_SQUAT;
+    p.x = lerp(cx, destX, e); p.z = lerp(zc - S.back * (1 - r), destZ, e); p.y = floorY;
+    p.yaw = 0;
+    p.hipH = lerp(S.hipH, STAND_HIP, r);
+    p.hipL = p.hipR = lerp(S.hip, 0, r);
+    p.kneeL = p.kneeR = lerp(S.knee, 0, r);
+    p.legYawL = -lerp(S.legYaw, 0.04, r); p.legYawR = lerp(S.legYaw, 0.04, r);
+    p.footYawL = -S.footYaw * (1 - r); p.footYawR = S.footYaw * (1 - r);
+    p.lean = lerp(S.lean, 0, r);
     p.squat = rise < 0.5; p.seated = false;
     if (foot && step > 0.3) {
       // 留在过道里的脚：左腿伸直指向脚的位置（碰撞盒中心），鞋尖朝过道另一侧
@@ -491,6 +558,7 @@ export class ObstacleView implements ViewSystem {
     p.look = look; p.yaw = 0; p.hipH = STAND_HIP; p.stance = BODY.stance;
     p.hipL = p.hipR = p.kneeL = p.kneeR = 0; p.legYawL = p.legYawR = 0; p.footYawL = p.footYawR = 0;
     p.lean = 0; p.roll = 0; p.dx = 0; p.bob = 0; p.turn = 0; p.upper = false; p.clap = 0; p.glow = 0; p.targetL = null; p.seated = false; p.squat = false;
+    p.arms = false;
   }
 
   /** idle：重心左右换（「安静的一秒」里动画时钟 tAnim 不走，所以人就停住了）。 */
@@ -507,27 +575,27 @@ export class ObstacleView implements ViewSystem {
     p.hipL = w.hipL; p.hipR = w.hipR; p.kneeL = w.kneeL; p.kneeR = w.kneeR; p.bob = w.bob;
   }
 
-  /** 凝视：鞋尖在 0.4 s 内转向玩家，停 0.5 s，再转回（接近触发 / 受击 / 让一下 / crowd turnShoes）；center = 常驻朝走廊中央。 */
-  private applyGaze(p: Person, key: number, sN: number, f: FrameCtx, mode: Decor['gaze'], group: number): void {
+  /**
+   * 凝视：鞋尖在 0.4 s 内转向玩家，停 0.5 s，再转回（接近触发 / 受击 / 让一下 / crowd turnShoes）。
+   * center = 常驻朝走廊中央（站着、坐着的人整个转过去；走路的人不转，否则会横着走）；受击、让一下的凝视照样叠加上去。
+   */
+  private applyGaze(p: Person, key: number, sN: number, f: FrameCtx, mode: Decor['gaze'], group: number, walking = false, maxRel = GAZE_MAX, turnK = 0.25): void {
     const gs = group >= 0 ? this.groupState[group] : undefined;
     const m = gs?.gaze ?? mode;
-    if (m === 'center') {
+    if (m === 'center' && !walking) {
       // 鞋尖（和整个人）朝向走廊中央：x → 0
       const want = p.x > 0 ? -Math.PI / 2 : Math.PI / 2;
       p.yaw = want + (p.yaw - want) * 0.15;
       p.footYawL = p.footYawR = 0;
-      return;
     }
     let g = 0;
-    const along = sN - f.s, dx = p.x - f.px;
     if (m === 'turnShoes') {
       let tt = this.gazeMemo.get(key);
       if (tt === undefined) {
-        const since = gazeSince(along, dx, f.speed);
+        const since = gazeSince(sN - f.s, p.x - f.px, f.speed);
         if (since >= 0) { tt = f.t - since; this.gazeMemo.set(key, tt); }
       }
       if (tt !== undefined) g = gazeAmount(f.t - tt);
-      if (tt !== undefined && along < -8) this.gazeMemo.delete(key);
     }
     for (const ev of this.gazeEvents) {
       if (ev.group >= 0 && ev.group !== group) continue;
@@ -537,10 +605,17 @@ export class ObstacleView implements ViewSystem {
     if (g <= 0) return;
     // 目标方向：从这个人指向玩家（世界坐标：+z = −s）
     const want = Math.atan2(f.px - p.x, -(f.s) - p.z);
-    const rel = Math.max(-GAZE_MAX, Math.min(GAZE_MAX, wrapPi(want - p.yaw)));
+    const rel = Math.max(-maxRel, Math.min(maxRel, wrapPi(want - p.yaw)));
     p.footYawL += rel * g * 0.6; p.footYawR += rel * g * 0.6;
     p.legYawL += rel * g * 0.4; p.legYawR += rel * g * 0.4;
-    p.turn += rel * g * 0.25;
+    p.turn += rel * g * turnK;
+  }
+
+  /** 清掉过期的凝视记录（每 2 s 一次；记录只在人第一次进入 3 m 时写入）。 */
+  private pruneGazeMemo(t: number): void {
+    if (t - this.lastPrune < 2 && t >= this.lastPrune) return;
+    this.lastPrune = t;
+    for (const [k, tt] of this.gazeMemo) if (t - tt > GAZE_MEMO_TTL || tt > t) this.gazeMemo.delete(k);
   }
 
   // ——— 路边的人、模仿者、爬行的人 ———
@@ -554,7 +629,8 @@ export class ObstacleView implements ViewSystem {
     for (let i = i0; i < list.length; i++) {
       const d = list[i] as Decor;
       if (d.s + shift > f.s + f.ahead + 60) break;
-      const segT = this.stage ? f.t - this.stage.t0 : d.seg === this.segIndex ? f.tAnim - silenceClock(this.segStartT, this.silences) : 0;
+      // 路边走路的人按动画时钟走（「安静的一秒」里和腿一起停）
+      const segT = this.stage ? f.tAnim - silenceClock(this.stage.t0, this.silences) : d.seg === this.segIndex ? f.tAnim - silenceClock(this.segStartT, this.silences) : 0;
       const sN = d.s + shift + d.speed * Math.max(0, segT);
       if (sN > f.s + f.ahead || sN < f.s - f.behind) continue;
       const floorY = this.floorAt(sN);
@@ -589,7 +665,7 @@ export class ObstacleView implements ViewSystem {
         const sw = idleSway(f.tAnim, d.phase);
         p.kneeL += sw.dx * 3; p.kneeR -= sw.dx * 3;
       } else this.applyIdle(p, f.tAnim, d.phase);
-      this.applyGaze(p, -1 - i, sN, f, d.gaze, gi);
+      this.applyGaze(p, -1 - i, sN, f, d.gaze, gi, d.pose === 'walk');
       const kit = groups[gi]?.kit;
       p.upper = d.look.upper || f.stand || kit === 'plaza';
       const applaud = (gs && gs.applaud >= 0) || this.globalOp.applaud >= 0;
@@ -605,6 +681,7 @@ export class ObstacleView implements ViewSystem {
     for (const g of this.groupState) if (g.overtake >= 0 && g.overtake > t0) { t0 = g.overtake; s0 = g.overtakeS; }
     if (t0 < 0) return;
     const dt = f.t - t0;
+    if (dt > OVERTAKE_LIFE) return;
     const c = this.crawler;
     const n = Math.min(this.crawlers.max, OVERTAKE.length);
     for (let i = 0; i < n; i++) {
@@ -637,6 +714,8 @@ export class ObstacleView implements ViewSystem {
   }
 
   get time(): number { return this.lastT; }
+  /** 设置「减少闪烁」是否打开（ctx.settings 由 Game 持有，设置界面改了立即生效）。 */
+  get reducedFlicker(): boolean { return this.ctx?.settings?.reducedFlicker === true; }
   /** 人的动画时钟（「安静的一秒」里不走）。 */
   animClock(t: number): number { return silenceClock(t, this.silences); }
   /** 当前帧线框的全部顶点（测试用）。 */
@@ -649,11 +728,8 @@ export class ObstacleView implements ViewSystem {
   get obstacleSpec(): typeof OBSTACLES { return OBSTACLES; }
 }
 
-/** 确定性的 0..1 散列（热路径里不分配 rng 对象）。 */
-function hash01(n: number): number {
-  const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
-  return x - Math.floor(x);
-}
+/** 周主任（暖色的烟头）只允许出现在第三章和调试舞台（附录 A-9）。 */
+export function zhouAllowed(chapterId: string): boolean { return chapterId === 'ch3' || chapterId === 'stage'; }
 
 /** 4-3 超过你的爬行者：读章前一次算好（位置、速度、延迟、颜色）。 */
 interface OvertakeCrawler { x: number; v: number; back: number; delay: number; phase: number; color: number }

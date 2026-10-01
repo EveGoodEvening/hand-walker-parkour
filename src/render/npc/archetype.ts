@@ -65,6 +65,8 @@ export interface PlaceCtx {
   partX: number;
   /** 当前步频（拍 / 秒），把「秒」换成「拍」用。 */
   bps: number;
+  /** 设置「减少闪烁」（§7.3）：明灭的光源换成 0.5 Hz 平滑明暗。 */
+  reducedFlicker: boolean;
   /** 往另一个原型池里放一个附属实例（例如 reach 两侧跪着的人）。 */
   side(id: ArchetypeId, m: THREE.Matrix4, variant: string, glow?: number, color?: THREE.Color): void;
 }
@@ -134,7 +136,7 @@ export class ArchetypePoolImpl implements ArchetypePool {
     this.pool = new InstPool(`archetype:${def.id}`, this.geo, mat, cap, { ...(def.material === 'decal' ? { renderOrder: -15 } : {}), color: def.color === true });
     this.pc = {
       o: null as unknown as CompiledObstacle, st: { active: true, ds: 0, x0: 0, x1: 0, amount: 1 }, floorY: 0, tSeg: 0, beat: -1, t: 0,
-      knockedAt: null, chapter: 'ch1', kit: 'placeholder', playerX: 0, playerS: 0, partX: 0, bps: 5, side: () => { /* 独立使用时没有附属实例 */ },
+      knockedAt: null, chapter: 'ch1', kit: 'placeholder', playerX: 0, playerS: 0, partX: 0, bps: 5, reducedFlicker: false, side: () => { /* 独立使用时没有附属实例 */ },
     };
   }
 
@@ -183,6 +185,8 @@ export class ArchetypePoolImpl implements ArchetypePool {
 
   /**
    * 通用放置：横向覆盖 st.x0..x1，纵向 s0..s1（加上 walk 偏移），按名义尺寸平铺；low 被碰倒时向前倒下。
+   * 跨多条车道时每条车道放一个名义宽度的实例（不横向拉伸：两车道的书包仍是两个书包），外侧两个的外沿正好在 x0 / x1 上；
+   * 车道之间的空当玩家站不进去，不影响判定。沿 s 超长时按名义深度平铺。
    */
   placeGeneric(c: PlaceCtx, o: { variant?: number; yaw?: number; glow?: number; lift?: number; tile?: boolean } = {}): void {
     const ob = c.o;
@@ -195,11 +199,14 @@ export class ArchetypePoolImpl implements ArchetypePool {
     const tile = o.tile !== false;
     const nx = !tile || this.def.tileX === false || sp.fullWidth ? 1 : Math.max(1, Math.round((W - nomW) / LANE_WIDTH) + 1);
     const ns = !tile || this.def.tileS === false ? 1 : Math.min(MAX_TILES, Math.max(1, Math.round(D / nomD)));
-    const tw = W / nx, td = D / ns;
+    const td = D / ns;
+    // 单个实例：按实际宽度（整宽的横档、被拉宽的障碍）；多个实例：名义宽度，中心等距排开
+    const tw = nx > 1 ? nomW : W;
+    const gap = nx > 1 ? (W - nomW) / (nx - 1) : 0;
     const kp = sp.cls === 'low' ? knockProgress(c.knockedAt, c.t) : 0;
     for (let ix = 0; ix < nx; ix++) {
       for (let is = 0; is < ns; is++) {
-        const cx = x0 + tw * (ix + 0.5);
+        const cx = x0 + tw / 2 + gap * ix;
         const cs = s0 + td * (is + 0.5);
         _p.set(cx, c.floorY + (o.lift ?? 0), -cs);
         _q.setFromEuler(_e.set(0, o.yaw ?? 0, 0));
