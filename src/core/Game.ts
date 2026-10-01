@@ -29,6 +29,11 @@ const FAIL_CARD_SEC = 1.0;
 const FAIL_INPUT_SEC = 1.2;
 const FAIL_SLOW_SEC = 0.3;
 const FAIL_SLOW_MUL = 0.3;
+/** 不透明的界面：背后不画 3D（实时循环下；test 模式照常画，截图脚本不受影响）。 */
+const OPAQUE_SCREENS: ReadonlySet<ScreenName> = new Set(['boot', 'intro', 'outro', 'credits']);
+const coarsePointer = () => typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+/** UI 的可选扩展（WP8，U4）：Game 只经这几个方法通知界面，不改冻结的 UIAPI。 */
+type UIExt = UIAPI & { setDevice?: (d: string) => void; setQualityTier?: (t: QualityTier) => void; noteSkip?: () => void };
 
 export interface StartOptions { segment?: string; beat?: number; skipCards?: boolean }
 
@@ -59,6 +64,12 @@ export class Game implements GameCommands {
   private introT = -1;
   private dirty = true;
   private autoQ: AutoQuality | null = null;
+  /** 自动画质已经决定、还没切换的档位：切换会同步重建 chunk（150–270 ms），只在不跑的时刻做（下一个静场 / 站立段开始、重来、读章）。 */
+  private pendingQ: QualityTier | null = null;
+  /** 窗口失焦或页面隐藏中（blur / visibilitychange 置位；focus、重新可见且有焦点、任何按键或点按清掉）。进入游玩的入口据此立即暂停。 */
+  private away = false;
+  /** 正在把标题背景复位到首章开头（enterTitle）。复位期间模拟不推进、3D 不重画；startWith 先等它完成。 */
+  private titleReset: Promise<void> | null = null;
   private pendingUp: Action[] = [];
   private texts: Array<{ text: string; until: number }> = [];
   private hint: { id: HintId; until: number } | null = null;
@@ -102,14 +113,22 @@ export class Game implements GameCommands {
     this.ui = uf();
     this.ui.mount(uiRoot, this, this.save);
     const settingsEv = { type: 'settings', tick: 0, data: { ...this.settings } } as GameEvent;
-    if (this.settings.quality === 'auto' && !this.params.q && !this.params.test) {
-      const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
-      this.autoQ = new AutoQuality(!touch);
+    (this.ui as UIExt).setQualityTier?.(this.quality);
+    if (this.settings.quality === 'auto' && !this.params.q && !this.params.test) this.autoQ = new AutoQuality(!coarsePointer());
+    if (typeof window !== 'undefined' && !this.params.test) {
+      // U4：失焦不只在那一刻判断。开场卡、读章、失败卡（自动重来）期间切走窗口，回到游玩时也要停住（enterPlay）。
+      const leave = () => { this.away = true; if (this.screenName === 'play') this.pause(true); };
+      const back = () => { this.away = false; };
+      window.addEventListener('blur', leave);
+      window.addEventListener('focus', back);
+      window.addEventListener('pointerdown', back, { capture: true });
+      window.addEventListener('keydown', back, { capture: true });
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) leave();
+        else if (typeof document.hasFocus !== 'function' || document.hasFocus()) back();
+      });
     }
     if (typeof window !== 'undefined') {
-      const autoPause = () => { if (this.screenName === 'play' && !this.params.test) this.pause(true); };
-      window.addEventListener('blur', autoPause);
-      document.addEventListener('visibilitychange', () => { if (document.hidden) autoPause(); });
       const unlock = () => { void this.audio.unlock(); };
       window.addEventListener('pointerdown', unlock, { once: true });
       window.addEventListener('keydown', unlock, { once: true });
@@ -132,6 +151,7 @@ export class Game implements GameCommands {
   }
 
   private async loadChapter(ch: ChapterId, at?: { segment: string; beat: number }): Promise<void> {
+    this.applyPendingQuality();
     const def = getChapter(ch);
     if (!def) throw new Error(`chapter ${ch} is not implemented`);
     const seed = this.seed ?? def.seed;
@@ -161,6 +181,7 @@ export class Game implements GameCommands {
   }
 
   async startWith(ch: ChapterId, o: StartOptions = {}, reuse = false): Promise<void> {
+    if (this.titleReset) await this.titleReset;
     const at = o.segment ? { segment: o.segment, beat: o.beat ?? 0 } : undefined;
     if (!reuse || !this.compiled || this.compiled.def.id !== ch) await this.loadChapter(ch, at);
     else if (at) { this.sim.goto(at.segment, at.beat); this.afterJump(); }
@@ -168,7 +189,7 @@ export class Game implements GameCommands {
     this.paused = false;
     this.failing = null; this.loop.slowMul = 1;
     const def = getChapter(ch);
-    if (o.skipCards || !def) { this.setScreen('play'); }
+    if (o.skipCards || !def) { this.enterPlay(); }
     else {
       this.introT = 0;
       this.setScreen('intro', { chapter: ch, title: def.title, name: def.name, lines: def.card.map((l) => lineText(l)) });
@@ -185,13 +206,20 @@ export class Game implements GameCommands {
 
   retry(): void {
     if (!this.compiled) return;
+    this.applyPendingQuality();
     this.sim.retry();
     this.afterJump();
     this.failing = null; this.loop.slowMul = 1;
     // lead 集成（WP7 契约申请）：从暂停菜单重来时结束暂停并恢复声音
     if (this.paused) { this.paused = false; this.audio.suspend(false); }
-    this.setScreen('play');
     this.loop.resetClock();
+    this.enterPlay();
+  }
+
+  /** 进入游玩（开场卡结束、跳过开场卡、重来）。窗口不在前台时立即暂停（test 模式下 away 永远为假）。 */
+  private enterPlay(): void {
+    this.setScreen('play');
+    if (this.away) this.pause(true);
   }
 
   /** goto / retry 之后：同步快照、画面复位。 */
@@ -216,9 +244,41 @@ export class Game implements GameCommands {
     }
   }
 
-  toTitle(): void {
+  toTitle(): void { void this.enterTitle(); }
+
+  /**
+   * 回到标题（暂停菜单、失败卡「返回」、结尾卡、演职卡结束都走这里；U4）。标题背景复位到首章开头：
+   * 当前不是首章就读首章，是首章就跳回第一段开头；失败、慢放、暂停一并清掉，镜头随 view.onReset 回到追尾机位。
+   * 复位完成后才切到标题：复位期间屏幕还是原来的（失败卡 / 暂停 / 结尾卡），读章发出的 checkpoint 不会写进「继续」，
+   * 而声音包先收到 chapter:start / segment，再收到标题屏（U3 在标题屏上淡出环境声）。
+   */
+  enterTitle(): Promise<void> {
+    if (this.titleReset) return this.titleReset;
     if (this.paused) this.audio.suspend(false);    // lead 集成（WP7 契约申请）：暂停菜单「回到标题」恢复声音
-    this.paused = false; this.failing = null; this.loop.slowMul = 1; this.setScreen('title');
+    this.paused = false; this.failing = null; this.loop.slowMul = 1;
+    let finish!: () => void;
+    const run = new Promise<void>((r) => { finish = r; });
+    this.titleReset = run;              // 先挂上：同一章时下面是同步跑完的
+    void (async () => {
+      try {
+        const first = availableChapters()[0] ?? 'ch1';
+        const seg0 = this.compiled?.segments[0]?.def.id;
+        if (this.compiled && this.chapterId === first && seg0) {
+          this.applyPendingQuality();
+          this.sim.goto(seg0, 0);
+          this.afterJump();
+          this.outroBeats.length = 0;
+        } else await this.loadChapter(first);
+      } catch (err) {
+        console.error('[title] scene reset failed', err);
+      } finally {
+        this.failing = null; this.loop.slowMul = 1;
+        this.titleReset = null;
+        this.setScreen('title');
+        finish();
+      }
+    })();
+    return run;
   }
 
   /**
@@ -247,9 +307,12 @@ export class Game implements GameCommands {
     this.settings[k] = v;
     storeSettings(this.settings);
     if (k === 'quality') {
+      // U4：选「自动」重新开始统计（以前会把 autoQ 置空，钉在中档）；手选的档位立即生效（在菜单里，卡一下没关系）
       const t = v as Settings['quality'];
-      this.setQuality(t === 'auto' ? 'medium' : t);
-      this.autoQ = null;
+      const tier: QualityTier = t === 'auto' ? 'medium' : t;
+      this.pendingQ = null;
+      if (tier !== this.quality) this.setQuality(tier);
+      this.autoQ = t === 'auto' && !this.params.q && !this.params.test ? new AutoQuality(!coarsePointer()) : null;
     }
     if (k === 'master' || k === 'sfx' || k === 'ambience') this.audio.setVolumes({ master: this.settings.master, sfx: this.settings.sfx, ambience: this.settings.ambience });
     if (k === 'assist') this.sim.setAssist?.(v as boolean);
@@ -264,6 +327,7 @@ export class Game implements GameCommands {
 
   skipStill(): void {
     if (!this.compiled || this.next.segKind === 'run') return;
+    (this.ui as UIExt).noteSkip?.();               // U4：界面在跳过之后的 segment 事件里清掉上一段的字幕、纸条翻看和提示
     this.sim.skipStill?.();
     this.next = this.sim.snapshot();
     this.dispatchAll();
@@ -280,7 +344,15 @@ export class Game implements GameCommands {
     this.quality = t;
     this.view.setQuality(t);
     this.bus.emit('quality', { tier: t });
+    (this.ui as UIExt | undefined)?.setQualityTier?.(t);   // 颗粒层按实际档位开关（§9.4 low 不要颗粒）
     this.dirty = true;
+  }
+
+  /** 自动画质的决定在这里才真正生效（不跑的时刻）。 */
+  private applyPendingQuality(): void {
+    const t = this.pendingQ;
+    this.pendingQ = null;
+    if (t && t !== this.quality) this.setQuality(t);
   }
 
   // ——————————————————— 屏幕 ———————————————————
@@ -306,7 +378,7 @@ export class Game implements GameCommands {
   // ——————————————————— 主循环 ———————————————————
   /** 推进 1 tick（1/120 s 游戏时间）。 */
   tick(): void {
-    if (!this.booted) return;
+    if (!this.booted || this.titleReset) return;
     const evs = this.input.drain();
     const downs = evs.filter((e) => e.phase === 'down');
     for (const e of downs) {
@@ -318,7 +390,7 @@ export class Game implements GameCommands {
     switch (this.screenName) {
       case 'intro': {
         this.introT += TICK_DT;
-        if (this.introT >= INTRO_SEC || downs.some((e) => e.action !== 'pause')) this.setScreen('play');
+        if (this.introT >= INTRO_SEC || downs.some((e) => e.action !== 'pause')) this.enterPlay();
         break;
       }
       case 'play': {
@@ -388,8 +460,10 @@ export class Game implements GameCommands {
           this.save.patch({ last: { chapter: this.chapterId, ...e.data } });
         }
         break;
-      case 'segment': if (e.data.kind !== 'run') { /* 第一次看完之后才允许跳过 */ }
-        this.ctxLook = false; this.ctxAsk = false; this.updateInputContext(); break;
+      case 'segment':
+        this.ctxLook = false; this.ctxAsk = false; this.updateInputContext();
+        if (e.data.kind !== 'run') this.applyPendingQuality();   // 静场 / 站立段开头是镜头切换，重建 chunk 的那一下卡顿被切换盖住
+        break;
       case 'prompt': this.ctxLook = e.data.context.look; this.ctxAsk = e.data.context.ask; this.updateInputContext();
         if (e.data.hint) this.hint = { id: e.data.hint, until: snap.t + 30 }; else this.hint = null;
         break;
@@ -455,17 +529,18 @@ export class Game implements GameCommands {
     this.renderFrame(alpha, dt);
     if (this.autoQ && this.screenName === 'play' && dt > 0) {
       const t = this.autoQ.sample(dt);
-      if (t && t !== this.quality) this.setQuality(t);
+      if (t) this.pendingQ = t !== this.quality ? t : null;   // 只记下决定；跑段中途不重建（U4）
     }
   }
 
   renderFrame(alpha: number, dt: number): void {
     const prev = this.prev, next = this.next;
     this.view.frame(prev, next, alpha, dt);
-    this.view.render();
+    // U4：不透明的启动屏、开场卡、结尾卡、演职卡背后不画 3D（test 模式照常画）；复位标题背景期间停在离开时那一帧
+    if (!this.titleReset && (this.loop.manual || !OPAQUE_SCREENS.has(this.screenName))) this.view.render();
     this.audio.frame(next, dt);
     // lead 集成（WP8 契约申请）：先把最后一次输入的设备交给界面，再画界面，本帧的提示文字就是对的设备
-    (this.ui as UIAPI & { setDevice?: (d: string) => void }).setDevice?.(this.input.device());
+    (this.ui as UIExt).setDevice?.(this.input.device());
     this.ui.frame(next, dt);
     this.dirty = false;
   }
