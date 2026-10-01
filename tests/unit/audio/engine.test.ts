@@ -6,7 +6,7 @@ import { SR, library, make, paramAt, toDb } from './lib';
 import { rmsOf } from '../../../src/audio/dsp';
 import { renderOffline } from '../../../src/audio/library';
 import {
-  CROWD_CHAPTER, DREAM_CHAPTER, applauseScenario, behind, crowdScenario, engineFor, ev, followerScenario, hushFallScenario, hushScenario,
+  CROWD_CHAPTER, DREAM_CHAPTER, applauseScenario, behind, chainLatency, crowdScenario, engineFor, ev, followerScenario, hushFallScenario, hushScenario,
   hushSfxScenario, kneeScenario, peakScenario, perfScenario, quietScenario, snap, tickUp, timingScenario, voicesScenario,
   type ApplauseOrder, type ApplauseReport, type CrowdReport, type TimingReport,
 } from './scenarios';
@@ -560,4 +560,37 @@ describe('第 2 轮验收的修复：静音段、界面音、cue 增益、门', 
       expect(e.stats().errors).toBe(0);
     } finally { g.requestIdleCallback = prev; }
   });
+});
+
+describe('U3：结尾卡的床单声、回到标题时复位声音', () => {
+  it('第四章结尾卡每按一下 ↓（sfx cloth，−4 dB）：屏幕门之后 2.0 / 2.6 / 3.2 s 排在没被门掉的总线上（≥ −6 dB），渲染出来听得见；游玩中照旧走 npc', async () => {
+    const { e, ctx } = await engineFor(make, SR, 4.4, lib);
+    e.frame(snap({ t: 0 }), 0);
+    e.onAmbience('reading', 1, 0.05, snap({ t: 0 }));
+    for (let t = 1 / 60; t < 0.5; t += 1 / 60) e.frame(snap({ t }), 1 / 60);
+    e.onSfx('cloth', undefined, undefined, snap({ t: 0.5 }));
+    expect(e.scheduled[e.scheduled.length - 1]).toMatchObject({ key: 'cloth', bus: 'npc' });
+    expect(e.outroTaps).toBe(0);
+    e.onScreen('outro');                                   // Game.onChapterEnd → setScreen('outro')
+    const m = e.mixer as NonNullable<typeof e.mixer>;
+    const rows: Array<(typeof e.scheduled)[number]> = [];
+    // 结尾卡上模拟时间停住，音频时间照走（与评审脚本 code/outro-cloth.mts 同样的推进方式）
+    for (const k of [2.0, 2.6, 3.2]) {
+      e.onSfx('cloth', undefined, Math.pow(10, -4 / 20), snap({ t: 0.5 + k }));   // Game.outroInput：{ sfx: 'cloth', gain: -4 }
+      const s = e.scheduled[e.scheduled.length - 1] as (typeof e.scheduled)[number];
+      expect(s.key).toBe('cloth');
+      expect(toDb(paramAt(m.gate(s.bus).param, s.at + 0.01)), `${k}s ${s.bus}`).toBeGreaterThanOrEqual(-6);
+      expect(toDb(paramAt(m.gate('npc').param, s.at + 0.01))).toBeLessThanOrEqual(-60);    // 原来那条总线确实被门掉了
+      rows.push(s);
+    }
+    expect(e.outroTaps).toBe(3);
+    const lat = await chainLatency(make, SR);
+    const out = await renderOffline(ctx);
+    const chs = [out.getChannelData(0), out.getChannelData(1)];
+    const win = (a: number, b: number) => toDb(rmsOf(chs, Math.floor((a + lat) * SR), Math.floor((b + lat) * SR)));
+    for (const s of rows) {
+      expect(win(s.at, s.at + 0.25)).toBeGreaterThan(-60);
+      expect(win(s.at, s.at + 0.25)).toBeGreaterThan(win(s.at - 0.3, s.at - 0.05) + 20);
+    }
+  }, 60_000);
 });

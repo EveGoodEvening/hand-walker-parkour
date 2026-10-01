@@ -8,6 +8,7 @@
 //   crowd 的 applaud / crawlOvertake / normal → 梦中掌声对齐与否（锁存，dreamApplause 新建时立即应用）。
 //   bell / sfx / ambience / silence 四种 cue 由 index.ts 注册的处理器转到这里。
 // AudioContext 在第一次 pointerdown / keydown（Game 调 unlock）时才创建；之前只维护「期望状态」并记录 cue。
+// 屏幕：结尾卡、演职卡淡出所有声音（第四章结尾卡的床单声例外，走界面总线）；回到标题时换成标题的底噪（U3）。
 // 挂起（§6.1「暂停和失焦时 ctx.suspend()」）有两个来源，任何一个成立就挂起，两个都清掉才恢复：
 //   Game 的暂停（suspend()；离开暂停 / 设置屏幕时也视为结束——Game 从暂停菜单「重来」「回到标题」时不调 suspend(false)）；
 //   窗口失焦或标签页隐藏（background()，index.ts 监听 blur / focus / visibilitychange，任何屏幕都生效）。
@@ -61,6 +62,11 @@ const GLASS_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'ambience', 
 const SCREEN_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'sfx', 'ambience', 'floor', 'floorSfx', 'revA', 'revB'];
 /** 不受静音段门影响的音效：「嘘」是静音段的开头（1-6 里和 hush 同一刻），走自己的总线。 */
 const HUSH_EXEMPT_SFX = new Set<SfxId>(['shush']);
+/**
+ * 结尾卡、演职卡上照样要听得见的音效：第四章结尾卡每按一下 ↓ 在床单上响的一声（Game.outroInput 发 sfx cloth，
+ * §4.4、§10.2）。cloth 平时走 npc 总线，屏幕门会把它压到 −70 dB 以下；这时改走界面总线（不在 SCREEN_BUSES 里，音量同样跟「音效」）。
+ */
+const SCREEN_EXEMPT_SFX = new Set<SfxId>(['cloth']);
 /** 同一声膝盖闷响的去重窗口（秒）：GameEvent fall 与 sfx cue 两条路径共用。 */
 const KNEE_DEDUPE = 0.1;
 /** 梦中掌声「先散后齐」：一片掌声刚起来时先是散的，这么久之后才开始对齐（τ 0.6 s）。 */
@@ -88,6 +94,8 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   /** 最近排程的一次性声音（测试与调试用，环形 512）。 */
   readonly scheduled: Array<{ key: string; at: number; bus: BusId; gainDb: number; pan: number; buf: AudioBuffer | null }> = [];
   screen = 'boot';
+  /** 在结尾卡上收到的床单声（sfx cloth）个数，只增不减。界面音用它判断一次 ↓ 是不是已经被结尾卡用掉（见 ui.ts）。 */
+  outroTaps = 0;
 
   private noise: NoiseBank | null = null;
   private ambDeps: AmbDeps | null = null;
@@ -276,6 +284,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
 
   onSfx(id: SfxId, pan: number | undefined, g: number | undefined, snap: SimSnapshot): void {
     this.log.record(`sfx:${id}`);
+    if (id === 'cloth' && this.screen === 'outro') this.outroTaps++;
     this.guard(() => {
       if (g !== undefined && !(g > 0)) return;                      // gain 0（或负数、NaN）：不出声
       const at = this.atSnap(snap);
@@ -283,7 +292,8 @@ export class AudioEngine implements AudioImpl, AudioAPI {
       // 缺省居中：1-6 的端墙镜在正前方、3-4 的水洼在中道；侧面的镜子由 cue 自己带 pan（§6.2「声像在镜子那一侧」）
       const p = pan ?? 0;
       if (id === 'kneeThud') { this.kneeThud(at, gainDb, p); return; }
-      this.sfx(id, at, HUSH_EXEMPT_SFX.has(id) ? { pan: p, gainDb, bus: 'self' } : { pan: p, gainDb });
+      const bus: BusId | null = HUSH_EXEMPT_SFX.has(id) ? 'self' : this.screenQuiet && SCREEN_EXEMPT_SFX.has(id) ? 'ui' : null;
+      this.sfx(id, at, bus ? { pan: p, gainDb, bus } : { pan: p, gainDb });
       if (id === 'glassTouch' && this.mixer) {
         const now = this.now();
         for (const b of GLASS_BUSES) this.mixer.gate(b).set('glass', dbToGain(-9), at + 0.3, at + 2.3, 0.1, 0.25, now);

@@ -42,7 +42,11 @@ export function createAudio(mute: boolean, g: AudioGlobals = globalThis as unkno
   });
   const w = (g as unknown as { addEventListener?: unknown }).addEventListener ? (g as unknown as Window) : null;
   if (w) {
-    attachUiSounds(w, (k) => engine.ui(k), () => engine.menuScreen);
+    // 第四章结尾卡等 ↓ 时，↓ 是床单上的一下：这次按键里引擎收到了床单声，就不再发菜单的「移动」声
+    attachUiSounds(w, (k) => engine.ui(k), () => engine.menuScreen, {
+      mayConsume: (key) => key === 'ArrowDown' && engine.screen === 'outro',
+      consumed: () => engine.outroTaps,
+    });
     const doc = (g as unknown as { document?: Document }).document;
     if (doc) attachFocus(w, doc, (away) => engine.background(away));
   }

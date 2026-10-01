@@ -243,3 +243,43 @@ describe('§6.1 失焦 / 隐藏时 ctx.suspend()：任何屏幕都生效（不�
     expect(s.off).not.toHaveBeenCalled();
   });
 });
+
+describe('U3：第四章结尾卡上的 ↓ 是床单声，不是菜单的「移动」声', () => {
+  it('结尾卡等输入时按 ↓：只排床单声（界面总线），不排「移动」；输入结束后 ↓ 在按钮之间移动，照常有「移动」声', async () => {
+    const s = spies();
+    vi.stubGlobal('AudioContext', s.AudioContext);
+    vi.stubGlobal('OfflineAudioContext', s.OfflineAudioContext);
+    // 界面（UI.ts）的 keydown 挂在 window 的冒泡阶段，而且这里比声音包先注册：声音包在 capture 阶段，照样先看到按键
+    let a: AudioEngine | null = null;
+    let waiting = true;
+    const uiKey = (e: KeyboardEvent) => {
+      // OutroScreen.press → Game.outroInput → sfx cue cloth（gain −4 dB）→ 声音包
+      if (waiting && e.key === 'ArrowDown' && a) a.onSfx('cloth', undefined, Math.pow(10, -4 / 20), snap({ t: 1 }));
+    };
+    window.addEventListener('keydown', uiKey);
+    try {
+      const bus = new EventBus();
+      const f = getAudioFactory() as NonNullable<ReturnType<typeof getAudioFactory>>;
+      a = f(bus, { ...DEFAULT_SETTINGS }, false) as AudioEngine;
+      await a.unlock();
+      await a.ready;
+      bus.emit('screen', { name: 'outro' });
+      const press = async (key: string) => {
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+        await new Promise((r) => setTimeout(r, 50));
+      };
+      for (let i = 0; i < 3; i++) await press('ArrowDown');
+      expect(a.scheduled.filter((x) => x.key === 'uiMove')).toEqual([]);
+      expect(a.scheduled.filter((x) => x.key === 'cloth').map((x) => x.bus)).toEqual(['ui', 'ui', 'ui']);
+      expect(a.cues(3)).toEqual(['sfx:cloth', 'sfx:cloth', 'sfx:cloth']);
+      waiting = false;                                                      // 三下按完（或超时）：↓ 回到按钮之间移动
+      await press('ArrowDown');
+      await press('ArrowUp');
+      expect(a.cues(2)).toEqual(['ui:move', 'ui:move']);
+      expect(a.scheduled.filter((x) => x.key === 'uiMove').length).toBe(2);
+      bus.emit('screen', { name: 'title' });                                // 别的菜单：↓ 立刻发「移动」，不推迟
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      expect(a.cues(1)).toEqual(['ui:move']);
+    } finally { window.removeEventListener('keydown', uiKey); }
+  }, 60_000);
+});
