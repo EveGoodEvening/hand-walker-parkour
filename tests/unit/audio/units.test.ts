@@ -206,10 +206,21 @@ describe('cue 命名（静音与出声两种实现共用，§8.8 __game.cues()�
     expect(cueNames(E('steady', { value: 2 }))).toEqual([]);
   });
   it('环形日志只保留最近的', () => {
-    const l = new CueLog(3);
+    const l = new CueLog(3, 3);
     for (const n of ['a', 'b', 'c', 'd']) l.record(n);
     expect(l.recent(10)).toEqual(['b', 'c', 'd']);
     expect(l.recent(1)).toEqual(['d']);
+  });
+  it('一章跑完（每掌六条掌声 cue）之后，章首的铃、音效、环境 cue 仍然读得到；顺序按发生先后', () => {
+    const l = new CueLog();
+    l.record('ambience:reading'); l.record('bell:morning');
+    for (let i = 0; i < 3000; i++) { l.record('palm:heel'); l.record('follower:heel'); if (i === 1500) l.record('sfx:heels'); }
+    l.record('hush');
+    const all = l.recent(5000);
+    expect(all.slice(0, 3)).toEqual(['ambience:reading', 'bell:morning', 'sfx:heels']);
+    expect(all.length).toBe(3 + 1024);
+    expect(all[all.length - 1]).toBe('hush');
+    expect(l.recent(3)).toEqual(['palm:heel', 'follower:heel', 'hush']);
   });
 });
 
@@ -227,6 +238,12 @@ describe('LightModel（嗡鸣跟随的灯光；没有 WP3 的 LampField 时自�
     }
     expect(dips.length).toBeGreaterThan(20);
     for (let i = 3; i < dips.length; i++) expect((dips[i] as number) - (dips[i - 3] as number)).toBeGreaterThanOrEqual(1);
+  });
+  it('「减少闪烁」打开：flicker 区间不再闪（嗡鸣和「咔」跟着不闪）', () => {
+    const m = new LightModel();
+    m.reducedFlicker = true;
+    m.onCue({ type: 'lights', op: 'flicker', from: 0, to: 400, every: 0.5 }, snap({ t: 0, segBeat: 0 }));
+    for (let i = 0; i < 120 * 5; i++) expect(m.brightness(snap({ t: i / 120, segBeat: (i / 120) * 5.4 }))).toBe(1);
   });
   it('声控灯：拍地后亮 4 s；第五章晚 0.5 s', () => {
     const m = new LightModel();

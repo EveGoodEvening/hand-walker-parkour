@@ -3,16 +3,21 @@
 // 只依赖事件和快照（§8.10 WP7）：
 //   contact → 自己的三段声（预渲染库，按模拟时间戳前瞻 50 ms 调度）；followerContact → 追随者（混音按稳度与模式，§2.6）；
 //   hit → 擦地 / 闷响，人群段「安静的一秒」；fall → 膝盖闷响、节拍合一、环境掐断、其余淡出；lookBack → 追随者静音 1.2 s；
-//   twitch / drift → 肌肉声；stand → 自己的「先轻后重」；ask → 低语与短笑；快照 hush → 静音段；segment → 混响与环境音。
+//   twitch / drift → 肌肉声；stand → 自己的「先轻后重」；ask → 低语与短笑；快照 hush → 静音段；segment → 混响、环境音、
+//   人群的脚步（crowd.ts：walkers / queue 组和 walk 的腿，npc 总线）。
 //   bell / sfx / ambience / silence 四种 cue 由 index.ts 注册的处理器转到这里。
 // AudioContext 在第一次 pointerdown / keydown（Game 调 unlock）时才创建；之前只维护「期望状态」并记录 cue。
+// 挂起（§6.1「暂停和失焦时 ctx.suspend()」）有两个来源，任何一个成立就挂起，两个都清掉才恢复：
+//   Game 的暂停（suspend()；离开暂停 / 设置屏幕时也视为结束——Game 从暂停菜单「重来」「回到标题」时不调 suspend(false)）；
+//   窗口失焦或标签页隐藏（background()，index.ts 监听 blur / focus / visibilitychange，任何屏幕都生效）。
 import type { AudioAPI, LampFieldAPI, Volumes } from '../core/contracts';
 import { FlatLampField } from '../core/fallbacks';
 import type { GameEvent, GameEvents } from '../core/events';
-import type { AmbienceId, BellKind, ChapterId, ContactPart, Hand, SfxId, SimSnapshot, Surface } from '../core/types';
+import type { AmbienceId, BellKind, ChapterId, ContactPart, Hand, ReverbId, SfxId, SimSnapshot, Surface } from '../core/types';
 import type { ChapterDef, EventBody } from '../levels/schema';
 import { Ambience, Hum, Rain, type AmbDeps } from './ambience';
 import { SimClock } from './clock';
+import { CrowdSteps } from './crowd';
 import { CueLog, cueNames } from './cueLog';
 import { dbToGain, mulberry32 } from './dsp';
 import { followerMix, mixKey, SILENT_MIX } from './follower';
@@ -82,7 +87,17 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   private readonly seed: number;
   private readonly lights = new LightModel();
   private volumes: Volumes = { master: 80, sfx: 90, ambience: 70 };
+  /** 实际是否挂起（= Game 的暂停 || 失焦 / 隐藏）。 */
   private suspended = false;
+  private gamePaused = false;
+  private away = false;
+  private readonly crowd: CrowdSteps;
+  /** 本段段首对应的模拟时刻（walk 障碍按段内时间移动）。 */
+  private segT0 = 0;
+  private chapterId: ChapterId | null = null;
+  /** 解锁后在空闲时分批做的重活（脉冲响应、梦中掌声缓冲），不放进某一帧里。 */
+  private warm: Array<() => void> = [];
+  private warmTimer: ReturnType<typeof setTimeout> | null = null;
   private errors = 0;
 
   // 期望状态（没有 context 时也维护，建图时一次性应用）
@@ -115,10 +130,14 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   private frames = 0;
   private costTotal = 0;
   costMax = 0;
+  /** 最贵的那一帧里最贵的一项（事件类型或 'frame'），调试主线程尖峰用。 */
+  costMaxWhat = '';
+  private frameWorst = { what: '', ms: 0 };
 
   constructor(private readonly deps: EngineDeps) {
     this.seed = deps.seed ?? 20260930;
     this.rng = mulberry32(this.seed ^ 0x5eed);
+    this.crowd = new CrowdSteps(this.rng);
     if (deps.offline) this.clock.maxLead = Infinity;
   }
 
@@ -149,7 +168,9 @@ export class AudioEngine implements AudioImpl, AudioAPI {
       this.handle(e, snap);
       this.observe(snap);
     } catch (err) { this.error(err); }
-    this.cost += this.perf() - t0;
+    const dt = this.perf() - t0;
+    this.cost += dt;
+    if (dt > this.frameWorst.ms) this.frameWorst = { what: e.type === 'cue' ? `cue:${e.data.body.type}` : e.type, ms: dt };
   }
 
   frame(snap: SimSnapshot, _dt: number): void {
@@ -166,6 +187,9 @@ export class AudioEngine implements AudioImpl, AudioAPI {
         const until = now + 0.35;
         this.amb?.advance(until);
         this.rain?.advance(until);
+        const mute = this.failing || this.hush || this.screenQuiet || snap.segKind !== 'run';
+        this.crowd.advance(now, until, { beat: snap.segBeat, cadence: snap.player.cadence, tSeg: snap.t - this.segT0 }, mute,
+          (at, g, p) => this.step(at, g, p));
         this.updateHum(snap, now);
         if (this.amb?.id === 'dream' && Math.abs(snap.player.speed - this.lastSpeed) > 0.2) {
           this.lastSpeed = snap.player.speed;
@@ -179,11 +203,13 @@ export class AudioEngine implements AudioImpl, AudioAPI {
         }
       }
     } catch (err) { this.error(err); }
-    const c = this.cost + this.perf() - t0;
+    const own = this.perf() - t0;
+    const c = this.cost + own;
     this.cost = 0;
     this.frames++;
     this.costTotal += c;
-    if (c > this.costMax) this.costMax = c;
+    if (c > this.costMax) { this.costMax = c; this.costMaxWhat = own >= this.frameWorst.ms ? 'frame' : this.frameWorst.what; }
+    this.frameWorst = { what: '', ms: 0 };
   }
 
   setVolumes(v: Volumes): void {
@@ -191,15 +217,32 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     if (this.mixer) this.mixer.setVolumes(v, this.now());
   }
 
+  /** Game 的暂停（暂停菜单）。 */
   suspend(on: boolean): void {
+    this.gamePaused = on;
+    this.applySuspend();
+  }
+
+  /** 窗口失焦或标签页隐藏（index.ts 监听；任何屏幕都生效）。 */
+  background(on: boolean): void {
+    this.away = on;
+    this.applySuspend();
+  }
+
+  private applySuspend(): void {
+    const on = this.gamePaused || this.away;
+    if (on === this.suspended) return;
     this.suspended = on;
     if (!this.ctx || this.deps.offline) return;
     const ctx = this.ctx as AudioContext;
     try {
       if (on) void ctx.suspend().catch(() => undefined);
-      else { this.clock.reset(); void ctx.resume().catch(() => undefined); }
+      else { this.clock.reset(); this.crowd.restart(); void ctx.resume().catch(() => undefined); }
     } catch (err) { this.error(err); }
   }
+
+  /** 设置「减少闪烁」：没有 WP3 的 LampField 时，回退的灯光模型不再按拍闪（嗡鸣和「咔」跟着不闪）。 */
+  setReducedFlicker(on: boolean): void { this.lights.reducedFlicker = on; }
 
   cues(n: number): string[] { return this.log.recent(n); }
 
@@ -214,7 +257,8 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     this.guard(() => {
       const at = this.atSnap(snap);
       const gainDb = g !== undefined && g > 0 ? Math.min(0, 20 * Math.log10(g)) : 0;
-      const p = pan ?? (id === 'shush' ? -0.3 : 0);
+      // 缺省居中：1-6 的端墙镜在正前方、3-4 的水洼在中道；侧面的镜子由 cue 自己带 pan（§6.2「声像在镜子那一侧」）
+      const p = pan ?? 0;
       this.sfx(id, at, { pan: p, gainDb });
       if (id === 'glassTouch' && this.mixer) {
         const now = this.now();
@@ -257,10 +301,10 @@ export class AudioEngine implements AudioImpl, AudioAPI {
       enabled: true, context: !!ctx, state: ctx?.state ?? null, sampleRate: ctx?.sampleRate ?? null,
       libraryReady: this.libraryReady, voices: this.voices.list.length, maxVoices: this.voices.maxSeen,
       stolen: this.voices.stolen, dropped: this.voices.dropped, reanchors: this.clock.reanchors,
-      frames: this.frames, avgFrameMs: this.frames ? this.costTotal / this.frames : 0, maxFrameMs: this.costMax,
+      frames: this.frames, avgFrameMs: this.frames ? this.costTotal / this.frames : 0, maxFrameMs: this.costMax, maxFrameWhat: this.costMaxWhat,
       ambience: this.amb?.id ?? null, reverb: this.mixer?.reverb ?? null, place: this.place?.key ?? null,
       hush: this.hush, failing: this.failing, rain: this.wantRain, follower: this.folMix, makeup: this.mixer?.makeupDb ?? null,
-      errors: this.errors,
+      suspended: this.suspended, crowd: this.crowd.count, errors: this.errors,
     };
   }
 
@@ -286,6 +330,40 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     this.setAmbience(this.wantAmb.amb, this.wantAmb.level, 1.2, now);
     if (this.wantRain > 0) this.setRain(this.wantRain, 1.2, now);
     this.ready = this.loadLibrary();
+    for (const k of ['white', 'pink', 'brown'] as const) this.later(() => this.noise?.get(k));
+    if (this.chapterId) this.prewarmChapter(this.chapterId);
+  }
+
+  /**
+   * 本章用到的混响：空闲时把脉冲响应算好、两组混响的 Convolver 装好（每件一个任务），换地点时只是接线。
+   * 别的章的 Convolver 丢掉（它们各自持有 FFT 之后的脉冲响应）。
+   */
+  private prewarmChapter(id: ChapterId): void {
+    const def = this.chapterDef(id);
+    const m = this.mixer;
+    if (!def || !m) return;
+    const ids = new Set<ReverbId>(def.segments.map((sg) => placeOf(sg, this.deps.kitLookup).reverb));
+    m.keepReverbs(ids);
+    for (const r of ids) {
+      this.later(() => this.mixer?.irFor(r));
+      this.later(() => this.mixer?.prepareReverb(r, 'A'));
+      this.later(() => this.mixer?.prepareReverb(r, 'B'));
+    }
+  }
+
+  /** 排一件空闲时做的重活（每件一个 setTimeout，不连成一个长任务）。离线（测试）模式不做。urgent：排到最前面。 */
+  private later(fn: () => void, urgent = false): void {
+    if (this.deps.offline || typeof setTimeout === 'undefined') return;
+    if (urgent) this.warm.unshift(fn); else this.warm.push(fn);
+    if (this.warmTimer !== null) return;
+    const tick = () => {
+      this.warmTimer = null;
+      const job = this.warm.shift();
+      if (!job) return;
+      try { job(); } catch (err) { this.error(err); }
+      if (this.warm.length) this.warmTimer = setTimeout(tick, 0);
+    };
+    this.warmTimer = setTimeout(tick, 0);
   }
 
   private async loadLibrary(): Promise<void> {
@@ -341,10 +419,14 @@ export class AudioEngine implements AudioImpl, AudioAPI {
         if (!this.deps.offline) this.clock.reset();
         this.setFail(false, snap);
         this.clearTransient();
-        if (e.data.id === 'ch4' && this.ctx) setTimeout(() => { this.loopBuffer('sparse'); this.loopBuffer('dense'); this.loopBuffer('aligned'); }, 0);
+        this.crowd.restart();
+        this.chapterId = e.data.id;
+        if (this.ctx) this.prewarmChapter(e.data.id);
+        // 梦中掌声的三个循环缓冲（每个约 25 ms 的 JS）：分三次空闲时生成
+        if (e.data.id === 'ch4' && this.ctx) for (const k of ['sparse', 'dense', 'aligned'] as const) this.later(() => this.loopBuffer(k));
         return;
       case 'segment': this.onSegment(e.data, snap); return;
-      case 'retry': this.setFail(false, snap); this.clearTransient(); this.skipKnuckleUntil = -1; return;
+      case 'retry': this.setFail(false, snap); this.clearTransient(); this.skipKnuckleUntil = -1; this.crowd.restart(); return;
       case 'screen': this.onScreen(e.data.name); return;
       default: break;
     }
@@ -428,6 +510,8 @@ export class AudioEngine implements AudioImpl, AudioAPI {
    */
   onScreen(name: string): void {
     this.screen = name;
+    // 离开暂停菜单（以及从暂停菜单打开的设置）就结束 Game 的暂停：「重来」「回到标题」不会调 suspend(false)
+    if (this.gamePaused && name !== 'pause' && name !== 'settings') { this.gamePaused = false; this.applySuspend(); }
     const quiet = name === 'outro' || name === 'credits';
     if (quiet === this.screenQuiet) return;
     this.screenQuiet = quiet;
@@ -448,6 +532,9 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     this.lights.reset();
     const def = this.chapterDef(snap.chapter);
     const seg = def?.segments[d.index];
+    // 段内时间：正常进入时就是现在；跳到段中（检查点、读档）时按拍号和步频倒推
+    this.segT0 = snap.t - (snap.segBeat > 0.5 ? snap.segBeat / Math.max(0.5, snap.player.cadence) : 0);
+    this.crowd.setSegment(seg ?? null);
     if (!def || !seg) { this.jump = false; return; }
     const place = placeOf(seg, this.deps.kitLookup);
     const changed = !this.place || this.place.key !== place.key;
@@ -473,8 +560,14 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     this.place = place;
     if (!this.mixer) return;
     const at = this.clock.peek(snap.t, this.now());
-    this.mixer.setReverb(place.reverb, at, fade);
     this.mixer.setRainExposure(place.rain, at);
+    // Convolver 还没装好：不在这一帧里做 FFT，排到空闲任务的最前面（交叉淡变本来就有 0.8 s，晚几毫秒听不出来）
+    if (this.deps.offline || this.mixer.reverbReady(place.reverb)) { this.mixer.setReverb(place.reverb, at, fade); return; }
+    // 依次插到最前面：装 A、装 B、切换
+    const id = place.reverb;
+    this.later(() => { if (this.mixer && this.place?.reverb === id) this.mixer.setReverb(id, this.now(), fade); }, true);
+    this.later(() => this.mixer?.prepareReverb(id, 'B'), true);
+    this.later(() => this.mixer?.prepareReverb(id, 'A'), true);
   }
 
   private setAmbience(amb: AmbienceId, level: number, secs: number, at: number): void {
@@ -507,6 +600,11 @@ export class AudioEngine implements AudioImpl, AudioAPI {
       case 'rain': this.setRain(b.intensity, b.seconds, this.peekSnap(snap)); break;
       case 'lights': this.lights.onCue(b, snap); break;
       case 'crowd':
+        if (b.op === 'silent') {
+          // 「所有人静止 1 s」：这群人的脚步停 1 s
+          const at = this.clock.peek(snap.t, this.now());
+          this.crowd.silence(b.group || null, at, at + 1);
+        }
         if (this.amb?.id === 'dreamApplause') {
           const at = this.clock.peek(snap.t, this.now());
           if (b.op === 'applaud' || b.op === 'crawlOvertake') { this.amb.param('align', 1, at); this.amb.param('density', 1, at); }
@@ -584,7 +682,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     if (!r) return;
     let gainDb = crisp ? 0 : rr(this.rng, -1.5, 1.5);           // 随机化：增益 ±1.5 dB；干脆时严格
     if (crisp && part === 'pad') gainDb += 2;                    // 干脆：指腹 +2 dB
-    if (heavy) gainDb += part === 'heel' ? 2 : 3;                // 撑跃落地：整体加重
+    if (heavy) gainDb += 3;                                      // 撑跃落地：整体 +3 dB
     gainDb = Math.min(gainDb, -9 - r.peakDb);                    // 单个声部永远不超过 −9 dBFS
     const dt = crisp ? 0 : this.palmJitter[c.hand];
     const pan = (c.hand === 'L' ? -0.2 : 0.2) + rr(this.rng, -0.03, 0.03);
@@ -608,8 +706,11 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     } else this.sfx('crashThud', at, {});
     if (h.kind === 'mopBucket' || h.kind === 'cone' || h.kind === 'bin') this.sfx('bucketKnock', at + 0.01, { gainDb: -3 });
     if (h.crowd && this.mixer) {
-      // 安静的一秒：环境总线 60 ms 内掐断，保持 1.0 s，再用 600 ms 恢复
-      this.mixer.gate('ambience').set('quiet', 0, at, at + 0.06 + 1.0, 0.008, 0.12, this.now());
+      // 安静的一秒：环境总线 60 ms 内掐断，保持 1.0 s，再用 600 ms 恢复。人群同时「静止 1 s」（§5.7 silent）：
+      // 不排新的脚步，已经排了的随 npc 总线一起掐掉
+      const now = this.now();
+      for (const b of ['ambience', 'npc'] as const) this.mixer.gate(b).set('quiet', 0, at, at + 0.06 + 1.0, 0.008, 0.12, now);
+      this.crowd.silence(null, at, at + 0.06 + 1.0);
     }
   }
 
@@ -692,6 +793,15 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     this.play(b, opts);
   }
 
+  /** 人群的一步「先轻后重」（低优先级：声部满时直接放弃；npc 总线，带混响发送）。 */
+  private step(at: number, gainDb: number, pan: number): void {
+    const r = SFX.stepPair;
+    const bufs = this.sfxLib?.get('stepPair');
+    if (!bufs) return;
+    const b = this.pick('stepPair', bufs);
+    if (b) this.play(b, { key: 'stepPair', bus: 'npc', at, gainDb, peakDb: r.peakDb, pan, send: r.send, tau: r.tau, prio: 0 });
+  }
+
   private play(buf: AudioBuffer, o: PlayOpts): boolean {
     const ctx = this.ctx as BaseAudioContext, mixer = this.mixer as Mixer;
     const now = this.now();
@@ -704,7 +814,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     const g = ctx.createGain();
     g.gain.value = dbToGain(o.gainDb);
     src.connect(g);
-    const dest = o.dest ?? mixer.dry(o.bus);
+    const dest = o.dest ?? mixer.dryFor(o.bus);
     if (o.pan) {
       const p = ctx.createStereoPanner();
       p.pan.value = Math.max(-1, Math.min(1, o.pan));
@@ -730,7 +840,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     if (!this.voices.admit(now, at, o.prio)) return;
     const g = ctx.createGain();
     g.gain.value = dbToGain(o.gainDb - 6 - (r.key.startsWith('self:') || r.key.startsWith('follower:') ? 6 : 0));
-    const dest = o.dest ?? mixer.dry(o.bus);
+    const dest = o.dest ?? mixer.dryFor(o.bus);
     if (o.pan) { const p = ctx.createStereoPanner(); p.pan.value = o.pan; g.connect(p); p.connect(dest); } else g.connect(dest);
     r.build({ ctx, out: g, t0: at, rng: this.rng, noise: this.noise as NoiseBank });
     this.voices.add({ src: null, g, start: at, end: at + r.dur, peak: dbToGain(o.peakDb + o.gainDb - 6), tau: o.tau, prio: o.prio });

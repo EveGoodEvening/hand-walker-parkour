@@ -165,18 +165,22 @@ export function impulseResponse(rt60: number, sampleRate: number, seed: number):
   const pre = Math.floor(Math.min(0.02, 0.004 + rt60 * 0.006) * sampleRate);
   const out: [F32, F32] = [new Float32Array(len), new Float32Array(len)];
   const k = 6.907755 / rt60;                        // ln(1000)：RT60 处 −60 dB
+  // 两个指数都用逐样本乘法递推（每样本两次 Math.exp 太慢：虚空走廊 4 s 的要十几毫秒，会落进换地点的那一帧）；
+  // 一阶低通的系数每 16 个样本更新一次
+  const decay = Math.exp(-k / sampleRate), darken = Math.exp(-1.6 / rt60 / sampleRate);
+  const sparseN = Math.ceil(0.012 * sampleRate);
   for (let ch = 0; ch < 2; ch++) {
     const x = out[ch] as F32;
-    let lp = 0;
+    let lp = 0, env = 1, dk = 1, a = 0;
     for (let i = pre; i < len; i++) {
-      const t = (i - pre) / sampleRate;
-      const fc = 9000 * Math.exp(-t * 1.6 / rt60) + 1800;   // 越往后越暗
-      const a = Math.exp((-2 * Math.PI * fc) / sampleRate);
+      const j = i - pre;
+      if ((j & 15) === 0) a = Math.exp((-2 * Math.PI * (9000 * dk + 1800)) / sampleRate);   // 越往后越暗
       const n = rng() * 2 - 1;
       lp = (1 - a) * n + a * lp;
       // 早期几毫秒稀疏一些（像离散反射），之后是稠密的尾巴
-      const sparse = t < 0.012 ? (rng() < 0.12 ? 3 : 0.2) : 1;
-      x[i] = lp * Math.exp(-k * t) * sparse;
+      const sparse = j < sparseN ? (rng() < 0.12 ? 3 : 0.2) : 1;
+      x[i] = lp * env * sparse;
+      env *= decay; dk *= darken;
     }
   }
   let e = 0;

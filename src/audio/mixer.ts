@@ -4,6 +4,7 @@
 //   follower ── 音量 → 低通 → 回头静音 → 电平 → 门 ─────────────────────┤
 //                              └→ 混响量 → 混响 B                       ├→ master → 压缩(−14 dB, 4:1, 3 ms, 250 ms)
 //   ambience / floor ──(环境音量 → 门)──────────────────────────────────┤        → 限幅(−9 dB, 20:1, 1 ms)
+//   floor 上的一次性声音（膝盖闷响、失败时合一的节拍）──(音效音量)─→ floor 的门
 //                                                                             → 软削波保险（WaveShaper，≤ −8.1 dBFS）→ destination
 //   混响 A（self / sfx / ui 的发送）、混响 B（follower / npc 的发送）──门──┘
 //
@@ -125,11 +126,37 @@ class ReverbGroup {
   readonly in: GainNode;
   readonly out: GainNode;
   private slots: Array<{ conv: ConvolverNode; g: GainNode; id: ReverbId; since: number }> = [];
+  /**
+   * 已经装好脉冲响应的 Convolver（按地点缓存，可以复用）。Chromium 在主线程上给 ConvolverNode.buffer 赋值时就做分块 FFT：
+   * 1.2 s 的走廊约 6 ms，3 s 的广场约 14 ms，4 s 的虚空走廊约 18 ms——两组混响各一个，换地点那一帧会卡 12–36 ms。
+   * 所以读章时在空闲时预先装好本章用到的，换地点时只是接线。
+   */
+  private pool = new Map<ReverbId, ConvolverNode>();
   constructor(private readonly ctx: BaseAudioContext) {
     this.in = gain(ctx, 1);
     this.out = gain(ctx, 1);
   }
   get current(): ReverbId | null { return this.slots[this.slots.length - 1]?.id ?? null; }
+  has(id: ReverbId): boolean { return this.pool.has(id); }
+  /** 预先装好一个 Convolver（不接线）。 */
+  prepare(id: ReverbId, ir: AudioBuffer): ConvolverNode {
+    let c = this.pool.get(id);
+    if (!c) {
+      c = this.ctx.createConvolver();
+      c.normalize = false;
+      c.buffer = ir;
+      this.pool.set(id, c);
+    }
+    return c;
+  }
+  /** 丢掉不在 keep 里、也不在用的 Convolver（换章时）。 */
+  evict(keep: ReadonlySet<ReverbId>): void {
+    for (const [id, c] of this.pool) {
+      if (keep.has(id) || this.slots.some((s) => s.conv === c)) continue;
+      try { c.disconnect(); } catch { /* 已断开 */ }
+      this.pool.delete(id);
+    }
+  }
   /**
    * 交叉淡变到新的脉冲响应（两个 Convolver，§6.1 的 0.8 s）。用 setTargetAtTime（τ = fade / 4）而不是曲线：
    * 淡变途中再次切换也不会和已排的曲线冲突（setValueCurveAtTime 与其它事件重叠会抛 NotSupportedError）。
@@ -137,9 +164,8 @@ class ReverbGroup {
   set(id: ReverbId, ir: AudioBuffer, at: number, fade: number): void {
     if (this.current === id) return;
     const ctx = this.ctx;
-    const conv = ctx.createConvolver();
-    conv.normalize = false;
-    conv.buffer = ir;
+    while (this.slots.length > 1) this.drop(this.slots.shift() as { conv: ConvolverNode; g: GainNode });
+    const conv = this.prepare(id, ir);
     const g = ctx.createGain();
     this.in.connect(conv);
     conv.connect(g);
@@ -150,7 +176,6 @@ class ReverbGroup {
       this.slots = [{ conv, g, id, since: at }];
       return;
     }
-    while (this.slots.length > 1) this.drop(this.slots.shift() as { conv: ConvolverNode; g: GainNode });
     const old = this.slots[0] as { g: GainNode };
     g.gain.value = 0;
     g.gain.setTargetAtTime(1, at, fade / 4);
@@ -168,6 +193,7 @@ class ReverbGroup {
   }
   private drop(s: { conv: ConvolverNode; g: GainNode }): void {
     try { this.in.disconnect(s.conv); } catch { /* 已断开 */ }
+    try { s.conv.disconnect(); } catch { /* 已断开 */ }
     try { s.g.disconnect(); } catch { /* 已断开 */ }
   }
 }
@@ -185,6 +211,11 @@ export class Mixer {
   readonly rainIn: GainNode;
   readonly rainLp: BiquadFilterNode;
   readonly rainLevel: GainNode;
+  /**
+   * floor 总线上的一次性声音（膝盖闷响、失败时「两串节拍合一」）：和房间底噪走同一个门（失败时不淡出），
+   * 但音量跟「音效」滑块——环境音量调到 0 时摔倒照样听得见。
+   */
+  readonly floorSfx: GainNode;
   private readonly buses = new Map<GateBus, Bus>();
   private folLp!: BiquadFilterNode;
   private folLevel!: GainNode;
@@ -249,9 +280,13 @@ export class Mixer {
     this.rainLp.type = 'lowpass'; this.rainLp.frequency.value = 16000; this.rainLp.Q.value = -3.01;
     this.rainLevel = gain(ctx, 1);
     this.rainIn.connect(this.rainLp); this.rainLp.connect(this.rainLevel); this.rainLevel.connect(this.dry('ambience'));
+    this.floorSfx = gain(ctx, 1);
+    this.floorSfx.connect((this.buses.get('floor') as Bus).out);
   }
 
   dry(b: BusId): AudioNode { return (this.buses.get(b) as Bus).in; }
+  /** 一次性声音的入口：floor 上的走 floorSfx（音效音量），其余同 dry。 */
+  dryFor(b: BusId): AudioNode { return b === 'floor' ? this.floorSfx : this.dry(b); }
   send(b: BusId): AudioNode | null { return (this.buses.get(b) as Bus).sendIn; }
   gate(b: GateBus): Gate { return (this.buses.get(b) as Bus).gate; }
   get followerMute(): Gate { return this.folMute; }
@@ -265,6 +300,7 @@ export class Mixer {
       bus.in.gain.setTargetAtTime(g, at, 0.03);
       bus.sendIn?.gain.setTargetAtTime(g, at, 0.03);
     }
+    this.floorSfx.gain.setTargetAtTime(s, at, 0.03);
   }
 
   /** 追随者的四个声音通道：增益、低通、混响（声像由每个声部自己设），档位之间 300 ms 滑变（§2.6）。 */
@@ -299,6 +335,13 @@ export class Mixer {
     this.irCache.set(id, b);
     return b;
   }
+
+  /** 两组混响都已经装好这个地点的 Convolver（换地点时不会在主线程上做 FFT）。 */
+  reverbReady(id: ReverbId): boolean { return this.revA.current === id || (this.revA.has(id) && this.revB.has(id)); }
+  /** 预先装好一组混响的 Convolver（空闲时调用；A、B 分两次，每次一个 FFT）。 */
+  prepareReverb(id: ReverbId, group: 'A' | 'B'): void { (group === 'A' ? this.revA : this.revB).prepare(id, this.irFor(id)); }
+  /** 换章：只留本章用得到的 Convolver。 */
+  keepReverbs(keep: ReadonlySet<ReverbId>): void { this.revA.evict(keep); this.revB.evict(keep); }
 
   /** 切换混响预设：两个 Convolver 交叉淡变 0.8 s（§6.1）。 */
   setReverb(id: ReverbId, at: number, fade = 0.8): void {

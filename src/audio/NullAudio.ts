@@ -14,6 +14,10 @@ export interface AudioImpl extends AudioAPI {
   onSilence(seconds: number, snap: SimSnapshot): void;
   /** 屏幕切换（Game 只发到 EventBus，index.ts 订阅后转过来）。 */
   onScreen(name: string): void;
+  /** 窗口失焦或标签页隐藏（index.ts 监听 blur / focus / visibilitychange）：挂起 AudioContext。 */
+  background(on: boolean): void;
+  /** 设置「减少闪烁」（index.ts 从 EventBus 的 settings 转过来）。 */
+  setReducedFlicker(on: boolean): void;
   /** 调试信息（__game.ext.audio）。 */
   stats(): Record<string, unknown>;
 }
@@ -47,5 +51,7 @@ export class NullAudio implements AudioImpl {
   onAmbience(amb: AmbienceId): void { this.log.record(`ambience:${amb}`); }
   onSilence(seconds: number): void { this.log.record(`silence:${seconds}`); }
   onScreen(_name: string): void { /* 静音：没有界面音 */ }
+  background(_on: boolean): void { /* 静音 */ }
+  setReducedFlicker(_on: boolean): void { /* 静音 */ }
   stats(): Record<string, unknown> { return { enabled: false, context: false }; }
 }

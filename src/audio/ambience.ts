@@ -122,6 +122,37 @@ function drone(d: AmbDeps, at: number, dest: AudioNode, type: OscillatorType, f:
 }
 
 /**
+ * 音节包络的有效功率占空比：开 60–120 ms、关 40–120 ms（12% 的概率停 0.3–0.8 s）、开时增益 0.7–1.2，
+ * 再算上 12 ms 的平滑。按 Chromium 实测标定（早读、食堂、操场三种都落在配方电平 ±1 dB 内）。
+ */
+const MURMUR_DUTY = 0.3;
+const murmurCache = new Map<string, number>();
+/**
+ * 一路朗读音色连续发声时的 RMS：白噪声经两个共振峰带通（取 F1 / F2 范围里的三组典型值，功率平均）再过整体低通。
+ * 早先用「带宽 × 白噪声功率」的估算，忽略了整体低通（操场 1.2 kHz 会切掉大半个 F2），电平偏低 3–6 dB。
+ */
+function murmurUnit(bank: NoiseBank, lp: number, sr: number): number {
+  const key = `${lp}|${sr}`;
+  let v = murmurCache.get(key);
+  if (v === undefined) {
+    const src = bank.get('white').getChannelData(0);
+    const x = src.subarray(0, Math.min(src.length, Math.floor(sr * 0.75)));
+    const lpc = biquadCoefs('lowpass', lp, qDb(0.7071), 0, sr);
+    let p = 0;
+    for (const [f1, f2] of [[350, 1000], [550, 1650], [750, 2300]] as const) {
+      const a = biquadRun(x, biquadCoefs('bandpass', f1, 4, 0, sr));
+      const b = biquadRun(x, biquadCoefs('bandpass', f2, 5, 0, sr));
+      for (let i = 0; i < a.length; i++) a[i] = (a[i] as number) + (b[i] as number);
+      const r = rmsOf([biquadRun(a, lpc)], Math.floor(x.length * 0.1));
+      p += (r * r) / 3;
+    }
+    v = Math.sqrt(p);
+    murmurCache.set(key, v);
+  }
+  return v;
+}
+
+/**
  * 朗读 / 人声的膜（§6.2「早自习朗读」）：n 路噪声，各经两个共振峰带通（F1 300–800 Hz、F2 900–2400 Hz，5 Hz 随机游走），
  * 按 60–120 ms 的音节包络开关，整体低通。
  */
@@ -130,8 +161,8 @@ function murmur(d: AmbDeps, at: number, dest: AudioNode, n: number, lp: number, 
   const sr = ctx.sampleRate;
   const sum = gain(ctx, 1);
   const lpf = filt(ctx, 'lowpass', lp, 0.7071);
-  // 每路 RMS ≈ 0.5 × sqrt(2·bw/sr)（两个带通）× sqrt(占空比)；n 路不相关相加 × sqrt(n)
-  const per = 0.5 * Math.sqrt((2 * ((1.57 * 550) / 4 + (1.57 * 1600) / 5)) / sr) * Math.sqrt(0.5);
+  // 每路 RMS = 连续发声时的 RMS（JS 实测，含整体低通）× sqrt(有效占空比)；n 路不相关相加 × sqrt(n)
+  const per = murmurUnit(d.noise, lp, sr) * Math.sqrt(MURMUR_DUTY);
   const out = gain(ctx, dbToGain(rmsDb) / (per * Math.sqrt(n)));
   sum.connect(lpf); lpf.connect(out); out.connect(dest);
   const voices = Array.from({ length: n }, () => {
@@ -279,7 +310,7 @@ function buildLayers(d: AmbDeps, id: AmbienceId, at: number, amb: AudioNode, flo
     case 'canteen': return [room(-46), murmur(d, at, amb, 10, 2500, -30), grains(d, at, 'clink', 1.5, -8, 0), grains(d, at, 'trayScrape', 0.3, -6, 0)];
     case 'labWind': return [room(-46), sweepWind(d, at, amb, -38), grains(d, at, 'rosterPaper', 0.25, -4, 0, 0.5)];
     case 'nightCorridor': return [room(-46, 150), bed(d, at, amb, 'white', [['highpass', 5000], ['lowpass', 9000]], -62)];
-    case 'rainStreet': return [bed(d, at, amb, 'brown', [['lowpass', 120]], -40, { db: 3, period: 6 })];
+    case 'rainStreet': return [bed(d, at, amb, 'brown', [['lowpass', 120]], -36, { db: 3, period: 6 })];   // 夜街：远处车流 −36
     case 'shedRoof': return [bed(d, at, amb, 'brown', [['lowpass', 120]], -42, { db: 3, period: 6 }),
       grains(d, at, 'tinImpact', 25, -9, 0, 0.8), grains(d, at, 'acDing', 0.3, -3, 0, 0.6)];
     case 'bus': return [drone(d, at, amb, 'sawtooth', 42, [['lowpass', 120]], -32), periodic(d, at, 'wiper', 1.4, 0), room(-44, 200)];

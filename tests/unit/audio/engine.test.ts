@@ -3,10 +3,14 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { LIMITS } from '../../../src/core/constants';
 import { SR, library, make, paramAt, toDb } from './lib';
+import { rmsOf } from '../../../src/audio/dsp';
+import { renderOffline } from '../../../src/audio/library';
 import {
-  behind, engineFor, ev, followerScenario, hushScenario, peakScenario, perfScenario, quietScenario, snap, tickUp, timingScenario,
-  voicesScenario, type TimingReport,
+  CROWD_CHAPTER, behind, crowdScenario, engineFor, ev, followerScenario, hushScenario, peakScenario, perfScenario, quietScenario, snap, tickUp,
+  timingScenario, voicesScenario, type CrowdReport, type TimingReport,
 } from './scenarios';
+import { getChapter } from '../../../src/levels/chapters/index';
+import type { ChapterDef } from '../../../src/levels/schema';
 
 type Lib = Awaited<ReturnType<typeof library>>;
 let lib: Lib;
@@ -232,6 +236,42 @@ describe('事件 → 声音（§2.7、§3、§8.7 中 WP7 的部分）', () => {
     expect(e.stats().ambience).toBe('reading');                                  // 隔着墙的早读（电平 0.45）
   });
 
+  it('撑跃落地：整体 +3 dB（随机 ±1.5 dB，单个声部仍 ≤ −9 dBFS）', async () => {
+    const { e } = await run();
+    e.frame(snap({ t: 0 }), 0);
+    for (let i = 0; i < 6; i++) {
+      for (const [part, off] of [['heel', 0], ['knuckle', 0.026], ['pad', 0.052]] as const) {
+        const t = 0.2 + i * 0.2 + off;
+        e.onEvent(ev('contact', { hand: 'L', part, t, s: 0, x: 0, surface: 'terrazzo', crisp: false, heavy: true }, t), snap({ t: tickUp(t) }));
+      }
+    }
+    const g = (k: string) => e.scheduled.filter((x) => x.key.startsWith(k)).map((x) => x.gainDb);
+    for (const v of g('self:terrazzo:heel')) { expect(v).toBeGreaterThanOrEqual(1.5 - 1e-9); expect(v).toBeLessThanOrEqual(3 + 1e-9); }   // 掌根 −12 + 3 = −9 封顶
+    for (const v of [...g('self:terrazzo:knuckle'), ...g('self:terrazzo:pad')]) { expect(v).toBeGreaterThanOrEqual(1.5 - 1e-9); expect(v).toBeLessThanOrEqual(4.5 + 1e-9); }
+  });
+
+  it('嘘：没有给声像时居中（1-6 端墙镜在正前方、3-4 水洼在中道）；给了就用 cue 的', async () => {
+    const { e } = await run();
+    e.frame(snap({ t: 0 }), 0);
+    e.onSfx('shush', undefined, undefined, snap({ t: 0.2 }));
+    e.onSfx('shush', -0.6, undefined, snap({ t: 0.4 }));
+    expect(e.scheduled.filter((x) => x.key === 'shush').map((x) => x.pan)).toEqual([0, -0.6]);
+  });
+
+  it('摔倒的膝盖闷响跟「音效」音量：环境音量 0 时照样听得见，音效音量 0 时听不见', async () => {
+    const level = async (v: { master: number; sfx: number; ambience: number }) => {
+      const { e, ctx } = await engineFor(make, SR, 1.2, lib, {}, v);
+      e.frame(snap({ t: 0, follower: behind(0) }), 0);
+      e.onEvent(ev('fall', { cause: 'legs', surface: 'terrazzo' }, 0.2), snap({ t: 0.2, follower: behind(0), steady: 0 }));
+      expect(e.scheduled.some((x) => x.key === 'kneeThud' && x.bus === 'floor')).toBe(true);
+      const out = await renderOffline(ctx);
+      const at = (x: number) => Math.floor((x + (e.clock.offset as number)) * SR);
+      return toDb(rmsOf([out.getChannelData(0), out.getChannelData(1)], at(0.2), at(0.9)));
+    };
+    expect(await level({ master: 100, sfx: 100, ambience: 0 })).toBeGreaterThan(-40);
+    expect(await level({ master: 100, sfx: 0, ambience: 100 })).toBeLessThan(-90);
+  });
+
   it('cue 日志与静音实现同名（bell / sfx / ambience / silence / hush）', async () => {
     const { e } = await run();
     e.frame(snap({ t: 0 }), 0);
@@ -242,5 +282,97 @@ describe('事件 → 声音（§2.7、§3、§8.7 中 WP7 的部分）', () => {
     e.frame(snap({ t: 0.5, hush: true }), 1 / 60);
     expect(e.cues(5)).toEqual(['bell:morning', 'sfx:shush', 'ambience:room', 'silence:1', 'hush']);
     expect(e.stats().errors).toBe(0);
+  });
+});
+
+describe('§6.2 人群的脚步「先轻后重」（npc 总线；§5.7 walk / silent）', () => {
+  let r: CrowdReport;
+  beforeAll(async () => { r = await crowdScenario(make, SR, lib); }, 60_000);
+
+  it('进入有 walkers 的段：排出 stepPair，走 npc 总线，间隔 0.47–0.56 s（1.9 ± 0.1 步/s），声像在那一侧（左）', () => {
+    const before = r.steps.filter((x) => x.at < r.hitAt);
+    expect(before.length).toBeGreaterThanOrEqual(3);
+    for (const x of before) { expect(x.bus).toBe('npc'); expect(x.pan).toBeLessThan(-0.2); }
+    for (let i = 1; i < before.length; i++) {
+      const d = (before[i] as { at: number }).at - (before[i - 1] as { at: number }).at;
+      expect(d).toBeGreaterThanOrEqual(0.47);
+      expect(d).toBeLessThanOrEqual(0.56);
+    }
+    // 增益随机 ±10%（约 ±0.9 dB），在这群人中间时是满电平（−3 dB）
+    for (const x of before) expect(Math.abs(x.gainDb + 3)).toBeLessThanOrEqual(0.95);
+    // 排队的人在 120 拍之外、坐着的人不走路：只有这一路
+    expect(new Set(before.map((x) => Math.round(x.pan * 10))).size).toBeLessThanOrEqual(2);
+  });
+
+  it('渲染出来听得见，而且是「先轻后重」：轻的一声在前，约 80 ms 后重的一声，重的响得多', () => {
+    expect(r.stepsDb).toBeGreaterThan(-60);
+    expect(r.heavyDb - r.lightDb).toBeGreaterThan(6);
+    expect(r.gapMs).toBeGreaterThan(65);
+    expect(r.gapMs).toBeLessThan(105);
+  });
+
+  it('人群段绊倒：所有人静止 1 s——不排新的脚步，npc 总线 60 ms 内掐断；之后恢复', () => {
+    expect(r.steps.filter((x) => x.at >= r.hitAt && x.at < r.hitAt + 1.06)).toEqual([]);
+    expect(r.npcGateDb as number).toBeLessThanOrEqual(-60);
+    expect(r.steps.some((x) => x.at >= r.hitAt + 1.06 && x.at < r.hitAt + 2)).toBe(true);
+  });
+
+  it('迎面走来的腿（walk 障碍，右道）：走近时出现在右边，越近越响', () => {
+    const oncoming = r.steps.filter((x) => x.pan > 0.2);
+    expect(oncoming.length).toBeGreaterThanOrEqual(2);
+    expect((oncoming[0] as { at: number }).at - r.offset).toBeGreaterThan(3.9);       // 10 拍之外听不见（约 4.1 s 进入）
+    expect((oncoming[oncoming.length - 1] as { gainDb: number }).gainDb).toBeGreaterThan((oncoming[0] as { gainDb: number }).gainDb + 3);
+  });
+
+  const run = async (def: ChapterDef) => {
+    const { e } = await engineFor(make, SR, 8, lib, { chapter: (id) => (id === 'test' ? def : getChapter(id)) });
+    return e;
+  };
+
+  it('静音段、失败、静场：不排脚步；离开这一段就停', async () => {
+    const e = await run(CROWD_CHAPTER);
+    const S = (t: number, o: { hush?: boolean } = {}) => snap({ t, segBeat: 2 + t, ...o });
+    e.frame(S(0), 0);
+    e.onEvent(ev('segment', { id: 'c-1', index: 0, kind: 'run' }, 0), S(0));
+    for (let t = 1 / 60; t < 1.5; t += 1 / 60) e.frame(S(t, { hush: true }), 1 / 60);
+    expect(e.scheduled.filter((x) => x.key === 'stepPair')).toEqual([]);
+    for (let t = 1.5; t < 3; t += 1 / 60) e.frame(S(t), 1 / 60);
+    const n = e.scheduled.filter((x) => x.key === 'stepPair').length;
+    expect(n).toBeGreaterThanOrEqual(2);
+    e.onEvent(ev('fall', { cause: 'legs', surface: 'terrazzo' }, 3), S(3));
+    for (let t = 3; t < 4.5; t += 1 / 60) e.frame(S(t), 1 / 60);
+    expect(e.scheduled.filter((x) => x.key === 'stepPair').length).toBeLessThanOrEqual(n + 1);   // 至多已经排了的一步
+    expect(e.stats().crowd).toBe(4);                                          // 走动的一人 + 排队的两人 + 迎面的腿
+    e.onEvent(ev('segment', { id: 'x', index: 5, kind: 'still' }, 4.5), S(4.5));
+    expect(e.stats().crowd).toBe(0);
+  });
+
+  it('crowd「silent」：只有那一群人静止 1 s', async () => {
+    const e = await run(CROWD_CHAPTER);
+    const S = (t: number) => snap({ t, segBeat: 2 + t });
+    e.frame(S(0), 0);
+    e.onEvent(ev('segment', { id: 'c-1', index: 0, kind: 'run' }, 0), S(0));
+    for (let t = 1 / 60; t < 1; t += 1 / 60) e.frame(S(t), 1 / 60);
+    e.onEvent(ev('cue', { body: { type: 'crowd', group: 'passing', op: 'silent' }, segment: 'c-1' }, 1), S(1));
+    const at = 1 + (e.clock.offset as number);
+    for (let t = 1; t < 3; t += 1 / 60) e.frame(S(t), 1 / 60);
+    const steps = e.scheduled.filter((x) => x.key === 'stepPair');
+    expect(steps.filter((x) => x.at >= at + 0.36 && x.at < at + 1)).toEqual([]);     // 已经提前排了的（≤ 0.35 s）之后，一步也没有
+    expect(steps.some((x) => x.at >= at + 1)).toBe(true);
+  });
+
+  it('排队的人：一阵 2–3 步（步间 0.50–0.556 s），停 1.5 s 以上', async () => {
+    const def: ChapterDef = { ...CROWD_CHAPTER, segments: [{ ...(CROWD_CHAPTER.segments[0] as Extract<ChapterDef['segments'][number], { kind: 'run' }>),
+      npcs: [{ id: 'q', kind: 'queue', from: 0, to: 80, side: 'R', density: 0.3 }], items: [] }] };
+    const e = await run(def);
+    const S = (t: number) => snap({ t, segBeat: 2 + t });
+    e.frame(S(0), 0);
+    e.onEvent(ev('segment', { id: 'c-1', index: 0, kind: 'run' }, 0), S(0));
+    for (let t = 1 / 60; t < 7.5; t += 1 / 60) e.frame(S(t), 1 / 60);
+    const at = e.scheduled.filter((x) => x.key === 'stepPair').map((x) => x.at);
+    expect(at.length).toBeGreaterThanOrEqual(4);
+    const gaps = at.slice(1).map((t, i) => t - (at[i] as number));
+    for (const g of gaps) expect(g < 0.56 ? g >= 0.5 - 1e-9 : g >= 1.5).toBe(true);
+    expect(gaps.some((g) => g >= 1.5)).toBe(true);
   });
 });

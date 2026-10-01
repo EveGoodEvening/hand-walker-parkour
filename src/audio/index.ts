@@ -1,6 +1,7 @@
 // src/audio/index.ts —— 声音包入口（DESIGN.md §6、§8.7、§8.10 WP7）。CORE 写初版，归 WP7。
 // 注册 AudioAPI 工厂：`?mute=1` 或没有 WebAudio 时用 NullAudio（完全不创建 AudioContext，只记录 cue）；
 // 否则用 AudioEngine（第一次 pointerdown / keydown 时才创建 AudioContext）。
+// 窗口失焦或标签页隐藏时挂起 AudioContext（§6.1），任何屏幕都生效（Game 只在游玩屏幕自动暂停）。
 // 注册 WP7 负责的 cue：bell、sfx、ambience、silence。
 // 另外注册一个不画任何东西的「探针」ViewSystem，只为经 ViewContext 拿到 LampField（嗡鸣跟随灯光亮度，§6.2）。
 import type { LampFieldAPI } from '../core/contracts';
@@ -40,15 +41,45 @@ export function createAudio(mute: boolean, g: AudioGlobals = globalThis as unkno
     },
   });
   const w = (g as unknown as { addEventListener?: unknown }).addEventListener ? (g as unknown as Window) : null;
-  if (w) attachUiSounds(w, (k) => engine.ui(k), () => engine.menuScreen);
+  if (w) {
+    attachUiSounds(w, (k) => engine.ui(k), () => engine.menuScreen);
+    const doc = (g as unknown as { document?: Document }).document;
+    if (doc) attachFocus(w, doc, (away) => engine.background(away));
+  }
   return engine;
 }
 
-registerAudio((bus, _settings, mute) => {
+/**
+ * 失焦 / 隐藏 → set(true)；重新获得焦点且可见 → set(false)。blur 与 visibilitychange 各记一个标志，两个都清掉才算回来。
+ * 返回解除监听的函数。
+ */
+export function attachFocus(w: Window, doc: Document, set: (away: boolean) => void): () => void {
+  let blurred = false;
+  let hidden = !!doc.hidden;
+  let last = false;
+  const apply = () => { const v = blurred || hidden; if (v !== last) { last = v; set(v); } };
+  const onBlur = () => { blurred = true; apply(); };
+  const onFocus = () => { blurred = false; apply(); };
+  const onVis = () => { hidden = !!doc.hidden; apply(); };
+  w.addEventListener('blur', onBlur);
+  w.addEventListener('focus', onFocus);
+  doc.addEventListener('visibilitychange', onVis);
+  apply();
+  return () => {
+    w.removeEventListener('blur', onBlur);
+    w.removeEventListener('focus', onFocus);
+    doc.removeEventListener('visibilitychange', onVis);
+  };
+}
+
+registerAudio((bus, settings, mute) => {
   const a = createAudio(mute);
   audioRef.current = a;
   // Game 的屏幕切换只发到 EventBus（不经过 AudioAPI.onEvent）：界面音和结尾卡的静音要靠它
   bus.on('screen', (d) => { if (audioRef.current === a) a.onScreen(d.name); });
+  // 设置同样只发到 EventBus（音量另由 Game 调 setVolumes）
+  a.setReducedFlicker(!!settings.reducedFlicker);
+  bus.on('settings', (st) => { if (audioRef.current === a) a.setReducedFlicker(!!st.reducedFlicker); });
   return a;
 });
 registerCueHandler('bell', 'WP7', (b, c) => audioRef.current?.onBell(b.kind, c.snap));

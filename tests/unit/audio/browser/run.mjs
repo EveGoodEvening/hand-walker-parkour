@@ -107,6 +107,16 @@ try {
     console.log(`       三段起点 ${pm.onsetsMs.map(f1).join(' / ')} ms；混响尾巴 / 直达 ${f1(pm.tailDb)} dB；−60 dB ${Math.round(pm.t60Ms)} ms`);
     check(Math.abs(pm.onsetsMs[1] - pm.onsetsMs[0] - 26) < 2 && Math.abs(pm.onsetsMs[2] - pm.onsetsMs[0] - 52) < 2, '三段依次落在 0 / 26 / 52 ms');
     check(pm.tailDb > -12 && pm.tailDb < 3, '走廊混响的尾巴听得见');
+    console.log('§6.2 人群的脚步「先轻后重」');
+    const cr = r.crowd;
+    const pre = cr.steps.filter((x) => x.at < cr.hitAt);
+    const gaps = pre.slice(1).map((x, i) => x.at - pre[i].at);
+    console.log(`       走动的人 ${pre.length} 步，间隔 ${gaps.map((g) => g.toFixed(3)).join(' / ')} s；输出 ${f1(cr.stepsDb)} dBFS；轻 ${f1(cr.lightDb)} → 重 ${f1(cr.heavyDb)} dBFS，相隔 ${f1(cr.gapMs)} ms`);
+    check(pre.length >= 3 && pre.every((x) => x.bus === 'npc' && x.pan < -0.2) && gaps.every((g) => g >= 0.47 && g <= 0.56), 'walkers：npc 总线、左侧、间隔 0.47–0.56 s');
+    check(cr.stepsDb > -60 && cr.heavyDb - cr.lightDb > 6 && cr.gapMs > 65 && cr.gapMs < 105, '渲染出来听得见，先轻后重（约 80 ms）');
+    check(!cr.steps.some((x) => x.at >= cr.hitAt && x.at < cr.hitAt + 1.06), '人群段绊倒：1 s 内没有新的脚步');
+    const onc = cr.steps.filter((x) => x.pan > 0.2);
+    check(onc.length >= 2 && onc[onc.length - 1].gainDb > onc[0].gainDb + 3, `迎面的腿：右侧、越近越响（${onc.map((x) => f1(x.gainDb)).join(' → ')} dB）`);
     const bq = Math.max(...r.biquad.map((x) => x.maxErrDb));
     check(bq < 0.1, `BiquadFilterNode 与规范公式（Node 实现用的）一致：最大偏差 ${bq.toFixed(4)} dB`);
     await p.close();
@@ -176,6 +186,38 @@ try {
       await p.waitForTimeout(500);
       const paused = await p.evaluate(() => ({ screen: window.__game.screen(), state: window.__ac?.state }));
       check(paused.screen === 'pause' && paused.state === 'suspended', `暂停时 ctx.suspend()（${paused.screen} / ${paused.state}）`);
+      // 暂停菜单「回到标题」：Game 不调 suspend(false)，声音要在离开暂停屏幕时自己恢复（标题背景的早读）
+      await p.evaluate(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent === '回到标题'); b?.click(); });
+      await p.waitForTimeout(500);
+      const back = await p.evaluate(() => ({ screen: window.__game.screen(), state: window.__ac?.state }));
+      check(back.screen === 'title' && back.state === 'running', `暂停菜单 → 回到标题：恢复（${back.screen} / ${back.state}）`);
+      report.maxFrameMs = st.s.maxFrameMs;
+      await ctx.close();
+    }
+    {
+      // §6.1「暂停和失焦时 ctx.suspend()」：标题屏（Game 不会自动暂停的屏幕）失焦 / 隐藏也挂起
+      const { ctx, p, errors } = await open('q=low');
+      await p.keyboard.press('Shift');
+      await p.waitForFunction(() => window.__game.ext.audio()?.libraryReady === true, null, { timeout: 60_000 });
+      await p.waitForTimeout(300);
+      const st = (tag) => p.evaluate((t) => ({ t, screen: window.__game.screen(), state: window.__ac?.state }), tag);
+      const s0 = await st('before');
+      await p.evaluate(() => window.dispatchEvent(new Event('blur')));
+      await p.waitForTimeout(300);
+      const s1 = await st('blur');
+      await p.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await p.waitForTimeout(300);
+      const s2 = await st('focus');
+      await p.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); });
+      await p.waitForTimeout(300);
+      const s3 = await st('hidden');
+      await p.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); });
+      await p.waitForTimeout(300);
+      const s4 = await st('visible');
+      console.log(`       ${[s0, s1, s2, s3, s4].map((x) => `${x.t}: ${x.screen}/${x.state}`).join('，')}`);
+      check(s0.screen === 'title' && s0.state === 'running' && s1.state === 'suspended' && s2.state === 'running' && s3.state === 'suspended' && s4.state === 'running',
+        '标题屏：失焦 / 隐藏 → suspended，回来 → running');
+      check(errors.length === 0, '页面没有错误', errors.slice(0, 3).join(' | '));
       await ctx.close();
     }
     {

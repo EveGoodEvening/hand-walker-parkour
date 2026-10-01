@@ -17,3 +17,15 @@
 - **离线模式的「现在」**：由模拟时间反推（`SimClock.virtualNow`）。只有环境音、没有触地声的场景，时钟永远不对齐，所有排程都挤在 0 附近——第一帧就对齐；换章时不要在离线模式里重置时钟（「现在」会倒回 0）。
 - 无头 Chromium 里 `new AudioContext()` 的缺省采样率是 44100；Playwright 的 `keyboard.press` 是可信事件，能满足自动播放策略，`resume()` 后状态是 `running`，不需要 `--autoplay-policy` 参数。
 - 给浏览器打包测试入口：`esbuild@0.28.2` 是 tsx / vite 的传递依赖，`import { build } from 'esbuild'` 直接可用（`format: 'iife'`、`write: false`，再 `page.addScriptTag({ content })`）。
+
+## 2026-10-01（WP7 第 1 轮验收后的修复）
+
+- **更正上面第一条**：浏览器命令不需要后台运行。前台经 `~/.claude/bin/heavy-gate -l '<标签>' -- node tests/unit/audio/browser/run.mjs` 跑就行，Bash 超时设到 10 min；不要用 `&` 或后台进程，也不要套 `timeout`（lead 的资源纪律）。`npm run verify` 里有 e2e:smoke，同样要经 heavy-gate。
+- **挂起要两个标志**：Game 只在游玩屏幕失焦时自动暂停，而且暂停菜单里「从检查点重来」「回到标题」不调 `suspend(false)`。声音自己记「Game 的暂停」和「失焦 / 隐藏」两个标志，任何一个成立就 `ctx.suspend()`，两个都清掉才 `resume()`；离开 pause / settings 屏幕视为 Game 的暂停结束。失焦监听放在 `registerAudio` 的工厂里（`window` 的 blur / focus、`document` 的 visibilitychange）。
+- happy-dom 里测标签页隐藏：`Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })`，再派发 `visibilitychange`；测完 `Reflect.deleteProperty(document, 'hidden')` 还原。
+- **人群的脚步**：NPC 组（`NpcGroupDef`）只有 from / to（拍）和 side，没有逐人位置。按段内拍号算远近（玩家在范围里满电平，10 拍外听不见），walk 障碍的位置用 `at + speed / stride × tSeg`。第一章没有 walkers，e2e 测不出来，要自己造一段带 walkers 的章节测。
+- **朗读膜的电平**：按「带宽 × 白噪声功率」估算会忽略整体低通（操场 1.2 kHz 切掉大半个 F2），偏低 3–6 dB。改成用 JS 把白噪声过三组典型 F1 / F2 加整体低通实测，再乘有效占空比 0.3，早读 / 食堂 / 操场都落在配方电平 ±1 dB。
+- **主线程尖峰**：程序生成脉冲响应时每样本两次 `Math.exp`，4 s 的虚空走廊要 16 ms，而且是在换地点那一帧里现算。改成乘法递推（低通系数每 16 个样本更新一次）后约 4 ms，并在解锁后用 `setTimeout` 一个一个预生成；梦中掌声的三个循环缓冲也拆成三次。
+- **cue 日志**：每掌六条掌声 cue，一章就把 1024 条的环形挤满，章首的 `bell:morning` 读不到。稀有 cue 另存一个环形，`recent(n)` 按发生顺序合并。
+- **ConvolverNode 的 buffer 赋值才是大头**：Chromium 在主线程上给 `ConvolverNode.buffer` 赋值时就做分块 FFT，实测 1.2 s 的走廊约 6 ms、3 s 的广场约 14 ms、4 s 的虚空走廊约 18 ms；两组混响各一个，换地点那一帧会卡 12–36 ms（这才是第 1 轮验收看到的 21.5 / 30.9 ms 尖峰，比生成脉冲响应本身贵得多）。做法：每组混响按地点缓存装好的 Convolver，读章时在空闲任务里预先装好本章用到的（A、B 各一个任务），换地点时只接线；还没装好就把「装 A、装 B、切换」插到空闲队列最前面，不在帧里做。改完后第一章实时跑完，单帧最大 1.8 ms（之前 12 ms）。用 `__game.ext.audio().maxFrameWhat` 看最贵的一帧是哪个事件。
+- 在 scratchpad 里写的浏览器脚本：`playwright-core` 能直接 import，`esbuild` 解析不到——用 `await import('<worktree>/node_modules/esbuild/lib/main.js')`（取 `.default.build`）。

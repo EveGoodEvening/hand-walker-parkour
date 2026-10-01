@@ -61,6 +61,7 @@ async function all(sr: number): Promise<Record<string, unknown>> {
   out.follower = await S.followerScenario(real, sr, lib);
   out.peak = await S.peakScenario(real, sr, lib);
   out.palm = await S.palmScenario(real, sr, lib);
+  out.crowd = await S.crowdScenario(real, sr, lib);
   out.biquad = biquadCheck(sr);
   return out;
 }

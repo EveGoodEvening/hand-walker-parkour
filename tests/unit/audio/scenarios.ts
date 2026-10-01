@@ -15,6 +15,7 @@ import type { GameEvent, GameEventName, GameEvents } from '../../../src/core/eve
 import type { Volumes } from '../../../src/core/contracts';
 import type { AmbienceId, ContactPart, FollowerSnap, Hand, SimSnapshot, Surface } from '../../../src/core/types';
 import { getChapter } from '../../../src/levels/chapters/index';
+import type { ChapterDef } from '../../../src/levels/schema';
 
 export type MakeCtx = (channels: number, length: number, sampleRate: number) => OfflineAudioContext;
 export interface Lib { palms: Map<string, AudioBuffer[]>; sfx: Map<string, AudioBuffer[]> }
@@ -350,6 +351,71 @@ export async function quietScenario(make: MakeCtx, sr: number, lib: Lib): Promis
     cutDb: db(rmsOf(chs, at(hitAt + 0.1), at(hitAt + 1.0))),
     recoverDb: db(rmsOf(chs, at(hitAt + 1.06 + 0.6), at(hitAt + 1.06 + 1.6))),
     gateAt60Db,
+  };
+}
+
+// ——————————————————— §6.2「正常人脚步「先轻后重」」：人群的脚步 ———————————————————
+/** 一段 40 拍的跑段：左侧一群走动的人（walkers，0–18 拍，一个人），右道一双迎面走来的腿（34 拍，−1 m/s），另有一组排队的人（在远处）。 */
+export const CROWD_CHAPTER: ChapterDef = {
+  id: 'test', title: '测试', name: '人群', seed: 1, card: ['c1.card'], outro: { lines: [{ line: 'c1.out3' }] }, notes: [], requiredBeats: [],
+  segments: [{
+    id: 'c-1', kind: 'run', kit: 'placeholder', variant: 'default', atmosphere: 'morning', surface: 'terrazzo',
+    beats: 40, stride: 1.0, cadence: 4.8, crowd: true, follower: { mode: 'hidden' },
+    npcs: [
+      { id: 'passing', kind: 'walkers', from: 0, to: 18, side: 'L', density: 0.2 },
+      { id: 'seated', kind: 'seatedRow', from: 0, to: 40, side: 'R', density: 0.9 },   // 坐着的人不走路
+      { id: 'line', kind: 'queue', from: 120, to: 140, side: 'both', density: 0.8 },    // 远处，听不见
+    ],
+    items: [{ at: 34, lane: 1, kind: 'legs', id: 'oncoming', behavior: { type: 'walk', speed: -1 } }],
+    events: [],
+  }],
+};
+export interface CrowdReport {
+  /** 引擎排程的每一步（音频时刻）。 */
+  steps: Array<{ at: number; gainDb: number; pan: number; bus: string }>;
+  offset: number;
+  /** 人群段绊倒的音频时刻（模拟 2.0 s）。 */
+  hitAt: number;
+  /** 绊倒前 0.3–1.9 s 的输出 RMS（只开音效音量：输出里只有脚步和它们的混响）。 */
+  stepsDb: number;
+  /** 一步「先轻后重」：渲染出来的轻、重两声的峰值（dBFS）和间隔（ms），取第一步。 */
+  lightDb: number; heavyDb: number; gapMs: number;
+  /** 绊倒 60 ms 后 npc 总线的门（dB）；浏览器里为 null。 */
+  npcGateDb: number | null;
+}
+/** 玩家以 4.8 拍/s 前进 6 s，模拟 2.0 s 时在人群里绊倒。环境音量 0（只听 npc 总线）。 */
+export async function crowdScenario(make: MakeCtx, sr: number, lib: Lib): Promise<CrowdReport> {
+  const dur = 6;
+  const { e, ctx } = await engineFor(make, sr, dur, lib, { chapter: (id) => (id === 'test' ? CROWD_CHAPTER : getChapter(id)) },
+    { master: 100, sfx: 100, ambience: 0 });
+  const S = (t: number) => snap({ t, segBeat: t * 4.8 });
+  e.frame(S(0), 0);
+  e.onEvent(ev('segment', { id: 'c-1', index: 0, kind: 'run' }, 0), S(0));
+  let ft = 0, hitAt = 0;
+  while (ft + 1 / 60 < dur - 0.3) {
+    ft += 1 / 60;
+    e.frame(S(ft), 1 / 60);
+    if (!hitAt && ft >= 2.0) {
+      e.onEvent(ev('hit', { severity: 'stumble', kind: 'legs', obstacleId: 1, lane: 0, steady: 2, crowd: true, firstLegHit: false }, ft), S(ft));
+      hitAt = ft + (e.clock.offset as number);
+    }
+  }
+  const offset = e.clock.offset as number;
+  const steps = e.scheduled.filter((x) => x.key === 'stepPair').map((x) => ({ at: x.at, gainDb: x.gainDb, pan: x.pan, bus: x.bus }));
+  let npcGateDb: number | null = null;
+  const p = (e.mixer as NonNullable<typeof e.mixer>).gate('npc').param as unknown as { valueAt?: (t: number) => number };
+  if (typeof p.valueAt === 'function') npcGateDb = db(p.valueAt(hitAt + 0.06));
+  const lat = await chainLatency(make, sr);
+  const out = await renderOffline(ctx);
+  const chs = [out.getChannelData(0), out.getChannelData(1)];
+  const at = (x: number) => Math.floor((x + lat) * sr);
+  const first = steps[0] as { at: number };
+  const m = mono(out);
+  const pk = (a: number, b: number) => { let v = 0, i0 = at(a); for (let i = i0; i < at(b); i++) { const x = Math.abs(m[i] as number); if (x > v) { v = x; i0 = i; } } return { v, t: i0 / sr - lat }; };
+  const light = pk(first.at - 0.002, first.at + 0.03), heavy = pk(first.at + 0.06, first.at + 0.11);
+  return {
+    steps, offset, hitAt, stepsDb: db(rmsOf(chs, at(0.3 + offset), at(1.9 + offset))),
+    lightDb: db(light.v), heavyDb: db(heavy.v), gapMs: (heavy.t - light.t) * 1000, npcGateDb,
   };
 }
 

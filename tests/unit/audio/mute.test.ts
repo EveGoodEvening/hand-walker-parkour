@@ -144,3 +144,102 @@ describe('不静音：第一次手势时才创建 AudioContext（§6.1 iOS 解�
     expect(a.cues(1)).toEqual(['ui:confirm']);                           // 游玩中不发界面音
   }, 60_000);
 });
+
+describe('§6.1 失焦 / 隐藏时 ctx.suspend()：任何屏幕都生效（不只游玩屏幕）', () => {
+  type Spy = MiniContext & { resumed: number; suspended: number };
+  const boot = async () => {
+    const s = spies();
+    vi.stubGlobal('AudioContext', s.AudioContext);
+    vi.stubGlobal('OfflineAudioContext', s.OfflineAudioContext);
+    const bus = new EventBus();
+    const f = getAudioFactory() as NonNullable<ReturnType<typeof getAudioFactory>>;
+    const a = f(bus, { ...DEFAULT_SETTINGS }, false) as AudioEngine;
+    bus.emit('screen', { name: 'title' });
+    await a.unlock();
+    await a.ready;
+    return { a, bus, ctx: a.ctx as unknown as Spy };
+  };
+
+  it('标题屏：窗口失焦 → suspend；重新获得焦点 → resume', async () => {
+    const { a, ctx } = await boot();
+    expect(ctx.state).toBe('running');
+    window.dispatchEvent(new Event('blur'));
+    expect(ctx.suspended).toBe(1);
+    expect(ctx.state).toBe('suspended');
+    expect(a.stats().suspended).toBe(true);
+    window.dispatchEvent(new Event('focus'));
+    expect(ctx.resumed).toBe(2);
+    expect(ctx.state).toBe('running');
+  }, 60_000);
+
+  it('章节 / 设置屏：标签页隐藏 → suspend；可见 → resume', async () => {
+    const { bus, ctx } = await boot();
+    bus.emit('screen', { name: 'chapters' });
+    let hidden = true;
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+    try {
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(ctx.suspended).toBe(1);
+      bus.emit('screen', { name: 'settings' });
+      expect(ctx.state).toBe('suspended');                                // 换屏幕不会把隐藏的标签页唤醒
+      hidden = false;
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(ctx.resumed).toBe(2);
+    } finally { Reflect.deleteProperty(document, 'hidden'); }
+  }, 60_000);
+
+  it('游玩中失焦：Game 暂停（suspend(true)）+ 失焦；重新获得焦点时仍在暂停菜单，不恢复；继续游戏才恢复', async () => {
+    const { a, bus, ctx } = await boot();
+    bus.emit('screen', { name: 'play' });
+    window.dispatchEvent(new Event('blur'));                             // Game.autoPause：先切到暂停屏，再 suspend(true)
+    bus.emit('screen', { name: 'pause' });
+    a.suspend(true);
+    expect(ctx.suspended).toBe(1);
+    window.dispatchEvent(new Event('focus'));
+    expect(ctx.state).toBe('suspended');
+    bus.emit('screen', { name: 'play' });                                // Game.pause(false)：先切屏，再 suspend(false)
+    a.suspend(false);
+    expect(ctx.state).toBe('running');
+    expect(ctx.resumed).toBe(2);
+  }, 60_000);
+
+  it('暂停菜单里「重来」「回到标题」：Game 不调 suspend(false)，离开暂停屏幕就恢复', async () => {
+    const { a, bus, ctx } = await boot();
+    for (const next of ['play', 'title'] as const) {
+      bus.emit('screen', { name: 'play' });
+      bus.emit('screen', { name: 'pause' });
+      a.suspend(true);
+      expect(ctx.state).toBe('suspended');
+      bus.emit('screen', { name: 'settings' });                          // 暂停菜单里的设置：仍然暂停
+      expect(ctx.state).toBe('suspended');
+      bus.emit('screen', { name: next });
+      expect(ctx.state, next).toBe('running');
+    }
+  }, 60_000);
+
+  it('设置「减少闪烁」经工厂的初始设置和 EventBus 的 settings 到达引擎（回退的灯光模型不再闪）', () => {
+    const s = spies();
+    vi.stubGlobal('AudioContext', s.AudioContext);
+    vi.stubGlobal('OfflineAudioContext', s.OfflineAudioContext);
+    const bus = new EventBus();
+    const f = getAudioFactory() as NonNullable<ReturnType<typeof getAudioFactory>>;
+    const a = f(bus, { ...DEFAULT_SETTINGS, reducedFlicker: true }, false) as AudioEngine;
+    const lights = (a as unknown as { lights: { reducedFlicker: boolean } }).lights;
+    expect(lights.reducedFlicker).toBe(true);
+    bus.emit('settings', { ...DEFAULT_SETTINGS, reducedFlicker: false });
+    expect(lights.reducedFlicker).toBe(false);
+  });
+
+  it('mute = 1：失焦、隐藏都不创建 AudioContext', () => {
+    const s = spies();
+    vi.stubGlobal('AudioContext', s.AudioContext);
+    vi.stubGlobal('OfflineAudioContext', s.OfflineAudioContext);
+    const f = getAudioFactory() as NonNullable<ReturnType<typeof getAudioFactory>>;
+    const a = f(new EventBus(), { ...DEFAULT_SETTINGS }, true);
+    window.dispatchEvent(new Event('blur'));
+    window.dispatchEvent(new Event('focus'));
+    a.suspend(true); a.suspend(false);
+    expect(s.rt).not.toHaveBeenCalled();
+    expect(s.off).not.toHaveBeenCalled();
+  });
+});

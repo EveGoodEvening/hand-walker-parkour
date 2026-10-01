@@ -17,6 +17,8 @@ export class LightModel {
   private lastDip = -10;
   /** 第五章的声控灯晚 0.5 s 才亮（§3「声控灯」）。 */
   soundDelay = 0;
+  /** 设置「减少闪烁」（附录 A-10：要完全生效）：flicker 区间不再按拍闪。 */
+  reducedFlicker = false;
 
   reset(): void {
     this.out = false; this.flicker = null; this.sound = null; this.litFrom = -1; this.litUntil = -1; this.lastK = -1; this.dipUntil = -1;
@@ -48,7 +50,7 @@ export class LightModel {
     const beat = snap.segBeat;
     if (this.sound && beat >= this.sound.from && beat <= this.sound.to) b = snap.t >= this.litFrom && snap.t < this.litUntil ? 1 : 0;
     const f = this.flicker;
-    if (f && beat >= f.from && beat <= f.to) {
+    if (f && !this.reducedFlicker && beat >= f.from && beat <= f.to) {
       const k = Math.floor((beat - f.from) / f.every);
       if (k !== this.lastK) {
         this.lastK = k;

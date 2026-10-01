@@ -109,6 +109,12 @@ describe('验收 2：异常类声音的起音 ≥ 150 ms（只做减法，没有
   it('异常类声音都不响：峰值 ≤ −20 dBFS（远低于自己的掌根）', () => {
     for (const k of ['shush', 'glassTouch', 'wind', 'heartbeat', 'whisper'] as const) expect(SFX[k].peakDb, k).toBeLessThanOrEqual(-20);
   });
+  it('3-10「门关上，黑」：只是门锁轻轻的「咔嗒」（−30 dBFS），没有低频的「咚」（附录 A-1、A-2）', () => {
+    expect(SFX.doorClose.peakDb).toBeLessThanOrEqual(-30);
+    const b = (lib.sfx.get('doorClose') as AudioBuffer[])[0] as AudioBuffer;
+    expect(centroid(b.getChannelData(0), SR)).toBeGreaterThan(1000);
+    expect(b.duration).toBeLessThan(0.2);
+  });
 });
 
 describe('lead 补充 1：三段落地声「短促、干脆、像有人在空房间里鼓掌」', () => {

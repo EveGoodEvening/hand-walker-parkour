@@ -284,15 +284,16 @@ export const SFX: Readonly<Record<OneShotId, OneShot>> = {
     const g = nz(r, r.t0, 1.3, [bp], pan);
     ahr(g.gain, r.t0, nb((1.57 * 1200) / 1.5, r.ctx.sampleRate), 0.45, 0.25, 0.5);
   }, { anomaly: true, channels: 2, tau: 0.4 }),
-  // 关门（3-10）
-  doorClose: S('doorClose', 0.6, -20, 'sfx', (r) => {
-    const n = nz(r, r.t0, 0.6, [filt(r.ctx, 'lowpass', 200, 0.7071)], r.out);
-    perc(n.gain, r.t0, nb(220, r.ctx.sampleRate), 0.004, 0.08);
-    const s = tone(r, 'sine', 70, r.t0, 0.6, r.out);
-    perc(s.g.gain, r.t0, 0.6, 0.004, 0.09);
-    const l = nz(r, r.t0 + 0.04, 0.02, [filt(r.ctx, 'highpass', 2000, 0.7071)], r.out);
-    perc(l.gain, r.t0 + 0.04, 0.3, 0.0005, 0.002);
-  }, { tau: 0.1 }),
+  // 关门（3-10「门关上，黑」）：只有门锁轻轻的两下「咔嗒」，−30 dBFS，没有低频闷响——紧跟在镜中的揭示之后，
+  // 不能是一个 stinger（附录 A-1、A-2：响度不突变，任何时候都不加一声「咚」）
+  doorClose: S('doorClose', 0.12, -30, 'sfx', (r) => {
+    const sr = r.ctx.sampleRate;
+    const a = nz(r, r.t0, 0.03, [filt(r.ctx, 'bandpass', 2600, 3)], r.out);
+    perc(a.gain, r.t0, nb((1.57 * 2600) / 3, sr), 0.0005, 0.004);
+    const t2 = r.t0 + 0.045;
+    const b = nz(r, t2, 0.05, [filt(r.ctx, 'bandpass', 1500, 4)], r.out);
+    perc(b.gain, t2, 0.7 * nb((1.57 * 1500) / 4, sr), 0.0005, 0.007);
+  }, { tau: 0.006 }),
   // 汤汁滴到领口（2-4）
   soupSpill: S('soupSpill', 0.2, -30, 'sfx', (r) => {
     for (const dt of [0, 0.07]) {
