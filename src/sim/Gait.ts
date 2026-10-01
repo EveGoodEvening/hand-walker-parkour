@@ -28,7 +28,9 @@ export class GaitClock {
    */
   cross(prevBeat: number, beat: number, t0: number, t1: number, cadence: number, onHeel: (beatIndex: number, t: number) => void): void {
     if (beat <= prevBeat) return;
-    const first = Math.floor(prevBeat) + 1;
+    // 上一 tick 已经把「差 1e-9 就到整数」的拍算作跨过了（下面的 ≤ beat + 1e-9），这里要用同一个容差，
+    // 否则同一拍会在两个 tick 里各落一次掌（WP1 修：CORE 版本在 4.8 掌/s 时约六成的拍重复发出掌根）。
+    const first = Math.floor(prevBeat + 1e-9) + 1;
     for (let b = first; b <= beat + 1e-9; b++) {
       const f = (b - prevBeat) / (beat - prevBeat);
       const t = t0 + (t1 - t0) * Math.min(1, Math.max(0, f));

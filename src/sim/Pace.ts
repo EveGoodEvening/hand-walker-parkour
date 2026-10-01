@@ -1,5 +1,5 @@
 // src/sim/Pace.ts —— 段内的速度控制：名义步频、减速（slow）、停拍（stop）、停拍里的自动爬行（autoCrawl）、
-// 段中换挡（cadence）（DESIGN.md §2.3、§4.0、§8.5 EventBody）。CORE 编写，归 WP1。
+// 段中换挡（cadence）（DESIGN.md §2.3、§4.0、§8.5 EventBody）。CORE 编写，WP1 补全（检查点之后补上段中换挡）。
 // Sim 和 Solver 共用同一份代码推进里程，保证求解器预演的 s(t) 与实际模拟逐 tick 完全一致（自动驾驶按位置执行）。
 import type { CompiledSegment, EventBody, TimedEventDef } from '../levels/schema';
 
@@ -33,9 +33,15 @@ export function createPaceState(seg: CompiledSegment, s: number, tSeg: number): 
   const beat = (s - seg.s0) / seg.stride;
   const evs = paceEvents(seg);
   let cursor = 0;
-  // 检查点之前的 pace 事件视为已过去（减速、停拍都是临时的，不补放）
-  while (cursor < evs.length && (evs[cursor] as PaceEvent).at < beat - 1e-9) cursor++;
-  return { s, tSeg, base: 0, cursor, slow: null, stop: null, cad: null, ended: false };
+  // 检查点之前的 pace 事件视为已过去：减速、停拍是临时的，不补放；段中换挡（cadence）是持续的，按它的终态补上（WP1）
+  const p: PaceState = { s, tSeg, base: 0, cursor: 0, slow: null, stop: null, cad: null, ended: false };
+  while (cursor < evs.length && (evs[cursor] as PaceEvent).at < beat - 1e-9) {
+    const e = evs[cursor] as PaceEvent;
+    if (e.body.type === 'cadence') p.cad = { beat0: e.at, from: nominalCadence(seg, p, e.at), to: e.body.to, beats: e.body.beats };
+    cursor++;
+  }
+  p.cursor = cursor;
+  return p;
 }
 
 export function clonePace(p: PaceState): PaceState {

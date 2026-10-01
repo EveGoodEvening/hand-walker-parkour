@@ -1,5 +1,7 @@
 // src/sim/Player.ts —— 玩家控制器：换道、撑跃、伏低、空中速降、输入缓冲、受击后的速度恢复（DESIGN.md §2.2、§2.4、§2.5）。
 // CORE 编写，归 WP1。里程 s 由 Pace 推进（Sim 持有），这里只管横向、竖直与动作状态。
+// WP1：腿自主抬起（Twitch.ts）与腿偏移（Drift.ts）的状态也放在这里，而且全部是**平铺的数值字段**：
+// 求解器用 Object.assign 复制 PlayerState，嵌套对象会被共享，所以这里不放任何对象。
 import { LANE_WIDTH } from '../core/constants';
 import { clamp, easeOutCubic } from '../core/math';
 import type { Lane, PlayerMode } from '../core/types';
@@ -61,8 +63,66 @@ export class PlayerState {
   modeT = 0;
   onSoft = false;
   surfaceSoftKind: 'water' | 'leavesWet' | null = null;
+  /** 腿抬起（碰撞用，0 或 1）：只有 rise 阶段为 1（碰撞盒高 0.85 m，§2.5）。 */
   twitch = 0;
+  /** 鞋尖偏转（画面用，−1..1）。 */
   drift = 0;
+  /** 腿自主抬起：0 idle · 1 warn（预警 0.6 s）· 2 rise（1.2 s）。见 Twitch.ts。 */
+  twPhase: 0 | 1 | 2 = 0;
+  twT = 0;
+  /** 压住需要连续按住 ↓ 的秒数（缺省 0.25，第五章 0.5）。 */
+  twNeed = 0.25;
+  /** 已连续按住 ↓ 的秒数。 */
+  twHeld = 0;
+  /** 腿偏移：0 idle · 1 warn（0.6 s）。见 Drift.ts。 */
+  drPhase: 0 | 1 = 0;
+  drT = 0;
+  drDir: -1 | 1 = 1;
+
+  /** 复制全部字段（求解器每个节点都要复制一份；比 Object.assign 快得多）。新增字段时这里也要加，单元测试会核对。 */
+  copyFrom(o: PlayerState): this {
+    this.x = o.x;
+    this.y = o.y;
+    this.lane = o.lane;
+    this.laneTarget = o.laneTarget;
+    this.laneFromX = o.laneFromX;
+    this.laneT = o.laneT;
+    this.laneDur = o.laneDur;
+    this.laneQueue = o.laneQueue;
+    this.laneSettled = o.laneSettled;
+    this.air = o.air;
+    this.airT = o.airT;
+    this.airDur = o.airDur;
+    this.fastFall = o.fastFall;
+    this.fastFallT = o.fastFallT;
+    this.fastFallY = o.fastFallY;
+    this.duckAfterLandBeats = o.duckAfterLandBeats;
+    this.ducking = o.ducking;
+    this.duck = o.duck;
+    this.duckStartBeat = o.duckStartBeat;
+    this.duckHeld = o.duckHeld;
+    this.duckMinBeats = o.duckMinBeats;
+    this.jumpBuffer = o.jumpBuffer;
+    this.duckBuffer = o.duckBuffer;
+    this.hitMul = o.hitMul;
+    this.stumbleT = o.stumbleT;
+    this.crashT = o.crashT;
+    this.graceT = o.graceT;
+    this.mode = o.mode;
+    this.modeT = o.modeT;
+    this.onSoft = o.onSoft;
+    this.surfaceSoftKind = o.surfaceSoftKind;
+    this.twitch = o.twitch;
+    this.drift = o.drift;
+    this.twPhase = o.twPhase;
+    this.twT = o.twT;
+    this.twNeed = o.twNeed;
+    this.twHeld = o.twHeld;
+    this.drPhase = o.drPhase;
+    this.drT = o.drT;
+    this.drDir = o.drDir;
+    return this;
+  }
 
   reset(lane: Lane = 0): void {
     this.x = laneX(lane); this.y = 0; this.lane = lane; this.laneTarget = lane; this.laneFromX = this.x; this.laneT = 0; this.laneDur = 0;
@@ -72,6 +132,8 @@ export class PlayerState {
     this.jumpBuffer = 0; this.duckBuffer = 0;
     this.hitMul = 1; this.stumbleT = 0; this.crashT = -1; this.graceT = 0;
     this.mode = 'crawl'; this.modeT = 0; this.onSoft = false; this.surfaceSoftKind = null; this.twitch = 0; this.drift = 0;
+    this.twPhase = 0; this.twT = 0; this.twNeed = T.twitch.holdDefault; this.twHeld = 0;
+    this.drPhase = 0; this.drT = 0; this.drDir = 1;
   }
 
   get moving(): boolean { return this.laneT < this.laneDur; }

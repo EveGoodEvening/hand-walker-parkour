@@ -1,4 +1,4 @@
-// src/sim/Collision.ts —— 双层碰撞盒与受击结算（DESIGN.md §2.4、§2.5）。CORE 编写，归 WP1。
+// src/sim/Collision.ts —— 双层碰撞盒与受击结算（DESIGN.md §2.4、§2.5、§10.1）。CORE 编写，归 WP1。
 // 外层 = 障碍表里的碰撞盒；内层 = 横向缩到 85%（lethalShrink；s 向不缩，见 classify 注释）。
 // 横档的竖直穿透 = 玩家盒顶 − 横档下沿（爬行 0.55 m 撞任何横档都 > 0.12 m，一定是撞；§2.4「爬行时……一定会撞上」）。
 //   low   ：外层相交 → 绊（−1），障碍被碰倒。
@@ -67,8 +67,9 @@ export function classify(p: AABB, prev: AABB, o: CompiledObstacle, ob: AABB, duc
   const inner = lt(p.x0, p.x1, ix0, ix1);
   if (o.cls === 'bar') {
     // 竖直穿透 = 玩家盒顶高出横档下沿多少（不按横档厚度截断：拖把杆只有 8 cm 厚，爬行撞上去也必须是「撞」，§2.4）
+    // 擦边的边界「≤ 0.12 m 只算绊」要精确：0.55 − 0.43 在浮点里是 0.12000000000000005，所以比较时留 1e-9 的余量（WP1）
     const pen = p.y1 - ob.y0;
-    if (inner && pen > H.grazeY && !ducking) return { type: 'hit', severity: 'crash', mode: 'barCrash' };
+    if (inner && pen > H.grazeY + 1e-9 && !ducking) return { type: 'hit', severity: 'crash', mode: 'barCrash' };
     return { type: 'hit', severity: 'stumble', mode: 'barGraze' };
   }
   // block
