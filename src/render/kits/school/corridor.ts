@@ -6,11 +6,11 @@
 import type { EnvKit, KitChunk, LampSpec } from '../../../core/contracts';
 import { registerKit } from '../../../core/registry';
 import type { AmbienceId, ReverbId } from '../../../core/types';
-import type { HwKitChunkContext } from '../../kitContext';
+import { markSchoolAtlas, type HwKitChunkContext } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
 import { ATLAS } from '../../textures/school';
 import {
-  CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_WINDOW, NORTH_WINDOW, brassStrips, ceilingBack, ceilingQuad, chunkZ, contactShadow, crossWall, dataPlates, endWalls, flatFloor, floorBlob, floorUV,
+  CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_LIFT, NIGHT_WINDOW, NORTH_WINDOW, brassStrips, ceilingBack, ceilingQuad, chunkZ, contactShadow, crossWall, dataPlates, endWalls, flatFloor, floorBlob, floorUV,
   geos, hydrantBox, makeEnv, mirrorRooms, noticeBoard, radiator, sideDoor, sideHoles, sideWall, tubes, wallPaper, windowPane,
   type Env, type Hole, type WallStyle, type WindowStyle,
 } from './shell';
@@ -32,17 +32,19 @@ const BASE: Look = {
 
 export const CORRIDOR_LOOKS: Record<string, Look> = {
   morning: BASE,
-  mirrorEnd: BASE,
-  recess: { ...BASE, doorOpen: 0.55 },
+  // 1-6：走廊尽头靠近厕所的那一截（尽头的镜子由关卡数据的 endMirror 给）：没有储物柜，地刚拖过，比别处亮一点
+  mirrorEnd: { ...BASE, lockers: false, gloss: 0.4, floor: 0xc4cbcd },
+  // 课间：大部分门开着，门洞里是亮着的教室
+  recess: { ...BASE, doorOpen: 1.1 },
   wet: { ...BASE, floor: 0xb4bcc0, gloss: 0.8, wet: true },
   labNorth: {
     ...BASE, floorBase: 0x8a9294, windows: NORTH_WINDOW, windowSize: [1.25, 2.45], roster: true, pipes: true, lockers: false, doorPane: 0x6f7d85,
     wall: { ...CORRIDOR_WALL, wall: 0xc3ccd0, wainscot: 0x6e8288, rim: 0x5a6c72 }, ceiling: 0xb3bcc0,
   },
-  night: { ...BASE, windows: NIGHT_WINDOW, doorPane: 0x1a2a33, gloss: 0.3, floor: 0xe0e4e6 },
+  night: { ...BASE, windows: NIGHT_WINDOW, doorPane: 0x1a2a33, gloss: 0.3, floor: 0xe0e4e6, wall: { ...CORRIDOR_WALL, lift: NIGHT_LIFT } },
   void: {
     ...BASE, floorBase: PAL.voidFloor, floor: 0x8d969b, gloss: 0.12, windows: { top: 0x0f1316, bottom: 0x0a0c0e, frame: 0x0a0c0e, horizon: null },
-    wall: { ...CORRIDOR_WALL, wall: 0x1c2227, wainscot: 0x15191c, rim: 0x101316, baseboard: 0x0a0c0e }, ceiling: 0x14181b,
+    wall: { ...CORRIDOR_WALL, wall: 0x1c2227, wainscot: 0x15191c, rim: 0x101316, baseboard: 0x0a0c0e, lift: 0 }, ceiling: 0x14181b,
     doorLeaf: PAL.voidSilhouette, doorPane: 0x0a0c0e, lamps: false, dark: true, lockers: false,
   },
 };
@@ -195,7 +197,7 @@ function lockerBank(g: KitGeo, e: Env, c: number, w: number, look: Look): void {
 function finish(_ctx: HwKitChunkContext, floor: KitGeo, stat: KitGeo, emi: KitGeo, lamps: LampSpec[], look: Look): KitChunk {
   const f = floor.build();
   f.userData = { hwFloorMap: { id: 'terrazzo', params: { base: look.floorBase } }, hwGloss: look.gloss };
-  const s = stat.build();
+  const s = markSchoolAtlas(stat.build());
   const out: KitChunk = { floor: f, static: s, lamps };
   if (emi.vertexCount) out.emissive = emi.build({ steady: true, uv: false });
   return out;

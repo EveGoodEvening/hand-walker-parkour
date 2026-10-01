@@ -6,7 +6,7 @@
 import type { EnvKit, KitChunk, LampSpec } from '../../../core/contracts';
 import { registerKit } from '../../../core/registry';
 import type { KitGeo } from '../../geom';
-import type { HwKitChunkContext } from '../../kitContext';
+import { markSchoolAtlas, type HwKitChunkContext } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
 import {
   CORRIDOR_WALL, HW, ceilingBack, ceilingQuad, crossWall, dataPlates, endWalls, flatFloor, floorBlob, geos, makeEnv, mirrorRooms, sideHoles,
@@ -118,7 +118,7 @@ export function buildWashroom(ctx: HwKitChunkContext): KitChunk {
 
   const f = floor.build();
   f.userData = { hwFloorMap: { id: 'tile', params: { n: 4, tile: 0xd5dbdc, grout: 0x9aa3a4 } }, hwGloss: 0.55 };
-  const out: KitChunk = { floor: f, static: stat.build(), lamps };
+  const out: KitChunk = { floor: f, static: markSchoolAtlas(stat.build()), lamps };
   if (emi.vertexCount) out.emissive = emi.build({ steady: true, uv: false });
   return out;
 }

@@ -1,11 +1,13 @@
 // src/render/geom.ts —— WP3 的几何累积器（DESIGN.md §5.9：chunk 最多 3 个合并几何体）。
 // 与 core/geo.ts 的 GeoBuilder 相比：每个顶点可以有自己的颜色（假 AO 渐变）、有 uv（校园贴图集），不写法线
 // （材质一律 flatShading，法线由屏幕空间导数求得，省 12 B/顶点），可选 aSteady（发光体里不跟灯走的部分，如窗）。
-// 颜色参数是 sRGB 十六进制，写入前转换到线性空间（THREE.Color.setHex）。
+// 颜色参数是 sRGB 十六进制（写入前转换到线性空间，THREE.Color.setHex），或者直接给线性 RGB（墙面的受光补偿，见 wallTone.ts，可以 > 1）。
 import * as THREE from 'three';
 
 export type V3 = readonly [number, number, number];
 export type UV = readonly [number, number];
+/** 顶点色：sRGB 十六进制，或线性 RGB。 */
+export type Col = number | readonly [number, number, number];
 /** 贴图集里的矩形（uv，v 向上）：[u0, v0, u1, v1]。 */
 export type Rect = readonly [number, number, number, number];
 
@@ -42,11 +44,12 @@ export class KitGeo {
   get vertexCount(): number { return this.pos.length / 3; }
   get triangleCount(): number { return this.pos.length / 9; }
 
-  private vert(p: V3, hex: number, shade: number, uv: UV | null): void {
+  private vert(p: V3, hex: Col, shade: number, uv: UV | null): void {
     _v.set(p[0], p[1], p[2]);
     if (this.matrix) _v.applyMatrix4(this.matrix);
     this.pos.push(_v.x, _v.y, _v.z);
-    _c.setHex(hex);
+    if (typeof hex === 'number') _c.setHex(hex);
+    else { _c.r = hex[0]; _c.g = hex[1]; _c.b = hex[2]; }
     this.col.push(_c.r * shade, _c.g * shade, _c.b * shade);
     const w = uv ?? this.whiteUV;
     this.uv.push(w[0], w[1]);
@@ -65,12 +68,13 @@ export class KitGeo {
    * 四边形 a-b-c-d（逆时针为正面）。colors 可以是单色或 4 个顶点各自的颜色；shades 为 4 个顶点的明暗倍率。
    * uvs 为 4 个顶点的 uv（缺省白色区）。
    */
-  quad(a: V3, b: V3, c: V3, d: V3, colors: number | readonly [number, number, number, number],
+  quad(a: V3, b: V3, c: V3, d: V3, colors: Col | readonly [Col, Col, Col, Col],
     uvs: readonly [UV, UV, UV, UV] | null = null, shades: readonly [number, number, number, number] | null = null): this {
-    const ca = typeof colors === 'number' ? colors : colors[0];
-    const cb = typeof colors === 'number' ? colors : colors[1];
-    const cc = typeof colors === 'number' ? colors : colors[2];
-    const cd = typeof colors === 'number' ? colors : colors[3];
+    const one = typeof colors === 'number' || colors.length === 3;
+    const ca = (one ? colors : colors[0]) as Col;
+    const cb = (one ? colors : colors[1]) as Col;
+    const cc = (one ? colors : colors[2]) as Col;
+    const cd = (one ? colors : colors[3]) as Col;
     const sa = shades?.[0] ?? 1, sb = shades?.[1] ?? 1, sc = shades?.[2] ?? 1, sd = shades?.[3] ?? 1;
     const ua = uvs?.[0] ?? null, ub = uvs?.[1] ?? null, uc = uvs?.[2] ?? null, ud = uvs?.[3] ?? null;
     if (this.flip) {
@@ -84,7 +88,7 @@ export class KitGeo {
   }
 
   /** 四边形整面映射到贴图集矩形 r：a→(u0,v0)、b→(u1,v0)、c→(u1,v1)、d→(u0,v1)。 */
-  quadRect(a: V3, b: V3, c: V3, d: V3, hex: number, r: Rect, shades: readonly [number, number, number, number] | null = null): this {
+  quadRect(a: V3, b: V3, c: V3, d: V3, hex: Col, r: Rect, shades: readonly [number, number, number, number] | null = null): this {
     return this.quad(a, b, c, d, hex, [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]], shades);
   }
 

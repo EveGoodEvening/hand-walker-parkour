@@ -4,7 +4,9 @@
 //   floor.userData.hwFloorMap = { id, params }   地面贴图（TextureBank id 与参数），uv 必须存在；
 //   floor.userData.hwDepthWrite = true           地面写深度（楼梯段，§5.8）；
 //   floor.userData.hwGloss = 0..1                地面光泽：灯带倒影贴花的强度（「水银河」）；
-//   static 有 uv 属性时用校园贴图集材质，没有时用纯顶点色材质。
+//   static.userData.hwAtlas = true               static 用校园贴图集材质（uv 必须存在）；缺省用纯色材质，不看有没有 uv
+//                                                （别的包的几何体带 uv 也不会被贴上校园贴图集）；
+//   static / emissive 有 color 属性时乘顶点色，没有时用白色（不会因为缺顶点色变成黑色）；
 //   emissive 的 aSteady = 1 表示不跟灯走（窗），0 / 缺省表示按 LampField 的 G 通道明灭（灯管、灯泡）。
 import type { KitChunkContext } from '../core/contracts';
 import type { KitId } from '../core/types';
@@ -25,6 +27,11 @@ export interface HwKitExt {
 export type HwKitChunkContext = KitChunkContext & { hw?: HwKitExt };
 
 export interface FloorMapHint { id: string; params?: Readonly<Record<string, string | number>> }
+
+/** static 是否用校园贴图集（显式标志）。 */
+export function usesSchoolAtlas(u: Record<string, unknown>): boolean { return u.hwAtlas === true; }
+/** 给 WP3 的 kit 用：标记 static 几何体使用校园贴图集。 */
+export function markSchoolAtlas<T extends { userData: Record<string, unknown> }>(g: T): T { g.userData.hwAtlas = true; return g; }
 
 /** 读取 kit 返回的地面提示。 */
 export function floorHints(u: Record<string, unknown>): { map: FloorMapHint | null; depthWrite: boolean; gloss: number } {

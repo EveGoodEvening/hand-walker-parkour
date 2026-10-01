@@ -8,7 +8,8 @@ import { CORRIDOR_WIDTH } from '../../../core/constants';
 import { clamp, smoothstep } from '../../../core/math';
 import type { QualityTier, Rng } from '../../../core/types';
 import type { CompiledSurface } from '../../../levels/schema';
-import { KitGeo, subRect, type Rect, type V3 } from '../../geom';
+import { KitGeo, subRect, type Col, type Rect, type V3 } from '../../geom';
+import { wallAlbedo } from '../../wallTone';
 import { mixHex } from '../../../core/geo';
 import type { HwKitChunkContext, HwKitExt } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
@@ -186,10 +187,25 @@ export interface WallStyle {
   wall: number;
   /** 下半截贴瓷砖（厕所）：瓷砖到 tileTop 米高，颜色 tileColor。 */
   tileTop?: number; tileColor?: number;
+  /**
+   * 受光补偿（wallTone.ts）：1 = 早晨画面上的墙裙 / 墙就是色板色（缺省）；夜景 0.3（灯管增益大，完全补偿会发白）；
+   * 0 = 色板值直接当反照率（虚空走廊那种近黑的墙）。
+   */
+  lift?: number;
 }
 export const CORRIDOR_WALL: WallStyle = {
-  height: 3.1, baseboard: SCHOOL.baseboard, baseboardH: 0.1, wainscot: PAL.wainscot, wainscotTop: 1.1, rim: PAL.wainscotTop, wall: PAL.wall,
+  height: 3.1, baseboard: SCHOOL.baseboard, baseboardH: 0.1, wainscot: PAL.wainscot, wainscotTop: 1.1, rim: PAL.wainscotTop, wall: PAL.wall, lift: 1,
 };
+/** 夜景的墙：同样的颜色，补偿只做三成。 */
+export const NIGHT_LIFT = 0.3;
+
+/** 墙面一条色带（y0..y1）的顶点色：按色带中部的高度做受光补偿（并除掉那里的假 AO）；补偿不足的部分用去饱和补上。 */
+export function wallTone(st: WallStyle, color: number, y0: number, y1: number): Col {
+  const lift = st.lift ?? 1;
+  if (lift <= 0) return color;
+  const y = Math.min(2.1, (y0 + y1) / 2);
+  return wallAlbedo(color, y, { lift, shade: wallShade(y, st.height), desat: (1 - lift) * 0.5 });
+}
 
 export interface Hole { s0: number; s1: number; y0: number; y1: number }
 
@@ -223,6 +239,7 @@ export function wallPiece(g: KitGeo, e: Env, side: -1 | 1, st: WallStyle, sa: nu
   for (const [b0, b1, color, rect, f0, f1] of bands) {
     const y0 = Math.max(ya, b0), y1 = Math.min(yb, b1);
     if (y1 <= y0 + 1e-5) continue;
+    const tone = wallTone(st, color, b0, b1);
     const fv = (y: number) => f0 + (f1 - f0) * ((y - b0) / (b1 - b0));
     let r: Rect | null = null;
     if (rect) {
@@ -242,18 +259,18 @@ export function wallPiece(g: KitGeo, e: Env, side: -1 | 1, st: WallStyle, sa: nu
     const yLo = y0 <= 1e-6 ? -0.06 : y0;
     if (side < 0) {
       const p: [V3, V3, V3, V3] = [[xw, ba + yLo, za], [xw, bb + yLo, zb], [xw, bb + y1, zb], [xw, ba + y1, za]];
-      if (r) g.quad(p[0], p[1], p[2], p[3], color, [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]], [sh0, sh0, sh1, sh1]);
-      else g.quad(p[0], p[1], p[2], p[3], color, null, [sh0, sh0, sh1, sh1]);
+      if (r) g.quad(p[0], p[1], p[2], p[3], tone, [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]], [sh0, sh0, sh1, sh1]);
+      else g.quad(p[0], p[1], p[2], p[3], tone, null, [sh0, sh0, sh1, sh1]);
     } else {
       const p: [V3, V3, V3, V3] = [[xw, bb + yLo, zb], [xw, ba + yLo, za], [xw, ba + y1, za], [xw, bb + y1, zb]];
-      if (r) g.quad(p[0], p[1], p[2], p[3], color, [[r[2], r[1]], [r[0], r[1]], [r[0], r[3]], [r[2], r[3]]], [sh0, sh0, sh1, sh1]);
-      else g.quad(p[0], p[1], p[2], p[3], color, null, [sh0, sh0, sh1, sh1]);
+      if (r) g.quad(p[0], p[1], p[2], p[3], tone, [[r[2], r[1]], [r[0], r[1]], [r[0], r[3]], [r[2], r[3]]], [sh0, sh0, sh1, sh1]);
+      else g.quad(p[0], p[1], p[2], p[3], tone, null, [sh0, sh0, sh1, sh1]);
     }
     // 墙裙上沿：一道凸出 1.5 cm 的小台
     if (color === st.rim && b1 - b0 < 0.1) {
       const xo = xw - side * 0.015;
-      if (side < 0) g.quad([xo, ba + y1, za], [xo, bb + y1, zb], [xw, bb + y1, zb], [xw, ba + y1, za], st.rim, null, [1.05, 1.05, 1.05, 1.05]);
-      else g.quad([xo, bb + y1, zb], [xo, ba + y1, za], [xw, ba + y1, za], [xw, bb + y1, zb], st.rim, null, [1.05, 1.05, 1.05, 1.05]);
+      if (side < 0) g.quad([xo, ba + y1, za], [xo, bb + y1, zb], [xw, bb + y1, zb], [xw, ba + y1, za], tone, null, [1.05, 1.05, 1.05, 1.05]);
+      else g.quad([xo, bb + y1, zb], [xo, ba + y1, za], [xw, ba + y1, za], [xw, bb + y1, zb], tone, null, [1.05, 1.05, 1.05, 1.05]);
     }
   }
 }
@@ -417,17 +434,31 @@ export function sideDoor(stat: KitGeo, emi: KitGeo, e: Env, side: -1 | 1, s: num
     // 门把手
     stat.box([xd - side * 0.04, 1.0, za - 0.12], [0.04, 0.03, 0.12], PAL.steel, { faces: side < 0 ? '+x+y-y+z-z' : '-x+y-y+z-z' });
   } else {
-    // 半开：门扇绕近端铰链向房间里转 open × 90°，门洞里看得见房间的暗
+    // 开着：门扇绕近端铰链向教室里转 open × 90°（open ≥ 1 时贴到近侧墙的内面上）。从走廊里斜着看过去，
+    // 视线穿过门洞落在教室的远端，门扇在近侧墙后面挡不住——转得不够（比如 50°）或者铰链放在远端时，
+    // 斜看过去看到的都是门扇本身，门开着也像关着。
+    // 课间的教室是亮的：门洞里看得见教室的地、一张课桌，和窗外的天光照亮的墙（aSteady = 1），
+    // 一路开着的门在右墙上排成一串亮的竖条。
     const ang = open * Math.PI / 2;
     const hx = xw + side * 0.06, hz = za;
     const ex = hx + side * Math.sin(ang) * w, ez = hz - Math.cos(ang) * w;
-    stat.quad(side < 0 ? [hx, 0, hz] : [ex, 0, ez], side < 0 ? [ex, 0, ez] : [hx, 0, hz], side < 0 ? [ex, h, ez] : [hx, h, hz], side < 0 ? [hx, h, hz] : [ex, h, ez], leaf);
-    const xr = xw + side * 1.2;
-    stat.quad(side < 0 ? [xr, 0, za] : [xr, 0, zb], side < 0 ? [xr, 0, zb] : [xr, 0, za], side < 0 ? [xr, h, zb] : [xr, h, za], side < 0 ? [xr, h, za] : [xr, h, zb], 0x2a3136);
+    stat.quad([hx, 0, hz], [ex, 0, ez], [ex, h, ez], [hx, h, hz], leaf, null, [0.85, 0.85, 1, 1]);
+    stat.quad([ex, 0, ez], [hx, 0, hz], [hx, h, hz], [ex, h, ez], leaf, null, [0.85, 0.85, 1, 1]);
+    const xr = xw + side * 1.6;
     const [xa, xb] = side < 0 ? [xr, xw] : [xw, xr];
-    stat.quad([xa, 0.001, za], [xb, 0.001, za], [xb, 0.001, zb], [xa, 0.001, zb], 0x3a4246);
-    stat.quad([xa, h, zb], [xb, h, zb], [xb, h, za], [xa, h, za], 0x30383c);
-    stat.quad([xa, 0, zb], [xb, 0, zb], [xb, h, zb], [xa, h, zb], 0x353d41);
+    stat.quad([xa, 0.001, za], [xb, 0.001, za], [xb, 0.001, zb], [xa, 0.001, zb], 0x8d9493, null, side < 0 ? [1, 0.8, 0.8, 1] : [0.8, 1, 1, 0.8]);
+    stat.quad([xa, h, zb], [xb, h, zb], [xb, h, za], [xa, h, za], PAL.ceiling, null, [0.7, 0.7, 0.7, 0.7]);
+    // 一张课桌的侧影（桌面与两条腿）
+    const xd = xw + side * 0.9, zd = (za + zb) / 2 - 0.1;
+    stat.box([xd, 0.74, zd], [0.6, 0.04, 0.4], PAL.deskTop, { faces: '+y-y+z-z+x-x' });
+    for (const dz of [-0.17, 0.17]) stat.box([xd - side * 0.25, 0.37, zd + dz], [0.03, 0.72, 0.03], PAL.deskLeg, { faces: '+x-x+z-z' });
+    emi.withSteady(1, () => {
+      const c0 = PAL.windowBottom, c1 = PAL.windowTop, d0 = 0x9aa8b1, d1 = 0xc9d4da;
+      // 对面那排窗（背墙）与被窗光照亮的远端侧墙（朝走廊方向，斜看过去主要看到它）
+      if (side < 0) emi.quad([xr, 0, za], [xr, 0, zb], [xr, h, zb], [xr, h, za], [c0, c0, c1, c1]);
+      else emi.quad([xr, 0, zb], [xr, 0, za], [xr, h, za], [xr, h, zb], [c0, c0, c1, c1]);
+      emi.quad([xa, 0, zb], [xb, 0, zb], [xb, h, zb], [xa, h, zb], [d0, d0, d1, d1]);
+    });
   }
   holeReveal(stat, e, side, hole, frame, xw, 0.06);
   // 垂直于墙的班牌（两面都能读）
@@ -506,7 +537,9 @@ export function sideHoles(e: Env, side: 'L' | 'R'): Hole[] {
 
 /**
  * 侧墙开口后面的镜中房间：只画朝向开口的内表面（地、顶、背墙、两端）。
- * backdrop：darkRoom / mirrorChunk = 暗；playground / evening / nightStreet = 背墙换成发光的窗外（渐变 + 剪影）。
+ * backdrop：darkRoom / mirrorChunk = 暗；playground / evening / nightStreet = 窗：房间的内表面全是发光的窗外
+ * （天的渐变、楼下的地面、背墙上对面楼的剪影），开口处有与普通窗相同的窗台、竖梃和中横档——
+ * 从走廊看过去就是一扇窗，而不是一个暗的壁龛（不提前暴露哪扇窗会出事）；替身仍站在里面的镜像位置。
  */
 export function mirrorRooms(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomStyle = DARK_ROOM): void {
   for (const o of e.openings) {
@@ -519,6 +552,8 @@ export function mirrorRooms(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomSty
     const xw = side * (HW + WALL_T), xb = side * (HW + ROOM_DEPTH);
     const za = e.z(sa), zb = e.z(sb), H = st.ceilingY;
     const [xa0, xa1] = side < 0 ? [xb, xw] : [xw, xb];
+    const bright = backdrop === 'playground' || backdrop === 'evening' || backdrop === 'nightStreet';
+    if (bright) { windowRoom(stat, emi, e, side, o, backdrop, sa, sb, H); continue; }
     // 地面：暗，带几道反射的地砖线
     stat.quad([xa0, 0, za], [xa1, 0, za], [xa1, 0, zb], [xa0, 0, zb], [st.floor, st.floor, st.floor, st.floor], null, side < 0 ? [0.7, 1, 1, 0.7] : [1, 0.7, 0.7, 1]);
     for (const s of stepsIn(e, 1.0, 0)) {
@@ -528,8 +563,7 @@ export function mirrorRooms(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomSty
     stat.quad([xa0, H, zb], [xa1, H, zb], [xa1, H, za], [xa0, H, za], st.wall, null, [0.6, 0.6, 0.6, 0.6]);
     if (o.s0 >= e.s0 - 1e-6) stat.quad([xa1, 0, za], [xa0, 0, za], [xa0, H, za], [xa1, H, za], st.wall);
     if (o.s1 <= e.s1 + 1e-6) stat.quad([xa0, 0, zb], [xa1, 0, zb], [xa1, H, zb], [xa0, H, zb], st.wall);
-    const bright = backdrop === 'playground' || backdrop === 'evening' || backdrop === 'nightStreet';
-    if (!bright) {
+    {
       const c = st.back;
       if (side < 0) stat.quad([xb, 0, za], [xb, 0, zb], [xb, H, zb], [xb, H, za], [c, c, 0x46545c, 0x46545c], null, [0.8, 0.8, 1.1, 1.1]);
       else stat.quad([xb, 0, zb], [xb, 0, za], [xb, H, za], [xb, H, zb], [c, c, 0x46545c, 0x46545c], null, [0.8, 0.8, 1.1, 1.1]);
@@ -552,14 +586,49 @@ export function mirrorRooms(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomSty
       const xr = xb - side * 0.01;
       if (side < 0) stat.quad([xr, 1.08, za], [xr, 1.08, zb], [xr, 1.14, zb], [xr, 1.14, za], 0x26323a);
       else stat.quad([xr, 1.08, zb], [xr, 1.08, za], [xr, 1.14, za], [xr, 1.14, zb], 0x26323a);
-    } else {
-      const ws: WindowStyle = backdrop === 'nightStreet' ? NIGHT_WINDOW
-        : backdrop === 'evening' ? { top: 0x9aa9b4, bottom: 0x5f6f7a, frame: 0x50606a, horizon: 0x3f4c55 }
-          : DAY_WINDOW;
-      const h: Hole = { s0: sa, s1: sb, y0: 0, y1: H };
-      windowPane(emi, stat, { ...e, rng: e.rng }, side, h, ws, 99, xb - side * WALL_T);
     }
   }
+}
+
+/** 窗类开口的窗外景色（与普通窗同一套颜色）。 */
+export function backdropWindow(backdrop: string): WindowStyle {
+  return backdrop === 'nightStreet' ? NIGHT_WINDOW
+    // 傍晚：只比白天的窗略暗一点（平时不该一眼看出这扇窗与别的窗不同）
+    : backdrop === 'evening' ? { top: 0xc6cfd5, bottom: 0x93a1aa, frame: 0x9aa4a7, horizon: 0x66747d }
+      : DAY_WINDOW;
+}
+
+/** 窗类开口：房间的内表面全部是发光的窗外（aSteady = 1），背墙是对面的楼；开口处加普通窗的窗台、竖梃、中横档。 */
+function windowRoom(stat: KitGeo, emi: KitGeo, e: Env, side: -1 | 1, o: Opening, backdrop: string, sa: number, sb: number, H: number): void {
+  const ws = backdropWindow(backdrop);
+  const xw = side * (HW + WALL_T), xb = side * (HW + ROOM_DEPTH);
+  const za = e.z(sa), zb = e.z(sb);
+  const [xa0, xa1] = side < 0 ? [xb, xw] : [xw, xb];
+  const ground = ws.horizon ?? ws.bottom;
+  emi.withSteady(1, () => {
+    emi.quad([xa0, 0, za], [xa1, 0, za], [xa1, 0, zb], [xa0, 0, zb], ground);                            // 楼下的地面
+    emi.quad([xa0, H, zb], [xa1, H, zb], [xa1, H, za], [xa0, H, za], ws.top);                             // 天
+    const yg = Math.min(H, Math.max(o.y0, 0.6));
+    const end = (z: number, front: boolean) => {
+      const q = (y0: number, y1: number, c0: number, c1: number) => {
+        if (front) emi.quad([xa1, y0, z], [xa0, y0, z], [xa0, y1, z], [xa1, y1, z], [c0, c0, c1, c1]);
+        else emi.quad([xa0, y0, z], [xa1, y0, z], [xa1, y1, z], [xa0, y1, z], [c0, c0, c1, c1]);
+      };
+      q(0, yg, ground, ground); q(yg, H, ws.bottom, ws.top);
+    };
+    if (o.s0 >= e.s0 - 1e-6) end(za, true);
+    if (o.s1 <= e.s1 + 1e-6) end(zb, false);
+  });
+  windowPane(emi, stat, { ...e, rng: e.rng }, side, { s0: sa, s1: sb, y0: 0, y1: H }, ws, 99, xb - side * WALL_T);
+  // 开口处：与普通窗一样的窗台（朝上）、竖梃与中横档（玻璃本身由 WP5 的叠加层画）
+  const xm = side * (HW + WALL_T * 0.5);
+  stat.box([side * (HW - 0.06), o.y0 - 0.02, (za + zb) / 2], [0.2, 0.04, za - zb + 0.1], 0xc3c9c9, { faces: '+y' + (side < 0 ? '+x' : '-x') });
+  for (const s of stepsIn(e, 1.2, 0)) {
+    if (s <= o.s0 + 0.05 || s >= o.s1 - 0.05 || s < sa || s > sb) continue;
+    stat.box([xm, (o.y0 + o.y1) / 2, e.z(s)], [0.05, o.y1 - o.y0, 0.05], ws.frame, { faces: side < 0 ? '+x+z-z' : '-x+z-z' });
+  }
+  const yr = o.y0 + (o.y1 - o.y0) * 0.62;
+  stat.box([xm, yr, (za + zb) / 2], [0.05, 0.05, za - zb], ws.frame, { faces: side < 0 ? '+x+y-y' : '-x+y-y' });
 }
 
 /** 端墙开口（端墙镜）：在 s = o.s0 处立一面横墙，中间留镜子大小的洞，洞后是镜中房间。 */
@@ -567,13 +636,14 @@ export function endWalls(stat: KitGeo, e: Env, st: WallStyle, frame: number = PA
   for (const o of e.openings) {
     if (o.side !== 'end' || o.s0 < e.s0 - 1e-6 || o.s0 > e.s1 + 1e-6) continue;
     const ze = e.z(o.s0), H = st.height, hx = 0.95;
-    const face = (x0: number, x1: number, y0: number, y1: number, c: number) => {
+    const face = (x0: number, x1: number, y0: number, y1: number, c: Col) => {
       const s0 = wallShade(y0, H), s1 = wallShade(y1, H);
       stat.quad([x0, y0, ze], [x1, y0, ze], [x1, y1, ze], [x0, y1, ze], c, null, [s0, s0, s1, s1]);
     };
     // 横墙（按墙裙分色）
     const bands: Array<[number, number, number]> = [[0, st.baseboardH, st.baseboard], [st.baseboardH, st.wainscotTop, st.wainscot], [st.wainscotTop, st.wainscotTop + 0.045, st.rim], [st.wainscotTop + 0.045, H, st.wall]];
-    for (const [b0, b1, c] of bands) {
+    for (const [b0, b1, c0] of bands) {
+      const c = wallTone(st, c0, b0, b1);
       face(-HW, -hx, b0, b1, c); face(hx, HW, b0, b1, c);
       if (b1 <= o.y0) face(-hx, hx, b0, b1, c); else if (b0 < o.y0) face(-hx, hx, b0, o.y0, c);
       if (b0 >= o.y1) face(-hx, hx, b0, b1, c); else if (b1 > o.y1) face(-hx, hx, o.y1, b1, c);
@@ -618,9 +688,10 @@ export function crossWall(g: KitGeo, e: Env, s: number, x0: number, x1: number, 
   const piece = (a: number, b: number, y0: number, y1: number) => {
     if (b - a < 1e-3 || y1 - y0 < 1e-3) return;
     const bands: Array<[number, number, number]> = [[0, st.baseboardH, st.baseboard], [st.baseboardH, st.wainscotTop, st.wainscot], [st.wainscotTop, st.wainscotTop + 0.045, st.rim], [st.wainscotTop + 0.045, H, st.wall]];
-    for (const [b0, b1, c] of bands) {
+    for (const [b0, b1, c0] of bands) {
       const ya = Math.max(y0, b0), yb = Math.min(y1, b1);
       if (yb <= ya) continue;
+      const c = wallTone(st, c0, b0, b1);
       const sa = wallShade(ya, H), sb = wallShade(yb, H);
       const yl = ya <= 1e-6 ? -0.06 : ya;
       g.quad([a, yl, z], [b, yl, z], [b, yb, z], [a, yb, z], c, null, [sa, sa, sb, sb]);          // 朝 +z

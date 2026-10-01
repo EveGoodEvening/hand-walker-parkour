@@ -20,11 +20,16 @@ const Y0 = 0.95, Y1 = 1.85;
 interface Built { hand: THREE.Group; ladleVeg: THREE.Mesh; ladlePork: THREE.Mesh; porkOnTray: THREE.Mesh; vegOnTray: THREE.Mesh }
 let built: Built | null = null;
 
-/** 手的关键帧：[t, x, y, z, 腕部翻转]；勺子在 1.6 s 与 2.8 s 倒进餐盘。 */
+/**
+ * 手的关键帧：[t, x, y, z, 腕部翻转]（手腕的位置）；勺子在 1.55 s 与 2.85 s 倒进餐盘。
+ * 手从窗口里右后方伸出来（HAND_YAW），勺头在手腕前下方 LADLE（世界坐标偏移）：
+ * 舀菜时勺头落在菜盆（青菜 x 0.1、红烧肉 x −0.45，z −1.15），倒菜时落在窗台上的餐盘（x ≈ 0，z −0.5）。
+ */
+const HAND_YAW = -0.6;
 const KEYS: Array<[number, number, number, number, number]> = [
-  [0.0, 0.35, 1.25, -1.35, 0], [0.6, -0.25, 1.05, -1.2, 0], [1.1, 0.05, 1.32, -0.75, 0], [1.55, 0.02, 1.12, -0.42, 1],
-  [1.85, 0.2, 1.3, -0.9, 0], [2.3, 0.45, 1.05, -1.2, 0], [2.6, 0.1, 1.3, -0.72, 0], [2.85, 0.05, 1.1, -0.42, 1],
-  [3.3, 0.25, 1.28, -0.95, 0], [4.2, 0.45, 1.22, -1.4, 0], [99, 0.45, 1.22, -1.4, 0],
+  [0.0, 0.62, 1.4, -1.65, 0], [0.6, 0.25, 1.2, -1.37, 0], [1.1, 0.22, 1.42, -1.05, 0], [1.55, 0.15, 1.2, -0.72, 1],
+  [1.85, 0.1, 1.42, -1.05, 0], [2.3, -0.3, 1.2, -1.37, 0], [2.6, -0.05, 1.42, -1.05, 0], [2.85, 0.11, 1.22, -0.72, 1],
+  [3.3, 0.35, 1.42, -1.15, 0], [4.2, 0.62, 1.4, -1.65, 0], [99, 0.62, 1.4, -1.65, 0],
 ];
 export function handAt(t: number): { x: number; y: number; z: number; tip: number } {
   for (let i = 0; i + 1 < KEYS.length; i++) {
@@ -86,15 +91,23 @@ function build(ctx: ViewContext): THREE.Object3D {
   const vegG = new KitGeo(); vegG.box([0.1, Y0 + 0.035, ZW + 0.16], [0.12, 0.03, 0.1], 0x5e6b5a, { faces: '+y+z+x' });
   const porkG = new KitGeo(); porkG.box([-0.04, Y0 + 0.06, ZW + 0.1], [0.14, 0.04, 0.12], WARM.braisedPork, { faces: '+y+z+x-x' });
   const vegOnTray = lambertMesh(ctx, vegG, 'veg'), porkOnTray = lambertMesh(ctx, porkG, 'pork');
-  // 窗口阿姨的手：白袖口 + 前臂 + 手，握着长柄勺
+  // 窗口阿姨的手（只露出这只手）：局部 −z 是手臂伸回窗口里的方向，+z 是勺子伸向餐盘的方向。
+  // 前臂斜着从右后方伸出来，镜头看得见它的长度；袖口在最里面，被前臂和手挡住一半，不再是迎面的一块白方块。
   const handG = new KitGeo();
-  handG.box([0, 0, 0.42], [0.11, 0.11, 0.3], 0xdfe3e2, { faces: '+x-x+y-y+z-z' });       // 白袖口
-  handG.box([0, -0.005, 0.16], [0.07, 0.06, 0.24], PAL.skin, { faces: '+x-x+y-y+z-z' });  // 前臂
-  handG.box([0.01, -0.01, 0.0], [0.08, 0.05, 0.09], mixHex(PAL.skin, 0x8c8279, 0.2));      // 握勺的手
-  handG.segment([0.01, -0.01, -0.02], [0.01, -0.1, -0.2], 0.02, 0.02, PAL.steel);          // 勺柄
-  handG.prism([0.01, -0.15, -0.24], 0.065, 0.05, 6, PAL.steel);                          // 勺头
-  const vegL = new KitGeo(); vegL.box([0.01, -0.1, -0.24], [0.09, 0.02, 0.09], 0x5e6b5a, { faces: '+y' });
-  const porkL = new KitGeo(); porkL.box([0.01, -0.09, -0.24], [0.1, 0.03, 0.1], WARM.braisedPork, { faces: '+y' });
+  const skin = PAL.skin, skinDark = mixHex(PAL.skin, PAL.creaseGray, 0.35);
+  handG.segment([0.0, 0.04, -0.12], [0.03, 0.11, -0.46], 0.062, 0.055, skin);                    // 前臂
+  handG.segment([0.03, 0.11, -0.44], [0.045, 0.15, -0.62], 0.092, 0.09, 0xc3cacb);               // 袖口（灰白工作服）
+  handG.box([0, 0.012, -0.03], [0.082, 0.032, 0.11], skin, { faces: '+x-x+y-y+z-z' });              // 手背
+  for (let i = 0; i < 4; i++) {                                                                     // 四根弯着的手指，握住勺柄
+    const x = -0.03 + i * 0.02;
+    handG.box([x, 0.0, 0.035], [0.017, 0.022, 0.034], skin, { faces: '+x-x+y+z-z' });
+    handG.box([x, -0.022, 0.05], [0.016, 0.026, 0.018], skinDark, { faces: '+x-x+z-y' });
+  }
+  handG.segment([0.045, 0.004, -0.04], [0.035, -0.012, 0.03], 0.02, 0.02, skin);                  // 拇指
+  handG.segment([0.0, -0.012, 0.0], [0.0, -0.12, 0.24], 0.018, 0.018, PAL.steel);                   // 勺柄
+  handG.prism([0.0, -0.17, 0.27], 0.062, 0.05, 6, PAL.steel);                                      // 勺头
+  const vegL = new KitGeo(); vegL.box([0.0, -0.118, 0.27], [0.085, 0.02, 0.085], 0x5e6b5a, { faces: '+y' });
+  const porkL = new KitGeo(); porkL.box([0.0, -0.11, 0.27], [0.095, 0.03, 0.095], WARM.braisedPork, { faces: '+y' });
   const hand = new THREE.Group();
   hand.name = 'lunchLadyHand';
   hand.add(lambertMesh(ctx, handG, 'hand'));
@@ -114,7 +127,7 @@ function update(t: number, _snap: SimSnapshot): void {
   if (!built) return;
   const p = handAt(t);
   built.hand.position.set(p.x, p.y, p.z);
-  built.hand.rotation.set(-0.08 - p.tip * 0.25, 0.08, p.tip * 0.9);
+  built.hand.rotation.set(-0.06 - p.tip * 0.2, HAND_YAW, p.tip * 0.9);
   // 勺里有东西：舀起来之后、倒下之前
   built.ladleVeg.visible = t > 0.62 && t < 1.55;
   built.ladlePork.visible = t > 2.32 && t < 2.85;

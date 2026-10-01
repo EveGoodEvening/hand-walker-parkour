@@ -192,6 +192,54 @@ describe('ChunkStreamer：画质切换保留运行状态', () => {
   });
 });
 
+describe('ChunkStreamer：材质按显式标志选择（别的包的几何体）', () => {
+  it('带 uv 但没有 hwAtlas 的 static 不用校园贴图集；没有顶点色的 static / emissive / floor 用白色材质而不是黑色', async () => {
+    const { w, ch } = await setup('low');
+    const seg = ch.segments[1];
+    if (!seg) return;
+    const plane = () => { const g = new THREE.PlaneGeometry(1, 1); return g; };   // 有 uv、没有 color
+    const withCol = () => { const g = plane(); g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 3).fill(0.5), 3)); return g; };
+    type Mk = (seg: unknown, s0: number, s1: number, gs: unknown, generic: number) => { group: THREE.Group };
+    const mk = (w as unknown as { makeSlot: Mk }).makeSlot.bind(w);
+    const matOf = (g: THREE.Group, name: string) => (g.getObjectByName(name) as THREE.Mesh).material as THREE.Material & { map?: unknown; vertexColors: boolean };
+    // 1) 别的包：uv + color，没有 hwAtlas → 纯顶点色
+    const a = mk(seg, 0, 12, { floor: withCol(), static: withCol(), emissive: withCol(), lamps: [], gloss: 0, tris: 0 }, -1).group;
+    expect(matOf(a, 'static').map ?? null).toBeNull();
+    expect(matOf(a, 'static').vertexColors).toBe(true);
+    // 2) 没有顶点色 → 白色材质（vertexColors 关）
+    const b = mk(seg, 0, 12, { floor: plane(), static: plane(), emissive: plane(), lamps: [], gloss: 0, tris: 0 }, -1).group;
+    expect(matOf(b, 'static').vertexColors).toBe(false);
+    expect(matOf(b, 'emissive').vertexColors).toBe(false);
+    expect(matOf(b, 'floor').vertexColors).toBe(false);
+    // 3) WP3 的 kit：显式标了 hwAtlas → 校园贴图集
+    const c0 = withCol(); c0.userData.hwAtlas = true;
+    const c = mk(seg, 0, 12, { floor: withCol(), static: c0, emissive: withCol(), lamps: [], gloss: 0, tris: 0 }, -1).group;
+    expect(matOf(c, 'static').map).toBe(w.atlasTex);
+    for (const g of [a, b, c]) w.root.remove(g);
+  });
+
+  it('扩展入口：别的包每帧往地面贴花里加实例（同一个 InstancedMesh）；读得到插值后的氛围', async () => {
+    const { w, ctx, ch } = await setup('low');
+    const ext = ctx as unknown as import('../../../src/render/ChunkStreamer').HwViewExt;
+    expect(ext.decals).toBeTruthy();
+    let calls = 0;
+    const off = ext.decals?.source((sink) => { calls++; sink.add('blob', 0, 0, 5, 0.6, 0.6, 0x000000, 0.5); sink.add('ring', 1, 0, 6, 1, 1, 0xdfe6ea, 0.4); });
+    const sn = snap({ s: 2, t: 1, segIndex: 0 });
+    w.onReset(sn);
+    w.frame(sn, sn, 1, 1 / 60);
+    expect(calls).toBe(1);
+    expect(w.decals.count).toBeGreaterThanOrEqual(2);
+    off?.();
+    w.frame(sn, sn, 1, 1 / 60);
+    expect(calls).toBe(1);
+    expect(ext.atmosphere?.id).toBe(ch.segments[0]?.def.atmosphere);
+    w.transitionTo('nightIndoor', 1, 1);
+    w.atmo.update(2.5);
+    expect(ext.atmosphere?.dark).toBe(true);
+    expect(ext.atmosphere?.planarDir.length()).toBeCloseTo(1, 5);
+  });
+});
+
 describe('ChunkStreamer：重来时重放', () => {
   const def = {
     id: 'test', title: '测试', name: '测试', seed: 5, card: ['c1.card'], outro: { lines: [] }, notes: [], requiredBeats: [],

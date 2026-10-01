@@ -5,10 +5,10 @@
 // 楼梯段的地面写深度（§5.8：楼梯段禁止放水洼）。墙裙、天花板都顺着坡度走。
 import type { EnvKit, KitChunk, LampSpec } from '../../../core/contracts';
 import { registerKit } from '../../../core/registry';
-import type { HwKitChunkContext } from '../../kitContext';
+import { markSchoolAtlas, type HwKitChunkContext } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
 import {
-  CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_WINDOW, beatsIn, crossWall, dataPlates, geos, makeEnv, mirrorRooms, sideHoles, sideWall,
+  CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_LIFT, NIGHT_WINDOW, beatsIn, crossWall, dataPlates, geos, makeEnv, mirrorRooms, sideHoles, sideWall,
   stepsIn, type Hole, type WallStyle, type WindowStyle,
 } from './shell';
 
@@ -21,8 +21,8 @@ const RES_WALL: WallStyle = { height: 2.9, baseboard: 0x2f3a3a, baseboardH: 0.08
 
 const LOOKS: Record<string, Look> = {
   dayDown: { wall: SCHOOL_WALL, floorBase: PAL.terrazzo, nose: SCHOOL.stairNose, rail: SCHOOL.rail, soffit: PAL.ceiling, lampKind: 'tube', lampEvery: 4, window: DAY_WINDOW, residential: false },
-  nightDown: { wall: SCHOOL_WALL, floorBase: PAL.terrazzo, nose: SCHOOL.stairNose, rail: SCHOOL.rail, soffit: 0x9aa2a4, lampKind: 'tube', lampEvery: 4, window: NIGHT_WINDOW, residential: false },
-  stairwellUp: { wall: RES_WALL, floorBase: SCHOOL.concrete, nose: 0x4a5254, rail: 0x3a4246, soffit: 0x9aa0a0, lampKind: 'bulb', lampEvery: 5, window: null, residential: true },
+  nightDown: { wall: { ...SCHOOL_WALL, lift: NIGHT_LIFT }, floorBase: PAL.terrazzo, nose: SCHOOL.stairNose, rail: SCHOOL.rail, soffit: 0x9aa2a4, lampKind: 'tube', lampEvery: 4, window: NIGHT_WINDOW, residential: false },
+  stairwellUp: { wall: { ...RES_WALL, lift: NIGHT_LIFT }, floorBase: SCHOOL.concrete, nose: 0x4a5254, rail: 0x3a4246, soffit: 0x9aa0a0, lampKind: 'bulb', lampEvery: 5, window: null, residential: true },
   dawnDown: { wall: RES_WALL, floorBase: SCHOOL.concrete, nose: 0x4a5254, rail: 0x3a4246, soffit: 0xa3a9a9, lampKind: 'bulb', lampEvery: 5, window: { top: 0x9fb2c0, bottom: 0x7f909a, frame: 0x50606a, horizon: 0x5a6a74 }, residential: true },
 };
 
@@ -124,7 +124,7 @@ export function buildStairs(ctx: HwKitChunkContext, look: Look): KitChunk {
 
   const f = floor.build();
   f.userData = { hwFloorMap: { id: 'terrazzo', params: { base: look.floorBase, density: look.residential ? 0.3 : 1 } }, hwDepthWrite: true, hwGloss: look.residential ? 0 : 0.12 };
-  const out: KitChunk = { floor: f, static: stat.build(), lamps };
+  const out: KitChunk = { floor: f, static: markSchoolAtlas(stat.build()), lamps };
   if (emi.vertexCount) out.emissive = emi.build({ steady: true, uv: false });
   return out;
 }

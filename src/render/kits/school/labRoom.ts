@@ -5,7 +5,7 @@
 import type { EnvKit, KitChunk, LampSpec } from '../../../core/contracts';
 import { registerKit } from '../../../core/registry';
 import type { KitGeo } from '../../geom';
-import type { HwKitChunkContext } from '../../kitContext';
+import { markSchoolAtlas, type HwKitChunkContext } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
 import { ATLAS } from '../../textures/school';
 import {
@@ -125,7 +125,7 @@ export function buildLabRoom(ctx: HwKitChunkContext): KitChunk {
 
   const f = floor.build();
   f.userData = { hwFloorMap: { id: 'tile', params: { n: 2, tile: 0xb9c0c1, grout: 0x7f8b90 } }, hwGloss: 0.2 };
-  const out: KitChunk = { floor: f, static: stat.build(), lamps };
+  const out: KitChunk = { floor: f, static: markSchoolAtlas(stat.build()), lamps };
   if (emi.vertexCount) out.emissive = emi.build({ steady: true, uv: false });
   return out;
 }

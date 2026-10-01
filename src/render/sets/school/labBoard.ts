@@ -9,7 +9,7 @@ import { Board, BOARDS, boardMaterial } from '../../boards';
 import { KitGeo } from '../../geom';
 import { bench, stool } from '../../kits/school/labRoom';
 import { PAL } from '../../palette';
-import { emissiveMesh, lambertMesh, schoolWallX, schoolWallZ, setEnv, wallZ } from './common';
+import { emissiveMesh, lambertMesh, schoolWallX, schoolWallZ, setEnv, setWallTone, wallZ } from './common';
 
 export const BOARD_Z = -3.2;
 const BX = 1.8, BY0 = 0.85, BY1 = 2.1;
@@ -28,19 +28,20 @@ function build(ctx: ViewContext): THREE.Object3D {
   floor.name = 'floor';
   // 墙：前墙（黑板这面）、左墙北窗、右墙柜子、后墙
   const wall = 0xc3ccd0, wains = 0x6e8288;
-  wallZ(stat, BOARD_Z, XL, XR, 0, 0.1, 0x3a464d);
-  wallZ(stat, BOARD_Z, XL, XR, 0.1, 0.8, wains);
-  wallZ(stat, BOARD_Z, XL, -BX - 0.1, 0.8, H, wall); wallZ(stat, BOARD_Z, BX + 0.1, XR, 0.8, H, wall);
-  wallZ(stat, BOARD_Z, -BX - 0.1, BX + 0.1, 0.8, BY0 - 0.05, wall); wallZ(stat, BOARD_Z, -BX - 0.1, BX + 0.1, BY1 + 0.05, H, wall);
+  const wallT = setWallTone(wall, 0.8, H, 'labNorth');
+  wallZ(stat, BOARD_Z, XL, XR, 0, 0.1, setWallTone(0x3a464d, 0, 0.1, 'labNorth'));
+  wallZ(stat, BOARD_Z, XL, XR, 0.1, 0.8, setWallTone(wains, 0.1, 0.8, 'labNorth'));
+  wallZ(stat, BOARD_Z, XL, -BX - 0.1, 0.8, H, wallT); wallZ(stat, BOARD_Z, BX + 0.1, XR, 0.8, H, wallT);
+  wallZ(stat, BOARD_Z, -BX - 0.1, BX + 0.1, 0.8, BY0 - 0.05, wallT); wallZ(stat, BOARD_Z, -BX - 0.1, BX + 0.1, BY1 + 0.05, H, wallT);
   // 黑板框（铝）与粉笔槽
   stat.box([0, BY0 - 0.04, BOARD_Z + 0.03], [2 * BX + 0.2, 0.05, 0.06], 0x9aa4a7);
   stat.box([0, BY1 + 0.03, BOARD_Z + 0.02], [2 * BX + 0.2, 0.05, 0.04], 0x9aa4a7);
   for (const x of [-BX - 0.07, BX + 0.07]) stat.box([x, (BY0 + BY1) / 2, BOARD_Z + 0.02], [0.05, BY1 - BY0 + 0.1, 0.04], 0x9aa4a7);
   stat.box([0, BY0 - 0.08, BOARD_Z + 0.09], [2 * BX, 0.03, 0.12], 0x8a979e, { faces: '+y+z-y' });
   stat.box([0.6, BY0 - 0.055, BOARD_Z + 0.1], [0.08, 0.02, 0.02], PAL.chalkText, { faces: '+y+z' });   // 一截粉笔
-  schoolWallX(stat, XL, -1, BOARD_Z, ZB, H, wall, wains);
-  schoolWallX(stat, XR, 1, BOARD_Z, ZB, H, wall, wains);
-  schoolWallZ(stat, ZB, XR, XL, H, wall, wains);
+  schoolWallX(stat, XL, -1, BOARD_Z, ZB, H, wall, wains, 'labNorth');
+  schoolWallX(stat, XR, 1, BOARD_Z, ZB, H, wall, wains, 'labNorth');
+  schoolWallZ(stat, ZB, XR, XL, H, wall, wains, 'labNorth');
   stat.quad([XL, H, ZB], [XR, H, ZB], [XR, H, BOARD_Z], [XL, H, BOARD_Z], 0xb3bcc0, null, [0.7, 0.7, 0.7, 0.7]);
   // 北窗（冷、暗）
   for (const z of [-1.8, 0.8]) {

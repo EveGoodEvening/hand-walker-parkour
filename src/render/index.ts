@@ -4,7 +4,9 @@
 // 调试扩展（__game.ext，只在 ?test=1 或 ?debug=… 时可用）：
 //   wp3Preview(opts)  在远处单独建一段 kit（或显示一个 set）并切到预览镜头；opts 见 ChunkStreamer.PreviewOpts
 //   wp3PreviewOff()   退出预览          wp3Lights(op, fromBeat, toBeat, every?)  预览段里的灯光操作
-//   wp3Luma(x0,y0,x1,y1)  渲染并读回一块区域的平均亮度   wp3Mem()  几何体 / 纹理 / 着色器数量   wp3Stats()  chunk 统计
+//   wp3Luma(x0,y0,x1,y1)  渲染并读回一块区域的平均亮度   wp3Color(x0,y0,x1,y1)  一块区域的平均颜色与 HSL（取色校验）
+//   wp3Atmo(id)  立即切到某个氛围（灯光、雾、LampField 参数当场生效）   wp3Chalk(v|null)  强制描边亮度（对照测量）
+//   wp3Mem()  几何体 / 纹理 / 着色器数量   wp3Stats()  chunk 统计
 import { registerCueHandler, registerDebug, registerMaterials, registerView, registerViewSystem } from '../core/registry';
 import { STILL_ORIGIN } from '../core/constants';
 import { urlParams } from '../core/urlParams';
@@ -88,16 +90,27 @@ registerDebug('wp3Luma', (x0?: unknown, y0?: unknown, x1?: unknown, y1?: unknown
   guard();
   return view ? view.luma(Number(x0 ?? 0), Number(y0 ?? 0), Number(x1 ?? 1), Number(y1 ?? 1)) : null;
 });
+registerDebug('wp3Color', (x0?: unknown, y0?: unknown, x1?: unknown, y1?: unknown) => {
+  guard();
+  return view ? view.color(Number(x0 ?? 0), Number(y0 ?? 0), Number(x1 ?? 1), Number(y1 ?? 1)) : null;
+});
 registerDebug('wp3Mem', () => {
+  guard();
   const r = view?.renderer;
   return r ? { geometries: r.info.memory.geometries, textures: r.info.memory.textures, programs: r.info.programs?.length ?? 0, warmups: view?.warmups ?? 0 } : null;
 });
-registerDebug('wp3Atmo', (id?: unknown) => { guard(); world.atmo.snap(String(id) as AtmosphereId); return true; });
+registerDebug('wp3Atmo', (id?: unknown) => { guard(); world.snapAtmosphere(String(id) as AtmosphereId); return true; });
+registerDebug('wp3Chalk', (v?: unknown) => {
+  guard();
+  world.chalkOverride = v === null || v === undefined ? null : Number(v);
+  world.snapAtmosphere(null);
+  return true;
+});
 registerDebug('wp3BoardText', (surface?: unknown, text?: unknown, tremble?: unknown) => {
   guard();
   return world.boardText(String(surface ?? ''), String(text ?? ''), !!tremble, world.lamps.now);
 });
-registerDebug('wp3Stats', () => ({ ...world.stats, slots: world.slotCount(), stencil: view?.stencil ?? false }));
+registerDebug('wp3Stats', () => { guard(); return { ...world.stats, slots: world.slotCount(), stencil: view?.stencil ?? false }; });
 registerDebug('wp3Lights', (op?: unknown, from?: unknown, to?: unknown, every?: unknown) => {
   guard();
   const seg = world.previewSegment ?? world.currentSegment;

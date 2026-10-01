@@ -23,9 +23,9 @@ import type {
 import { lineText } from '../levels/lines';
 import { AtmosphereMixer } from './atmosphere';
 import { Board, BOARDS, boardMaterial } from './boards';
-import { Decals } from './decals';
+import { Decals, type DecalKind } from './decals';
 import type { Rect } from './geom';
-import { floorHints, type HwKitChunkContext, type HwKitExt } from './kitContext';
+import { floorHints, usesSchoolAtlas, type HwKitChunkContext, type HwKitExt } from './kitContext';
 import { LampField } from './lampField';
 import { ATLAS, paintSchoolAtlas } from './textures/school';
 import { makeCanvas } from './textures/common';
@@ -104,6 +104,23 @@ export function openingsOf(surfaces: readonly CompiledSurface[], s0: number, s1:
   return out;
 }
 
+/**
+ * 给别的包的扩展入口（契约申请见 docs/contract-requests/WP3.md，lead 合并进 ViewContext 之前先挂在同一个对象上）：
+ *   (ctx as ViewContext & HwViewExt).decals.source(fn)   每帧往地面贴花里加实例（仍是 1 次 draw call）；返回取消函数
+ *   (ctx as ViewContext & HwViewExt).atmosphere          当前插值后的氛围（id、dark、平面影子方向等，只读）
+ */
+export interface DecalSink {
+  /** 地面 (x, y, −s) 处一个贴花：宽 w（x 向）、长 l（s 向）；color 为 sRGB 十六进制；blob 是压暗的圆斑，其余是加亮。 */
+  add(kind: DecalKind, x: number, y: number, s: number, w: number, l: number, color: number, intensity: number, rot?: number): boolean;
+}
+export interface HwViewExt {
+  decals?: { source(fn: (sink: DecalSink) => void): () => void };
+  atmosphere?: {
+    readonly id: AtmosphereId; readonly dark: boolean; readonly planarDir: THREE.Vector3;
+    readonly fogNear: number; readonly fogFar: number; readonly fogColor: THREE.Color; readonly lampGain: number; readonly chalkMin: number;
+  };
+}
+
 export interface PreviewOpts {
   kit?: KitId; variant?: string; atmosphere?: AtmosphereId; beats?: number; stride?: number;
   stairs?: { dir: 'down' | 'up'; risePerBeat: number }; surfaces?: SurfaceDef[]; beat?: number; x?: number;
@@ -134,7 +151,9 @@ export class World implements ViewSystem {
   private floorMats = new Map<string, THREE.MeshLambertMaterial>();
   private staticAtlasMat!: THREE.MeshLambertMaterial;
   private staticPlainMat!: THREE.MeshLambertMaterial;
+  private staticWhiteMat!: THREE.MeshLambertMaterial;
   private emissiveMat!: THREE.MeshBasicMaterial;
+  private emissiveWhiteMat!: THREE.MeshBasicMaterial;
   private atlasCanvas: HTMLCanvasElement | null = null;
   atlasTex!: THREE.Texture;
   private plateSlots = new Map<string, Rect>();
@@ -154,6 +173,12 @@ export class World implements ViewSystem {
   private setList: SetEntry[] = [];
   private readonly rangeTmp: [number, number] = [0, 0];
   private boardNow = 0;
+  private decalSources: Array<(sink: DecalSink) => void> = [];
+  /** 调试：强制粉笔描边的亮度（null = 按氛围与设置）。描边亮度的对照测量用。 */
+  chalkOverride: number | null = null;
+  private readonly decalSink: DecalSink = {
+    add: (kind, x, y, s, w, l, color, intensity, rot = 0) => this.decals.add(kind, x, y, s, w, l, color, intensity, null, rot),
+  };
   private readonly boardTick = (b: Board): void => { b.update(this.boardNow); };
   /** 统计（测试、调试用）。 */
   readonly stats = { slots: 0, generic: 0, special: 0, pools: 0, maxSlotTris: 0, maxSlotCalls: 0 };
@@ -169,6 +194,20 @@ export class World implements ViewSystem {
     ctx.scene.add(this.root);
     this.decals = new Decals(this.lamps.uniforms);
     ctx.scene.add(this.decals.mesh);
+    // 扩展入口（见 HwViewExt）
+    const ext = ctx as ViewContext & HwViewExt;
+    ext.decals = {
+      source: (fn) => {
+        this.decalSources.push(fn);
+        return () => { this.decalSources = this.decalSources.filter((f) => f !== fn); };
+      },
+    };
+    const atmo = (): AtmosphereMixer => this.atmo;
+    ext.atmosphere = {
+      get id() { return atmo().id; }, get dark() { return atmo().cur.dark; }, get planarDir() { return atmo().cur.dirVec; },
+      get fogNear() { return atmo().cur.near; }, get fogFar() { return atmo().cur.far; }, get fogColor() { return atmo().cur.fog; },
+      get lampGain() { return atmo().cur.lampGain; }, get chalkMin() { return atmo().cur.chalkMin; },
+    };
     // 材质：地面按贴图缓存；static 分「有 uv（校园贴图集）」与「纯顶点色」；发光体跟灯走
     const size = ctx.quality.texSize;
     if (typeof document !== 'undefined') {
@@ -184,8 +223,10 @@ export class World implements ViewSystem {
     this.atlasTex.colorSpace = THREE.SRGBColorSpace;
     this.staticAtlasMat = ctx.mat.lambert({ vertexColors: true, map: this.atlasTex, flat: true });
     this.staticPlainMat = ctx.mat.lambert({ vertexColors: true, flat: true });
+    this.staticWhiteMat = ctx.mat.lambert({ flat: true });
     this.emissiveMat = ctx.mat.basic({ color: 0xffffff, lampLit: true });
     this.emissiveMat.vertexColors = true;
+    this.emissiveWhiteMat = ctx.mat.basic({ color: 0xffffff, lampLit: true });
   }
 
   // ——————————————————— 读章 ———————————————————
@@ -346,11 +387,12 @@ export class World implements ViewSystem {
   private floorMat(g: THREE.BufferGeometry): THREE.MeshLambertMaterial {
     const h = floorHints(g.userData as Record<string, unknown>);
     const useMap = !!h.map && !!g.getAttribute('uv');
-    const key = `${useMap ? `${h.map?.id}:${JSON.stringify(h.map?.params ?? {})}` : 'plain'}|${h.depthWrite ? 'dw' : 'nodw'}`;
+    const vc = !!g.getAttribute('color');
+    const key = `${useMap ? `${h.map?.id}:${JSON.stringify(h.map?.params ?? {})}` : 'plain'}|${h.depthWrite ? 'dw' : 'nodw'}|${vc ? 'vc' : 'white'}`;
     let m = this.floorMats.get(key);
     if (!m) {
       const map = useMap && h.map ? this.ctx.tex.get(h.map.id, { ...(h.map.params ?? {}), repeat: 1 }) : undefined;
-      m = this.ctx.mat.lambert(map ? { vertexColors: true, map, flat: true } : { vertexColors: true, flat: true });
+      m = this.ctx.mat.lambert(map ? { vertexColors: vc, map, flat: true } : { vertexColors: vc, flat: true });
       m.depthWrite = h.depthWrite;               // §5.8：地面不写深度（水洼模板门户）；楼梯段写
       m.name = `hw:floor:${key}`;
       this.floorMats.set(key, m);
@@ -365,10 +407,14 @@ export class World implements ViewSystem {
     const floor = new THREE.Mesh(gs.floor, this.floorMat(gs.floor));
     floor.renderOrder = RENDER_ORDER.floor;
     floor.name = 'floor';
-    const stat = new THREE.Mesh(gs.static, gs.static.getAttribute('uv') ? this.staticAtlasMat : this.staticPlainMat);
+    // 材质按显式标志选（kitContext.ts）：校园贴图集只给标了 hwAtlas 的 static；没有顶点色的几何体用白色材质
+    const hasCol = (g: THREE.BufferGeometry) => !!g.getAttribute('color');
+    const statMat = usesSchoolAtlas(gs.static.userData as Record<string, unknown>) && gs.static.getAttribute('uv') ? this.staticAtlasMat
+      : hasCol(gs.static) ? this.staticPlainMat : this.staticWhiteMat;
+    const stat = new THREE.Mesh(gs.static, statMat);
     stat.name = 'static';
     group.add(floor, stat);
-    if (gs.emissive) { const e = new THREE.Mesh(gs.emissive, this.emissiveMat); e.name = 'emissive'; group.add(e); }
+    if (gs.emissive) { const e = new THREE.Mesh(gs.emissive, hasCol(gs.emissive) ? this.emissiveMat : this.emissiveWhiteMat); e.name = 'emissive'; group.add(e); }
     group.updateMatrix(); group.matrixAutoUpdate = false;
     for (const c of group.children) { c.updateMatrix(); c.matrixAutoUpdate = false; }
     group.updateMatrixWorld(true);
@@ -569,6 +615,28 @@ export class World implements ViewSystem {
     return snap.still.held / inp.holdSeconds;
   }
 
+  /** 把当前氛围写进灯光、雾和 LampField 的 uniform（每帧调用；调试切氛围时也立即调用，不必等下一帧）。 */
+  private applyAtmosphere(stillMode: boolean): void {
+    this.atmo.apply();
+    const cur = this.atmo.cur;
+    const st = this.ctx.settings;
+    const U = this.lamps.uniforms;
+    this.lamps.floor = cur.lampFloor;
+    this.lamps.reducedFlicker = st.reducedFlicker;
+    U.uLampGain.value = cur.lampGain;
+    U.uLampColor.value.copy(cur.lampColor);
+    U.uChalk.value = this.chalkOverride ?? (st.outlines || st.assist ? Math.max(0.5, cur.chalkMin) : cur.chalkMin);
+    this.lamps.uniformLevel = stillMode ? 1 : null;
+  }
+
+  /** 调试：立即切到某个氛围（灯光、雾、LampField 参数和亮度场当场生效）。id 为 null 时只把当前氛围重新写一遍。 */
+  snapAtmosphere(id: AtmosphereId | null): void {
+    if (id) this.atmo.snap(id);
+    const still = this.preview ? !!this.preview.set : this.last?.segKind === 'still';
+    this.applyAtmosphere(still);
+    if (!still) this.lamps.update(this.lamps.now, this.preview && !this.preview.set ? this.preview.s : this.last?.player.s ?? 0, this.last?.player.floorY ?? 0);
+  }
+
   // ——————————————————— 每帧 ———————————————————
   frame(prev: SimSnapshot, next: SimSnapshot, alpha: number, _dt: number): void {
     this.last = next;
@@ -583,15 +651,7 @@ export class World implements ViewSystem {
     if (pv && !pv.set) { s = pv.s; fy = pv.seg.floorY(pv.s); }
     // 氛围与 LampField
     this.atmo.update(t);
-    const cur = this.atmo.cur;
-    const st = this.ctx.settings;
-    const U = this.lamps.uniforms;
-    this.lamps.floor = cur.lampFloor;
-    this.lamps.reducedFlicker = st.reducedFlicker;
-    U.uLampGain.value = cur.lampGain;
-    U.uLampColor.value.copy(cur.lampColor);
-    U.uChalk.value = st.outlines || st.assist ? Math.max(0.5, cur.chalkMin) : cur.chalkMin;
-    this.lamps.uniformLevel = stillMode ? 1 : null;
+    this.applyAtmosphere(stillMode);
     this.lamps.update(t, s, stillMode ? STILL_ORIGIN.y : fy);
     this.atmo.follow(0, fy, -s);
     // 可见性
@@ -616,6 +676,9 @@ export class World implements ViewSystem {
     // 地面贴花
     this.decals.begin();
     if (!stillMode) this.fillDecals(list, visibleFrom, visibleTo, s);
+    for (const fn of this.decalSources) {
+      try { fn(this.decalSink); } catch (err) { console.error('[world] decal source failed', err); }
+    }
     this.decals.end();
   }
 

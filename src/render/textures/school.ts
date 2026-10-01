@@ -174,8 +174,8 @@ function paintPlate(g: G, x0: number, y0: number, w: number, h: number, text: st
 
 function paintRoster(g: G, x0: number, y0: number, w: number, h: number, rng: Rng): void {
   g.fillStyle = hex(0xdfe3e2); g.fillRect(x0, y0, w, h);
-  g.fillStyle = hex(0x3a464d); g.font = `bold ${Math.round(h * 0.07)}px ${CJK_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText('值日表', x0 + w / 2, y0 + h * 0.08);
+  // 标题：一道看不清的粗笔画（不写字，世界里不自创文字）
+  g.fillStyle = hex(0x3a464d, 0.75); g.fillRect(x0 + w * 0.3, y0 + h * 0.06, w * 0.4, h * 0.04);
   const gx0 = x0 + w * 0.06, gy0 = y0 + h * 0.16, gw = w * 0.88, gh = h * 0.78;
   g.strokeStyle = hex(0x50606a, 0.8); g.lineWidth = Math.max(1, w / 150);
   for (let i = 0; i <= 5; i++) { g.beginPath(); g.moveTo(gx0 + (i / 5) * gw, gy0); g.lineTo(gx0 + (i / 5) * gw, gy0 + gh); g.stroke(); }
@@ -315,7 +315,7 @@ export const ATLAS = {
   ceiling: U(0, 8, 10, 11),
   /** 墙面瓷砖：0.9 m × 0.9 m，6 × 6 块。 */
   tile: U(10, 0, 16, 6),
-  /** 门牌（4 个，4:1）：0、1 给关卡数据里的门牌，2、3 是通用班牌。 */
+  /** 门牌（4 个，4:1）：0、1 给关卡数据里的门牌，2、3 是通用班牌（空白：原文只有高二（7）班和「隔壁班」，不自创班名）。 */
   plates: [U(10, 6, 16, 7.5), U(10, 7.5, 16, 9), U(10, 9, 16, 10.5), U(10, 10.5, 16, 12)] as const,
   roster: U(0, 11, 4, 16),
   notice: U(4, 11, 7, 16),
@@ -326,8 +326,8 @@ export const ATLAS = {
 export const ATLAS_WHITE_UV: readonly [number, number] = [(ATLAS.white[0] + ATLAS.white[2]) / 2, (ATLAS.white[1] + ATLAS.white[3]) / 2];
 /** 墙面贴图的平铺周期（米）。 */
 export const WALL_PERIOD = 3.2;
-/** 通用班牌上的字（不含 7 班：7 班只在关卡数据里出现）。 */
-export const GENERIC_PLATES = ['高二（6）班', '高二（8）班'] as const;
+/** 通用班牌上的字：空白（不自创文字；7 班只在关卡数据里出现）。 */
+export const GENERIC_PLATES = ['', ''] as const;
 
 /** p.plates = 'a|b'：关卡数据里的门牌文字（最多 2 个）。 */
 export const schoolAtlas: TexGen = (size, p) => { const c = makeCanvas(size, size); paintSchoolAtlas(c, p); return c; };

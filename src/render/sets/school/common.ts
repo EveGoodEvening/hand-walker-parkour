@@ -4,9 +4,11 @@
 import * as THREE from 'three';
 import type { ViewContext } from '../../../core/contracts';
 import { createRng } from '../../../core/rng';
-import { KitGeo } from '../../geom';
+import { KitGeo, type Col } from '../../geom';
+import { wallAlbedo } from '../../wallTone';
 import type { Env } from '../../kits/school/shell';
 import { PAL } from '../../palette';
+import type { AtmosphereId } from '../../../core/types';
 
 /** 给家具构件（desk / chair / bench / table）用的「伪 chunk 环境」：z = −s，没有段信息。 */
 export function setEnv(ctx: ViewContext, salt: string): Env {
@@ -58,28 +60,38 @@ export function floorRect(g: KitGeo, x0: number, x1: number, z0: number, z1: num
   g.quad([x0, y, z1], [x1, y, z1], [x1, y, z0], [x0, y, z0], color, null, [0.85, 0.85, 1, 1]);
 }
 
+/**
+ * 墙面色带 y0..y1 的受光补偿（wallTone.ts）：set 的墙没有贴图、静场的亮度场整张取 1，
+ * 每条色带自带 0.75 → 1 的明暗（取平均 0.875）。
+ */
+export function setWallTone(color: number, y0: number, y1: number, atmo: AtmosphereId = 'morning'): Col {
+  return wallAlbedo(color, Math.min(2.1, (y0 + y1) / 2), { shade: 0.875, tex: 1, lamp: 1, atmo });
+}
+
 /** 墙：x = const 的竖直面（side −1 朝 +x，+1 朝 −x）或 z = const（朝 +z）。 */
-export function wallX(g: KitGeo, x: number, side: -1 | 1, z0: number, z1: number, y0: number, y1: number, color: number): void {
+export function wallX(g: KitGeo, x: number, side: -1 | 1, z0: number, z1: number, y0: number, y1: number, color: Col): void {
   const sh: [number, number, number, number] = [0.75, 0.75, 1, 1];
   if (side < 0) g.quad([x, y0, z1], [x, y0, z0], [x, y1, z0], [x, y1, z1], color, null, sh);
   else g.quad([x, y0, z0], [x, y0, z1], [x, y1, z1], [x, y1, z0], color, null, sh);
 }
-export function wallZ(g: KitGeo, z: number, x0: number, x1: number, y0: number, y1: number, color: number): void {
+export function wallZ(g: KitGeo, z: number, x0: number, x1: number, y0: number, y1: number, color: Col): void {
   g.quad([x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z], color, null, [0.75, 0.75, 1, 1]);
 }
 
 /** 墙裙式的墙（x = const）：踢脚、墙裙、上沿、墙面。 */
-export function schoolWallX(g: KitGeo, x: number, side: -1 | 1, z0: number, z1: number, h: number, wall: number = PAL.wall, wainscot: number = PAL.wainscot): void {
-  wallX(g, x, side, z0, z1, 0, 0.1, 0x3a464d);
-  wallX(g, x, side, z0, z1, 0.1, 1.1, wainscot);
-  wallX(g, x, side, z0, z1, 1.1, 1.15, PAL.wainscotTop);
-  wallX(g, x, side, z0, z1, 1.15, h, wall);
+export function schoolWallX(g: KitGeo, x: number, side: -1 | 1, z0: number, z1: number, h: number, wall: number = PAL.wall, wainscot: number = PAL.wainscot,
+  atmo: AtmosphereId = 'morning'): void {
+  wallX(g, x, side, z0, z1, 0, 0.1, setWallTone(0x3a464d, 0, 0.1, atmo));
+  wallX(g, x, side, z0, z1, 0.1, 1.1, setWallTone(wainscot, 0.1, 1.1, atmo));
+  wallX(g, x, side, z0, z1, 1.1, 1.15, setWallTone(PAL.wainscotTop, 1.1, 1.15, atmo));
+  wallX(g, x, side, z0, z1, 1.15, h, setWallTone(wall, 1.15, h, atmo));
 }
-export function schoolWallZ(g: KitGeo, z: number, x0: number, x1: number, h: number, wall: number = PAL.wall, wainscot: number = PAL.wainscot): void {
-  wallZ(g, z, x0, x1, 0, 0.1, 0x3a464d);
-  wallZ(g, z, x0, x1, 0.1, 1.1, wainscot);
-  wallZ(g, z, x0, x1, 1.1, 1.15, PAL.wainscotTop);
-  wallZ(g, z, x0, x1, 1.15, h, wall);
+export function schoolWallZ(g: KitGeo, z: number, x0: number, x1: number, h: number, wall: number = PAL.wall, wainscot: number = PAL.wainscot,
+  atmo: AtmosphereId = 'morning'): void {
+  wallZ(g, z, x0, x1, 0, 0.1, setWallTone(0x3a464d, 0, 0.1, atmo));
+  wallZ(g, z, x0, x1, 0.1, 1.1, setWallTone(wainscot, 0.1, 1.1, atmo));
+  wallZ(g, z, x0, x1, 1.1, 1.15, setWallTone(PAL.wainscotTop, 1.1, 1.15, atmo));
+  wallZ(g, z, x0, x1, 1.15, h, setWallTone(wall, 1.15, h, atmo));
 }
 
 /**

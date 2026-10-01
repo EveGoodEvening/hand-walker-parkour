@@ -6,18 +6,19 @@
 import type { EnvKit, KitChunk, LampSpec } from '../../../core/contracts';
 import { registerKit } from '../../../core/registry';
 import type { KitGeo } from '../../geom';
-import type { HwKitChunkContext } from '../../kitContext';
+import { markSchoolAtlas, type HwKitChunkContext } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
 import { ATLAS } from '../../textures/school';
 import {
-  CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_WINDOW, beatsIn, brassStrips, chunkZ, contactShadow, floorUV, ceilingBack, ceilingQuad, crossWall, dataPlates, flatFloor, geos,
+  CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_LIFT, NIGHT_WINDOW, beatsIn, brassStrips, chunkZ, contactShadow, floorUV, ceilingBack, ceilingQuad, crossWall, dataPlates, flatFloor, geos,
   makeEnv, mirrorRooms, noticeBoard, radiator, sideHoles, sideWall, stepsIn, wallPaper, windowPane, type Env, type Hole, type WallStyle, type WindowStyle,
 } from './shell';
 
 const ROOM = 4.6;          // 教室半宽
 const H = 3.3;
 const VESTIBULE = 3.4;     // 门厅长度
-const WALL: WallStyle = { ...CORRIDOR_WALL, height: H };
+const DAY_WALL: WallStyle = { ...CORRIDOR_WALL, height: H };
+const NIGHT_WALL: WallStyle = { ...DAY_WALL, lift: NIGHT_LIFT };
 
 interface Look { windows: WindowStyle; curtain: number; night: boolean }
 const LOOKS: Record<string, Look> = {
@@ -57,6 +58,7 @@ export function chair(g: KitGeo, e: Env, x: number, z: number, pushed: number): 
 }
 
 export function buildClassroom(ctx: HwKitChunkContext, look: Look): KitChunk {
+  const WALL = look.night ? NIGHT_WALL : DAY_WALL;
   const e = makeEnv(ctx);
   const { floor, stat, emi } = geos();
   const lamps: LampSpec[] = [];
@@ -178,7 +180,7 @@ export function buildClassroom(ctx: HwKitChunkContext, look: Look): KitChunk {
 
   const f = floor.build();
   f.userData = { hwFloorMap: { id: 'terrazzo', params: { base: PAL.terrazzo } }, hwGloss: 0.18 };
-  const out: KitChunk = { floor: f, static: stat.build(), lamps };
+  const out: KitChunk = { floor: f, static: markSchoolAtlas(stat.build()), lamps };
   if (emi.vertexCount) out.emissive = emi.build({ steady: true, uv: false });
   return out;
 }

@@ -171,8 +171,8 @@ export class View implements ViewAPI {
   /** 自上次调用以来的峰值 draw call，调用后清零（e2e 用）。 */
   takePeakDrawCalls(): number { const v = this.meter.peakDrawCalls; this.meter.peakDrawCalls = 0; return v; }
 
-  /** 调试：渲染一帧并读回画布上一块区域（归一化坐标，y 向下）的亮度统计（0..1，Rec.709，按输出的 sRGB 值）。 */
-  luma(x0 = 0, y0 = 0, x1 = 1, y1 = 1): { mean: number; p99: number; max: number } {
+  /** 调试：渲染一帧并读回画布上一块区域（归一化坐标，y 向下）的像素（RGBA8，按输出的 sRGB 值）。 */
+  private readRegion(x0: number, y0: number, x1: number, y1: number): { buf: Uint8Array; pw: number; ph: number } {
     const r = this.renderer;
     r.info.reset();
     r.render(this.scene, this.camera);
@@ -182,6 +182,27 @@ export class View implements ViewAPI {
     const pw = Math.max(1, Math.floor((clamp(x1, 0, 1) - clamp(x0, 0, 1)) * W)), ph = Math.max(1, Math.floor((clamp(y1, 0, 1) - clamp(y0, 0, 1)) * H));
     const buf = new Uint8Array(pw * ph * 4);
     gl.readPixels(px, py, pw, ph, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    return { buf, pw, ph };
+  }
+
+  /** 调试：一块区域的平均颜色（sRGB 0..255）与它的 HSL（0..1，与 CSS 的 hsl() 相同的定义）。取色校验截图用。 */
+  color(x0 = 0, y0 = 0, x1 = 1, y1 = 1): { rgb: [number, number, number]; hex: string; h: number; s: number; l: number } {
+    const { buf, pw, ph } = this.readRegion(x0, y0, x1, y1);
+    const sum = [0, 0, 0];
+    for (let i = 0; i < pw * ph; i++) for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (buf[i * 4 + c] as number);
+    const rgb = sum.map((v) => Math.round(v / (pw * ph))) as [number, number, number];
+    const [r, g, b] = rgb.map((v) => v / 255) as [number, number, number];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+    const s = d < 1e-9 ? 0 : d / (1 - Math.abs(2 * l - 1));
+    let h = 0;
+    if (d > 1e-9) h = (mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) / 6;
+    const hex = `#${rgb.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+    return { rgb, hex, h: +h.toFixed(3), s: +s.toFixed(3), l: +l.toFixed(3) };
+  }
+
+  /** 调试：渲染一帧并读回画布上一块区域（归一化坐标，y 向下）的亮度统计（0..1，Rec.709，按输出的 sRGB 值）。 */
+  luma(x0 = 0, y0 = 0, x1 = 1, y1 = 1): { mean: number; p99: number; max: number } {
+    const { buf, pw, ph } = this.readRegion(x0, y0, x1, y1);
     let sum = 0, max = 0;
     const hist = new Uint32Array(256);
     for (let i = 0; i < pw * ph; i++) {
