@@ -85,3 +85,48 @@
 - **第三次整体被杀的原因（2026-10-01 11:22，内核日志 `Out of memory: Killed process … (MainThread) anon-rss:11151488kB`）**：Node 24 的进程名是 `MainThread`。某个 agent 为了跑 scratchpad 里的临时测试，执行了 `npx vitest run --root / <file>`。vitest/vite 以 `/` 为根扫描整个文件系统，Node 进程涨到 11 GB，全局 OOM 把整个 tmux scope 连同会话一起杀掉。规则：
   - **永远不要**给 vitest/vite 传 `--root /` 或任何 worktree 之外的大目录。临时测试文件放进 worktree 的 `tests/unit/<包>/tmp-*.test.ts` 跑，提交前删掉；或者 `npx vitest run <file> --root <worktree>`。
   - 仓库根的 `.npmrc` 设了 `node-options=--max-old-space-size=4096`，`npm run`、`npx`、`npm exec` 都会继承，失控时只会报 heap OOM，不会拖垮整台机器。直接 `node`/`tsx` 跑的临时脚本不经过 npm，要自己加 `NODE_OPTIONS=--max-old-space-size=4096`。可能吃大内存的临时命令（整章求解、全量扫描）用 `systemd-run --user --scope -q -p MemoryMax=4G -p MemorySwapMax=0 -- <命令>` 包起来，失控时只杀它自己（已验证可用）。
+- 第二轮评审集成（2026-10-01，lead 汇总 U1–U6 追加到 `docs/lessons/WP*.md` 的部分，原文件保留作历史；修订内容见 DESIGN §10.3）。按主题分组，只留可复用的经验。
+- **合并与协作**：
+  - 新加的校验规则会让别的包里「五章没有 warning」的测试变红（`chapters.test.ts` 的 `issues).toEqual([])`）。先合数据修复、再合规则；合并前用 `git merge-tree --write-tree` 把两个分支合成一棵树，`git archive` 到 scratchpad 实测。不要为了变绿把 warning 挪到测试看不见的地方。
+  - 改数据会让别的包测试里写死的拍号和清单失效：U5 按旧的 1.0 s 低头时长在 1-3 @44.9 检查「抬头」，U6 的站立段组清单里没有 U1 新加的 5-7:teacherMa。改数据前先 `grep -rn` 别的包测试里的段 id 和拍号；合并后按新数据改取点，不放宽阈值。
+  - 裁定里的数值和验收线冲突时（4-5 步幅 1.1 m 与撑跃窗口 0.16 s），把两条约束都量出来写进报告，由 lead 选一个，不要两头来回改。
+- **数据与难度**：
+  - §2.8 的必需动作密度按求解器最少输入算（`solver.solve(seg, { noAsk: true })`），只占边道的行不算。量「最长多久不用按键」时，停拍算在里面，剧本慢行（`slow`）不算；名义速度用编译段的 `cadenceAt(segBeat) × stride`。
+  - 撑跃窗口：滞空 `clamp(3 / 步频, 0.48, 0.72)`；步频 ≥ 4.17 时单车道窗口约为 (3·√(1 − 4h / 2.4) − (0.5 + 进深) / 步幅) 拍。慢速楼梯上的低矮障碍可能任何时机都跳不过，要改成横档；缩短步幅会直接吃掉窗口。量窗口用 validate 的 `jumpWindows`（名义时间轴、只判这一个障碍）。用整套 Sim 从某拍开始扫，会先撞上同车道别的障碍、被绊减速，报出假阳性。
+  - 段内渐变要在某一句出现时已经稳定：用 `{ type: 'cadence', to, beats }` 事件提前走完，放在段中检查点之后。实际步频用 `Pace` 量，编译段的 `cadenceAt` 不知道 cadence 事件。改了步幅或步频，同向移动的 NPC 起点要按新时间轴反推，否则追上的位置会漂几十拍。
+  - 字幕是滚动的两行，要按队列模拟（`tests/unit/content/subtitles.test.ts`），只看 R5 不够。两行事件后的下一句，按「两行合计字数 × 90 ms + 800 ms」换成拍数再放。
+  - 给 NPC 空出一条边道让路，最省路线可能就改成从那条道绕过去。要保住原文的动作（撑跃越过陈默的脚），在那条道上紧挨着他放一个低矮障碍（他的书包），但要放在他让开的站位窗口之外。用 perfect 自动驾驶的 action 事件验证。
+  - 时长预算贴着上限：第二章 +14.8%（上限 +15%），第五章非跑动 24.6%（上限 25%）。加字之前先算，超出的时间从同章没有主异常约束的静场里挤（删字幕显示完之后的空白）。
+  - 站立段沿用前一个跑段的 NPC 组。组的 from / to 可以超出本段拍数（按里程画），要按站立段的位置摆（马老师在 5-7 @66）。画面要看 kit 实际画了什么：挪栏杆、挪文字前先看 kit 的 `skip` 条件。
+- **难度机器人**：
+  - 不能照搬求解器的路线时刻：求解器在代价相同时总是最后一刻换道、贴着下沿伏低，叠上抖动就会撞，超标是假阳性。规划时加 0.25 m 余量，用可选代价项 `laneLead` 让躲避提前约 0.3 s（输入次数不变），横档提前按住 ↓。
+  - 把「提前多少秒」换成里程不能乘 `pace.base`（进段第一 tick 是 0），要从当前 Pace 状态往前推一条名义时间轴再换算。
+  - 60 次的失败率噪声约 ±3.5 个百分点，比较两个区间用 200 次；失误率测试至少 12 个种子。修好的机器人对密度不敏感，用它调密度时同时看 `meanHits`。「平均提前量」会被回中道的长样本拉高，同时看中位数和 p25。
+- **跳过静场**：只保留状态（DESIGN §10.3）。核对「跳过和看完，下一段一致」要连界面一起算：用 `src/ui/hud/overlays.ts` 的 `OverlayState` 按 UI 的规则重放 cue 流。测试先用旧行为（`'all'`）证明检查能抓到问题。
+- **画面**：
+  - 追尾机位挡障碍是几何问题：盲区长 = h·(back + 0.45) / (h − 0.68) − back，抬机位压不到 1 m，所以要靠「本车道前方有障碍时上半身淡到 0.4」。一个 SkinnedMesh 只淡一部分：顶点着色器按 `skinIndex.x` 分组取 alpha，片元 alpha < 0.01 时 discard，材质一直 transparent（切换会换着色器变体、卡一下）。
+  - 「在画面里」不等于「看得见」：构图测试用遮挡深度图（`tests/unit/actors/scene.ts` 的 `occluderDepth` + `visibleAgainst`），截图清单用页面内同样的检查，要求 ≥ 50% 可见。构图先在 Node 场景台里算（比浏览器快两个数量级），黑板之类的遮挡可用 `set.build()` + Raycaster。
+  - 镜前的东西会挡低处的倒影：洗手台台面 0.87 m，墙镜替身离玻璃越近越挡，所以深度取 0.3 + 0.75 × 玩家到墙的距离。只按台面外沿那一个平面判断遮挡太乐观（视线还会从洗手池顶面穿过），只按「连续的台面」判断又太悲观（洗手池之间有空隙）；拿不准时直接截图看。
+  - 渲染端把脚本姿势留得比 cue 久时，写清楚留到哪个事件为止，在那个事件发生时放下，姿势跳变藏进切镜头里。跨系统的「留着」条件在 cue 到达时写进共享状态，不读上一帧画面（无头测试跳着推进会闪）。跪直、举手这类姿势要在追尾机位下检查轮廓：第一到三章不能读成站着。
+  - 镜像替身的手势按「反射之前」写（车窗在左，就用左手敲）。静场替身挂在 set 的 `at` 上时朝向由 set 决定。静场替身的根高度不能归零；attachBehind 的宿主 box.matrix 已含锚点，不要再加地面高度（静场快照的 floorY 是前面各段累计的高度，Node 测试用 `seg.floorY(seg.s0)`，用 0 测不出来）。
+  - 户外给衣服补色不能用 `propAlbedo` 的比值（参考受光含 LampField），用 WP4 户外 `Tone.of(atmo).albedo(palette, normal)`，参考法线 (0, √½, √½)。NPC 用 `tonedHex` 记下色板原值，按段的氛围重算。
+  - 「发亮」不能用中等的自发光灰：经过 Neutral 和 sRGB 可能比脸还暗。先在 Node 里用 `screenColorBasic`（自发光）和 `screenColor`（反照率 × 受光）比 HSL 亮度。页面内取色要在 render 之后、同一个任务里 `gl.readPixels` 默认帧缓冲；渲染到 RenderTarget 读到的是线性值，没有色调映射。
+  - LampField 的灯项不除以 π，暗场景里灯色决定整个画面的色相：照到人和物的灯色要和地面光池贴花分开。换成不饱和的冷灯色要加增益（Neutral 的 toe 按最小的通道减），用 `tests/unit/render/shade.ts` 逐个材质和旧配置比。暗场景的整帧亮度由暗反照率的地面和墙决定，调灯拉不上去，要给暗色反照率一个部分补偿（`tone.ts` 的 `DARK_LIFT`：只乘暗色、三个通道同一个倍数，色相不变，第三章「暖色只有路灯金和栏杆红」的检查照样成立）。先在 Node 里用 shade.ts 按倍数列出画面亮度（两灯之间、灯下），定倍数，再截图量整帧中位数。
+  - NPC 上身按段定，不按远近，也不能因为别人在画面里就让出去（会像冲着你来、或一闪一闪）；站立段的组只在站立段进行时画。一个 InstancedMesh 装多个变体时用 `geometry.setDrawRange` 只画本帧用到的变体（three r186 对 InstancedMesh 也按 drawRange 截，`renderer.info` 同口径），常用的变体排最前。低画质预算要按段逐帧扫。
+  - 越过的障碍在远端过了玩家 0.55 m 后 0.12 s 内缩为 0，回头或 turnBack 机位时照画；只关心画面的测试先 `faceBack(ctx)`。
+  - 静场、站立段几乎不推进里程，所以「后面的跑段」在世界里就紧挨着前一个跑段的终点。ChunkStreamer 的前瞻按里程取 chunk，会把隔着站立段和静场的另一个场景提前画出来（5-7 跑道尽头的 5-11 走廊黑盒子）。跑段链后面接站立段时，前瞻换成站立段自己的 chunk；改前瞻规则前先截各章段尾，看门洞后面是不是靠下一段的 chunk 补上的。
+  - kit 调的是不带参数的 `stat.build()`，`KitGeo.withSteady(1)` 写的值进不了几何体，要用 `SteadyStatGeo`。贴图集的矩形要有「互不重叠」的单元测试。
+- **声音**：
+  - 要在屏幕门之下照样响的声音，换一条不在门集合里的总线（`SCREEN_EXEMPT_SFX`）；检查时看那条记录所在总线的门，不要只看有没有排出来。
+  - 判断「这次按键是不是被界面用掉了」：声音包在 window 的 capture 阶段计数，用 `setTimeout(0)` 等分发结束再看计数变没变。不能用 `queueMicrotask`：浏览器在每个监听器之间都会跑一次微任务检查点。
+  - 音频解锁要能重试：context 确认 running 之前一直挂手势监听，每次手势里同步播静音 buffer 再 `resume()`；自己暂停造成的 suspended 用「期望状态」区分。
+  - 回到标题之后的第一个 segment 一律按「跳段」整体重建（`jump = true`，地点换成 `TITLE_PLACE`）。旧声音已经被门压住时直接换掉，不要淡出：门打开比淡出快，会冒出一截旧声音。
+- **界面与流程**：
+  - 回到标题先复位场景、复位完成后再切标题屏。表示「正在复位」的 Promise 要在启动异步体之前挂上，同步跑完的分支会覆盖 finally 里的清空。
+  - Game 可以在 happy-dom 里整个 boot：注册真的 Sim / Solver，View、Audio、UI、Input 换成只记录调用的假实现；`game.loop.stop()` 后用 `game.tick()` 推进。
+  - 同一个元素换了文字，CSS 淡入动画不会重播：在两个内容相同的 keyframes 名之间切换。字幕衬底用 background 加同色 box-shadow；窄屏字号公式要扣掉衬底的 padding。
+  - 文字对比度：同一状态拍两张（第二张 `color: transparent !important`），两张亮度差最大的像素就是字形中心。主角的屏幕包围框用 `mesh.getVertexPosition(i, v)`（已带蒙皮）再乘 `matrixWorld`，读之前先 `__game.render()`。
+  - 自动画质切档会同步重建 chunk（SwiftShader 下 150–270 ms），推迟到静场或站立段开头、重来、读章时再切。
+- **工具**：
+  - 探针测试可以用 `writeFileSync` 把结果写到 scratchpad，测试照常通过（vitest 5 不打印通过用例的 console）。
+  - 想把一批改动拆成几次提交又不能用 `git add -p`：`git diff -U1 > full.patch`，删掉属于后面条目的行，再 `git apply --cached --recount`。
