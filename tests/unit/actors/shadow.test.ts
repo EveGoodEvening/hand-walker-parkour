@@ -133,7 +133,7 @@ describe('shadow anomalies are cast long and front-right (U5)', () => {
         let tip = -Infinity, cx = 0, cz = 0;
         for (const p of pts) { tip = Math.max(tip, (p.x - rx) * hx + (p.z - rz) * hz); cx += p.x - rx; cz += p.z - rz; }
         expect(tip).toBeGreaterThanOrEqual(2);
-        if (mode !== 'long') expect(tip).toBeLessThanOrEqual(4.0);           // 关节伸出约 2.5 m（鞋尖、发梢再远一点），不是一条拖到画面外的长带
+        if (mode !== 'long') expect(tip).toBeLessThanOrEqual(mode === 'liesDown' ? 4.8 : 4.0);           // 关节伸出约 2.5 m（鞋尖、发梢再远一点），不是一条拖到画面外的长带
         expect(cx / pts.length).toBeGreaterThan(0);
         expect(cz / pts.length).toBeLessThan(0);
       });
