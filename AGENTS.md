@@ -54,7 +54,7 @@
   - 站立段的按步事件（`atStep`）不进 `CompiledSegment.events`，Sim 直接读 `def.events`；跳过静场时要补发还没到的按步事件。画面按帧查询的 `Plan.actionAt(s)` 按区间回答。
   - vitest 只按文件并行：重的扫描按章拆成多个测试文件；测试里用 `sim.isEnded`，不要每 tick 扫全部事件。`__game.events()` 跨章不清空，e2e 判断「本章结束」只认最后一次 `chapter:start` 之后、`data.id` 是本章的 `chapter:end`，并带自检（同一章跑两遍结果相同）。
 - **渲染（three r186）**：
-  - §5.1 色板是画面上看到的颜色，不是反照率：Lambert 对半球光、平行光都除以 π，`NeutralToneMapping` 的 toe 让暗色又暗又饱和（裤子 #2A3A52 会变成 #04213D）。顶点色写入前按氛围反推（`render/wallTone.ts` 的 `propAlbedo` / `kitPropTone`、`kits/outside/lib/tone.ts`），先在 Node 里用「Lambert ÷ π + Neutral + sRGB」小模拟器对色，再上浏览器。Neutral 有解析逆。
+  - §5.1 色板是画面上看到的颜色，不是反照率：Lambert 对半球光、平行光都除以 π，`NeutralToneMapping` 的 toe 让暗色又暗又饱和（裤子 #2A3A52 会变成 #04213D）。顶点色写入前按氛围反推（`render/wallTone.ts` 的 `propAlbedo` / `kitPropTone`、`kits/outside/lib/tone.ts`；只能写十六进制的人物——主角、NPC——用 `propHex`），先在 Node 里用「Lambert ÷ π + Neutral + sRGB」小模拟器对色，再上浏览器。Neutral 有解析逆。
   - `renderer.info.memory.geometries` 在几何体第一次被画时才加一：读章后要预热（`View.warmUp`），判断泄漏要同一章跑两遍比第二遍。灯光数量变化会让所有材质重编译：没有平行光的预设也保留那盏 `DirectionalLight`，强度设 0。
   - 负行列式（镜像）矩阵会翻转三角形绕向，被背面剔除；累积器要自动翻转绕向，烘焙光照时法线也要取反。单面光带按法线定绕序。
   - 地面层先画、不写深度：地面以下的东西放进 floor 几何体，绘制顺序就是覆盖顺序。低画质下墙根接缝会漏背景色，贴地的墙往地下多伸 6 cm、相邻面多搭 5 cm。跨 chunk 的长物件按 chunk 裁剪。
