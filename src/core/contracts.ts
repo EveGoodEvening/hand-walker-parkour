@@ -12,7 +12,7 @@ import type { Settings } from './settings';
 import type { SaveAPI } from './save';
 import type {
   Action, ChapterId, Device, HitSeverity, InputEvent, KitId, Lane, QualityTier, Rng, ScreenName, SetId, SimSnapshot, WpId,
-  AmbienceId, ReverbId,
+  AmbienceId, AtmosphereId, ReverbId,
 } from './types';
 import type {
   CompiledChapter, CompiledObstacle, CompiledSegment, CompiledSurface,
@@ -49,7 +49,11 @@ export interface SimAPI {
 }
 /** 求解结果（§2.8 R2）。s 为可选扩展：动作开始时玩家的里程（CORE 求解器总会填写）。 */
 export interface PlanStep { t: number; s?: number; action: 'left' | 'right' | 'jump' | 'duck' | 'duckRelease' | 'hold' | 'straighten' }
-export interface Plan { steps: ReadonlyArray<PlanStep>; laneAt(s: number): Lane; actionAt(s: number): 'none' | 'jump' | 'duck' }
+export interface Plan {
+  steps: ReadonlyArray<PlanStep>; laneAt(s: number): Lane; actionAt(s: number): 'none' | 'jump' | 'duck';
+  /** 扩展（lead 集成，WP1 契约申请）：noAsk 为 false 时求解器开口「让一下」的里程。 */
+  asks?: readonly number[];
+}
 export interface SolveFrom { s: number; lane: Lane; tSeg: number }
 export interface SolverAPI {
   solve(seg: CompiledSegment, opts?: {
@@ -72,7 +76,11 @@ export interface QualityProfile {
 }
 export interface PerfStats { fps: number; drawCalls: number; triangles: number; geometries: number; textures: number; simMs: number; frameMs: number }
 export interface LampFieldUniforms { uLampField: { value: THREE.DataTexture }; uLampBase: { value: number }; uLampScale: { value: number }; uLampGain: { value: number }; uLampColor: { value: THREE.Color }; uChalk: { value: number }; uChalkColor: { value: THREE.Color } }
-/** 材质工厂（WP3，§5.3）。CORE 桩见 core/fallbacks.ts。 */
+/**
+ * 材质工厂（WP3，§5.3）。CORE 桩见 core/fallbacks.ts。
+ * lead 集成（WP4 契约申请）：lambert() / basic() 每次调用都返回新实例，调用方可以改 vertexColors、depthWrite、colorWrite、
+ * stencil*、fog、toneMapped、opacity、map、color。注意 Material.clone() 不复制 onBeforeCompile（LampField 补丁），不要克隆。
+ */
 export interface MaterialsAPI {
   lambert(o?: { vertexColors?: boolean; map?: THREE.Texture; transparent?: boolean; opacity?: number; flat?: boolean }): THREE.MeshLambertMaterial;
   basic(o?: { color?: number; map?: THREE.Texture; transparent?: boolean; opacity?: number; additive?: boolean; lampLit?: boolean }): THREE.MeshBasicMaterial;
@@ -89,7 +97,7 @@ export interface LampFieldAPI {
   brightnessAt(s: number): number;
   readonly uniforms: LampFieldUniforms;
 }
-/** 程序纹理库（WP3 实现；WP4 注册户外生成器，§5.9）。 */
+/** 程序纹理库（WP3 实现；WP4 注册户外生成器，§5.9）。get 按 id + 全部参数缓存（未知的参数键也进缓存键），取到的纹理是共享的。 */
 export interface TextureBank {
   get(id: string, p?: Readonly<Record<string, string | number>>): THREE.Texture;
   register(id: string, gen: (size: number, p: Readonly<Record<string, string | number>>) => HTMLCanvasElement): void;
@@ -97,11 +105,24 @@ export interface TextureBank {
 /** 墙上的开口（墙镜、窗、端墙镜，§5.8）。 */
 export interface Opening { side: 'L' | 'R' | 'end'; s0: number; s1: number; y0: number; y1: number; surfaceId: string }
 export interface SurfaceIndex { list(): readonly CompiledSurface[]; get(id: string): CompiledSurface | undefined; openingsIn(s0: number, s1: number): readonly Opening[] }
+/** 地面贴花的一个实例（WP3，§5.3）：(x, y, −s) 处，宽 w（x 向）、长 l（s 向），color 为 sRGB 十六进制；blob 压暗，其余加亮。 */
+export interface DecalSink {
+  add(kind: 'streak' | 'pool' | 'ring' | 'blob', x: number, y: number, s: number, w: number, l: number, color: number, intensity: number, rot?: number): boolean;
+}
+/** 当前插值后的氛围（WP3，§5.2），只读。 */
+export interface ViewAtmosphere {
+  readonly id: AtmosphereId; readonly dark: boolean; readonly planarDir: THREE.Vector3;
+  readonly fogNear: number; readonly fogFar: number; readonly fogColor: THREE.Color; readonly lampGain: number; readonly chalkMin: number;
+}
 /** 画面系统共享的上下文（§8.4）。 */
 export interface ViewContext {
   renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; overlayRoot: HTMLElement;
   bus: Bus; settings: Readonly<Settings>; quality: QualityProfile; rngFx: Rng; stencil: boolean;
   mat: MaterialsAPI; lamps: LampFieldAPI; tex: TextureBank; rig: RigFactory; surfaces: SurfaceIndex; solver: SolverAPI;
+  /** 扩展（lead 集成，WP3 契约申请）：每帧往地面贴花里加实例（仍是 1 次 draw call）；返回取消函数。WP3 的 World 在 init 时挂上。 */
+  decals?: { source(fn: (sink: DecalSink) => void): () => void };
+  /** 扩展（lead 集成，WP3 契约申请）：当前氛围。WP3 的 World 在 init 时挂上。 */
+  atmosphere?: ViewAtmosphere;
 }
 /** 画面子系统；View 按 order 升序调用（§8.4）。 */
 export interface ViewSystem {
@@ -138,6 +159,7 @@ export interface KitChunkContext {
  */
 export interface KitChunk { floor: THREE.BufferGeometry; static: THREE.BufferGeometry; emissive?: THREE.BufferGeometry; lamps: LampSpec[] }
 export interface EnvKit { id: KitId; owner: WpId; variants: readonly string[]; build(ctx: KitChunkContext): KitChunk; ambience(variant: string): AmbienceId; reverb(variant: string): ReverbId }
+/** 静场 set。World（WP3）每帧对当前静场的 set 调 update(静场时间, 快照)，update 必须只取决于 t 与快照（lead 集成，WP4 契约申请）。 */
 export interface StillSet {
   id: SetId; owner: WpId; variants: readonly string[];
   build(ctx: ViewContext, variant: string): THREE.Object3D;          // 开场卡期间预建
@@ -180,6 +202,8 @@ export interface GameCommands {
   start(ch: ChapterId, at?: { segment: string; beat: number }): Promise<void>;
   continueGame(): Promise<void>; retry(): void; pause(on: boolean): void; toTitle(): void; nextChapter(): void;
   setSetting<K extends keyof Settings>(k: K, v: Settings[K]): void; resetProgress(): void; skipStill(): void; setSlowOption(on: boolean): void;
+  /** 扩展（lead 集成，WP8 契约申请）：结尾卡输入每一下调用一次（n = 第几下；0 = 超时自动完成）；id 是 OutroDef 输入项的节拍 id。 */
+  outroInput?(id: string | undefined, n: number): void;
 }
 /**
  * 界面。show(s, data) 的 data 约定（CORE 写入，WP8 可以读更多字段）：

@@ -8,6 +8,8 @@ export const LANE_WIDTH = 1.1;
 /** 走廊的视觉宽度（§2.3）。 */
 export const CORRIDOR_WIDTH = 3.6;
 export const CHUNK_LEN = 12;
+/** 端墙镜开口的半宽（米）。CORE 占位 kit、WP3 的 endWalls、WP5 的端墙替身共用（lead 集成，WP5 契约申请）。 */
+export const END_MIRROR_HALF_W = 0.95;
 /**
  * 静场场景（StillSet）在世界里的原点（CORE 约定，§8.3「静场用 0.4 s 黑场切入切出，View 切换到对应的 StillSet」）。
  * 放在跑段下方很远处，与 chunk 互不遮挡；StillSet.build 的几何体与 playerAnchor、镜头机位都相对这个原点。

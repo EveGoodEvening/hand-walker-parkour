@@ -5,7 +5,7 @@
 // 几何体使用局部坐标（见 contracts.ts KitChunk）。3 个几何体 = ≤ 3 次 draw call。
 import type { AmbienceId, KitId, ReverbId } from '../../core/types';
 import type { EnvKit, KitChunk, KitChunkContext, LampSpec, Opening } from '../../core/contracts';
-import { CORRIDOR_WIDTH } from '../../core/constants';
+import { CORRIDOR_WIDTH, END_MIRROR_HALF_W } from '../../core/constants';
 import { GeoBuilder, mixHex } from '../../core/geo';
 import { registerKit } from '../../core/registry';
 
@@ -139,14 +139,18 @@ export function buildPlaceholderChunk(ctx: KitChunkContext): KitChunk {
   // 端墙开口（端墙镜）
   for (const o of ctx.openings.filter((q) => q.side === 'end' && q.s0 >= ctx.s0 - 1e-6 && q.s0 <= ctx.s1 + 1e-6)) {
     const ze = z(o.s0);
-    const hx = 0.95;
+    const hx = END_MIRROR_HALF_W;
     const c = st.wall;
     stat.quad([-HALF, 0, ze], [-hx, 0, ze], [-hx, H, ze], [-HALF, H, ze], c);
     stat.quad([hx, 0, ze], [HALF, 0, ze], [HALF, H, ze], [hx, H, ze], c);
     stat.quad([-hx, 0, ze], [hx, 0, ze], [hx, o.y0, ze], [-hx, o.y0, ze], st.wainscot);
     stat.quad([-hx, o.y1, ze], [hx, o.y1, ze], [hx, H, ze], [-hx, H, ze], c);
-    // 镜框
-    stat.box([0, (o.y0 + o.y1) / 2, ze + 0.02], [2 * hx + 0.08, o.y1 - o.y0 + 0.08, 0.02], 0x9ba5a9, { faces: '+z' });
+    // 镜框：只画四条边（lead 集成，WP5 契约申请；以前是一整块实心面，把开口和镜中替身全挡住了）
+    const fw = 0.04, fy = (o.y0 + o.y1) / 2, fh = o.y1 - o.y0 + 2 * fw;
+    stat.box([0, o.y1 + fw / 2, ze + 0.02], [2 * hx + 2 * fw, fw, 0.02], 0x9ba5a9, { faces: '+z' });
+    stat.box([0, o.y0 - fw / 2, ze + 0.02], [2 * hx + 2 * fw, fw, 0.02], 0x9ba5a9, { faces: '+z' });
+    stat.box([-hx - fw / 2, fy, ze + 0.02], [fw, fh, 0.02], 0x9ba5a9, { faces: '+z' });
+    stat.box([hx + fw / 2, fy, ze + 0.02], [fw, fh, 0.02], 0x9ba5a9, { faces: '+z' });
     // 镜中房间（端墙后方）
     const zb = ze - ROOM_DEPTH;
     stat.quad([-hx, 0.001, ze], [hx, 0.001, ze], [hx, 0.001, zb], [-hx, 0.001, zb], 0x1a2328);

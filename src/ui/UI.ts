@@ -137,6 +137,7 @@ export class UI implements UIAPI {
     this.outroScreen = new OutroScreen(this.el('outro'), {
       next: () => cmd.nextChapter(), replay: () => { const c = this.lastOutro?.chapter; if (c) void cmd.start(c); },
       toTitle: () => cmd.toTitle(), device: () => this.device,
+      input: (id, n) => cmd.outroInput?.(id, n),
     });
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', (e) => this.onKey(e));
@@ -458,7 +459,8 @@ export class UI implements UIAPI {
     const playing = inGame;
     const f = snap.follower;
     const s = Math.max(0, Math.min(3, Math.floor(snap.player.steady)));
-    const vig = playing && f.mode !== 'hidden' ? (FOLLOWER_MIX[s]?.vignette ?? 0) : 0;
+    // lead 集成（WP2 契约申请）：追随者的 HUD 为 none 时（5-3「身后什么也没有」）不加稳度暗角
+    const vig = playing && f.mode !== 'hidden' && f.hud !== 'none' ? (FOLLOWER_MIX[s]?.vignette ?? 0) : 0;
     b.style(this.layers.vignette, 'opacity', String(Math.min(1, vig + ov.pulse * 0.25)));
     b.style(this.layers.black, 'opacity', String(playing ? ov.black : 0));
     b.style(this.layers.cold, 'opacity', String(playing ? ov.cold : 0));

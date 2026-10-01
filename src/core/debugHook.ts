@@ -89,6 +89,8 @@ export function createDebugAPI(game: Game): GameDebugAPI {
       guard();
       game.sim.goto(segment, beat);
       game.afterJump();
+      // lead 集成（WP8 契约申请）：跳段与 retry 一样清掉失败状态和失败慢放
+      game.failing = null; game.loop.slowMul = 1;
       if (game.screenName !== 'play') game.setScreen('play');
     },
     pause() { guard(); game.pause(true); },
@@ -112,7 +114,7 @@ export function createDebugAPI(game: Game): GameDebugAPI {
     obstaclesAhead: (m) => (game.sim?.obstaclesAhead?.(m) ?? []) as Array<{ id: number; kind: ObstacleKind; cls: ObstacleClass; lanes: Lane[]; ds: number; beat: number }>,
     events: (n = 4096) => game.log.slice(-Math.max(0, n)),
     cues: (n = 50) => game.audio?.cues(n) ?? [],
-    beats: () => (game.next ? [...game.next.beatsFired] : []),
+    beats: () => [...(game.next ? game.next.beatsFired : []), ...game.outroBeats.filter((id) => !game.next?.beatsFired.includes(id))],
     hash: () => game.sim?.hash() ?? '',
     plan(segment?: string) {
       const ch = game.compiled;

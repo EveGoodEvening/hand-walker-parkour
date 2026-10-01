@@ -4,7 +4,7 @@
 // 墙面：踢脚线 / 墙裙（贴图集 wainscot，鞋踢痕在 5–15 cm）/ 墙裙上沿 / 灰泥（贴图集 plaster）；顶点色带假 AO。
 // 视觉节拍：地面铜条每拍一道（纹理，v = 拍），灯管每 2 拍一盏，楼梯扶手栏杆每拍一根。
 import type { LampSpec, Opening } from '../../../core/contracts';
-import { CORRIDOR_WIDTH } from '../../../core/constants';
+import { CORRIDOR_WIDTH, END_MIRROR_HALF_W } from '../../../core/constants';
 import { clamp, smoothstep } from '../../../core/math';
 import type { QualityTier, Rng } from '../../../core/types';
 import type { CompiledSurface } from '../../../levels/schema';
@@ -647,7 +647,7 @@ function windowRoom(stat: KitGeo, emi: KitGeo, e: Env, side: -1 | 1, o: Opening,
 export function endWalls(stat: KitGeo, e: Env, st: WallStyle, frame: number = PAL.steel, room: MirrorRoomStyle = DARK_ROOM, emi: KitGeo | null = null): void {
   for (const o of e.openings) {
     if (o.side !== 'end' || o.s0 < e.s0 - 1e-6 || o.s0 > e.s1 + 1e-6) continue;
-    const ze = e.z(o.s0), H = st.height, hx = 0.95;
+    const ze = e.z(o.s0), H = st.height, hx = END_MIRROR_HALF_W;
     const face = (x0: number, x1: number, y0: number, y1: number, c: Col) => {
       const s0 = wallShade(y0, H), s1 = wallShade(y1, H);
       stat.quad([x0, y0, ze], [x1, y0, ze], [x1, y1, ze], [x0, y1, ze], c, null, [s0, s0, s1, s1]);

@@ -7,7 +7,7 @@
 // 活动数量按画质：镜面 mirrorsActive、水洼 puddlesActive；只显示离玩家最近、在前方视野里的那几个。读章时建好，游戏中不建几何体。
 import * as THREE from 'three';
 import type { ViewContext, ViewSystem } from '../../core/contracts';
-import { CORRIDOR_WIDTH, RENDER_ORDER, STENCIL } from '../../core/constants';
+import { CORRIDOR_WIDTH, END_MIRROR_HALF_W, RENDER_ORDER, STENCIL } from '../../core/constants';
 import type { GameEvent } from '../../core/events';
 import { GeoBuilder, mixHex } from '../../core/geo';
 import { clamp, lerp } from '../../core/math';
@@ -18,8 +18,8 @@ import { WP5 } from './shared';
 const HALF = CORRIDOR_WIDTH / 2;     // 1.8
 const ROOM = 3.75;
 const H = 2.97;
-/** 端墙镜的半宽（与 CORE 占位 kit 的 0.95 一致；kit 在端墙上开同样宽的洞）。 */
-export const END_HALF_W = 0.95;
+/** 端墙镜的半宽（core/constants.ts 的 END_MIRROR_HALF_W；kit 在端墙上开同样宽的洞）。 */
+export const END_HALF_W = END_MIRROR_HALF_W;
 /** 调试水洼的 id（__game.ext.wp5Puddle）。 */
 export const DEBUG_PUDDLE_ID = '__wp5DebugPuddle';
 

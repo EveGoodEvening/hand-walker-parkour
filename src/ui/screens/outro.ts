@@ -11,7 +11,11 @@ import { outroStats, outroSteps, type OutroData, type OutroInputStep } from './c
 export const OUTRO_LINE_GAP = 0.9;
 export const CREDITS_AFTER = 3.2;
 
-export interface OutroActions { next(): void; replay(): void; toTitle(): void; device(): Device }
+export interface OutroActions {
+  next(): void; replay(): void; toTitle(): void; device(): Device;
+  /** lead 集成：结尾卡输入每一下（n = 第几下）和超时自动完成（n = 0）都报给 Game（GameCommands.outroInput）。 */
+  input?(id: string | undefined, n: number): void;
+}
 
 export class OutroScreen {
   private timers: Array<ReturnType<typeof setTimeout>> = [];
@@ -67,6 +71,7 @@ export class OutroScreen {
     this.hintEl = hint;
     const done = () => {
       if (!this.waiting) return;
+      if (this.waiting.taps === 0) this.a.input?.(step.id, 0);
       this.waiting = null;
       hint.classList.add('done');
       post.forEach((l, i) => addLine(l, 0.4 + i * OUTRO_LINE_GAP));
@@ -85,6 +90,7 @@ export class OutroScreen {
     const mode = w.step.input.mode;
     if (mode !== 'any' && key !== 'down') return true;
     w.taps++;
+    this.a.input?.(w.step.id, w.taps);
     if (this.card && this.hintEl) this.hintEl.setAttribute('data-taps', String(w.taps));
     if (w.taps >= w.need) w.resolve();
     return true;

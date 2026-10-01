@@ -149,6 +149,7 @@ export class Game implements GameCommands {
     this.view.onReset(this.next);
     this.failing = null; this.loop.slowMul = 1;
     this.texts = []; this.hint = null;
+    this.outroBeats.length = 0;
     this.dirty = true;
   }
 
@@ -163,6 +164,7 @@ export class Game implements GameCommands {
     const at = o.segment ? { segment: o.segment, beat: o.beat ?? 0 } : undefined;
     if (!reuse || !this.compiled || this.compiled.def.id !== ch) await this.loadChapter(ch, at);
     else if (at) { this.sim.goto(at.segment, at.beat); this.afterJump(); }
+    this.outroBeats.length = 0;
     this.paused = false;
     this.failing = null; this.loop.slowMul = 1;
     const def = getChapter(ch);
@@ -186,6 +188,8 @@ export class Game implements GameCommands {
     this.sim.retry();
     this.afterJump();
     this.failing = null; this.loop.slowMul = 1;
+    // lead 集成（WP7 契约申请）：从暂停菜单重来时结束暂停并恢复声音
+    if (this.paused) { this.paused = false; this.audio.suspend(false); }
     this.setScreen('play');
     this.loop.resetClock();
   }
@@ -212,7 +216,27 @@ export class Game implements GameCommands {
     }
   }
 
-  toTitle(): void { this.paused = false; this.failing = null; this.loop.slowMul = 1; this.setScreen('title'); }
+  toTitle(): void {
+    if (this.paused) this.audio.suspend(false);    // lead 集成（WP7 契约申请）：暂停菜单「回到标题」恢复声音
+    this.paused = false; this.failing = null; this.loop.slowMul = 1; this.setScreen('title');
+  }
+
+  /**
+   * 结尾卡输入（OutroDef.lines 的 { input, id }，第四章 fingerPractice；lead 集成，WP1 / WP2 / WP8 契约申请）。
+   * 界面每输入一次调用一次（n = 第几下）；n = 0 表示超时自动完成。每一下在床单上响一声；
+   * 有 id 时第一次调用就记进本章已触发的节拍（__game.beats()），并写一条 beat 事件进日志。
+   */
+  outroInput(id: string | undefined, n: number): void {
+    if (this.screenName !== 'outro') return;
+    if (n > 0 && this.compiled && this.view.context) this.onCue({ body: { type: 'sfx', sfx: 'cloth', gain: -4 }, segment: this.next.segment }, this.next);
+    if (id && !this.outroBeats.includes(id)) {
+      this.outroBeats.push(id);
+      this.log.push({ tick: this.next.tick, type: 'beat', data: { id } });
+      this.bus.emit('beat', { id });
+    }
+  }
+  /** 结尾卡上触发的必备节拍（模拟已经结束，不在 beatsFired 里）。 */
+  readonly outroBeats: string[] = [];
 
   nextChapter(): void {
     const n = this.chapterId ? nextChapterOf(this.chapterId) : null;
@@ -273,9 +297,11 @@ export class Game implements GameCommands {
     const play = this.screenName === 'play' && !this.failing;
     const kind = play ? this.next.segKind : 'menu';
     const look = play && this.ctxLook;
-    this.input.setContext({ kind, look, ask: false, standHalves: this.next.player.stand?.phase === 'walking' });
+    const ask = play && this.ctxAsk;          // lead 集成（WP1 / WP8 契约申请）：读 prompt 的 context.ask
+    this.input.setContext({ kind, look, ask, standHalves: this.next.player.stand?.phase === 'walking' });
   }
   private ctxLook = false;
+  private ctxAsk = false;
 
   // ——————————————————— 主循环 ———————————————————
   /** 推进 1 tick（1/120 s 游戏时间）。 */
@@ -363,8 +389,8 @@ export class Game implements GameCommands {
         }
         break;
       case 'segment': if (e.data.kind !== 'run') { /* 第一次看完之后才允许跳过 */ }
-        this.ctxLook = false; this.updateInputContext(); break;
-      case 'prompt': this.ctxLook = e.data.context.look; this.updateInputContext();
+        this.ctxLook = false; this.ctxAsk = false; this.updateInputContext(); break;
+      case 'prompt': this.ctxLook = e.data.context.look; this.ctxAsk = e.data.context.ask; this.updateInputContext();
         if (e.data.hint) this.hint = { id: e.data.hint, until: snap.t + 30 }; else this.hint = null;
         break;
       case 'note': {
@@ -438,8 +464,9 @@ export class Game implements GameCommands {
     this.view.frame(prev, next, alpha, dt);
     this.view.render();
     this.audio.frame(next, dt);
-    this.ui.frame(next, dt);
+    // lead 集成（WP8 契约申请）：先把最后一次输入的设备交给界面，再画界面，本帧的提示文字就是对的设备
     (this.ui as UIAPI & { setDevice?: (d: string) => void }).setDevice?.(this.input.device());
+    this.ui.frame(next, dt);
     this.dirty = false;
   }
 

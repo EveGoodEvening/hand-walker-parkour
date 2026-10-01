@@ -21,6 +21,7 @@
     "e2e:perf": "node scripts/e2e-perf.mjs",
     "e2e:visual": "node scripts/e2e-visual.mjs",
     "e2e:touch": "node tests/e2e-touch.mjs",
+    "e2e:audio": "node tests/unit/audio/browser/run.mjs",
     "bot:difficulty": "tsx scripts/bot-difficulty.mjs",
     "shot": "node scripts/shot.mjs",
     "verify": "node scripts/verify.mjs"
