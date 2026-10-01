@@ -1,11 +1,15 @@
 // tests/unit/levels/validate.test.ts —— 校验器 R1–R13 与静态检查（DESIGN.md §2.8、§10.1、§8.10 WP1 验收 5；
 // lead 补充要求 1：R3、R4、R6、R7 的检出各有单元测试）。每条规则都用最小的合成章节造一次违规，再确认干净的数据零 error。
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import ch1 from '../../../src/levels/chapters/ch1';
 import test from '../../../src/levels/chapters/test';
 import { availableChapters, getChapter } from '../../../src/levels/chapters/index';
-import type { ChapterDef, RunSegmentDef, SegmentDef } from '../../../src/levels/schema';
-import { CHALK_MIN, DARK_ATMOSPHERES, surfaceVisible, validateChapter, WAIVERS } from '../../../src/levels/validate';
+import { compile } from '../../../src/levels/compile';
+import { lineText } from '../../../src/levels/lines';
+import type { ChapterDef, RunSegmentDef, SegmentDef, TimedEventDef } from '../../../src/levels/schema';
+import {
+  CHALK_MIN, DARK_ATMOSPHERES, lookBackRestEnd, nominalTimeline, normalizeLint, runLint, surfaceVisible, timeAtS, validateChapter, WAIVERS,
+} from '../../../src/levels/validate';
 import { solver } from '../../../src/sim/Solver';
 import { chapter, MECH_RUN, runSeg, SEVEN, stillSeg } from '../sim/fixtures';
 
@@ -169,15 +173,58 @@ describe('R10 / R11 / R12 / R13', () => {
     const r = rules(one({ cadence: 4.8, rows: [[36, 'LLL']], windows: [{ from: 20, to: 30, type: 'lookBack', then: [{ at: 0, type: 'text', line: 'c1.empty' }] }], events: [{ at: 2, type: 'hint', hint: 'jump' }] }));
     expect(r).toContain('R10');
   });
+  it('R10：后续文字的时长按字幕停留算（字数 × 90 ms + 800 ms，§7.2），取最后一句消失的时刻', () => {
+    const dur = (ids: string[]) => (ids.map((i) => Array.from(lineText(i)).length).reduce((a, b) => a + b, 0) * 90 + 800) / 1000;
+    const then = (xs: Array<[number, string | string[]]>) => xs.map(([at, line]) => ({ at, type: 'text', line })) as unknown as TimedEventDef[];
+    expect(lookBackRestEnd(6.25, [])).toBeCloseTo(6.25 + 0.8, 9);
+    expect(lookBackRestEnd(6.25, then([[0.5, 'c1.soundStood']]))).toBeCloseTo(6.25 + 0.5 + dur(['c1.soundStood']) + 0.8, 9);
+    // 不是最后出字的那句，而是最后**消失**的那句；两行的字幕按两行字数合计
+    const xs = then([[0, 'c1.soundStood'], [1.2, 'c1.empty'], [0.3, ['c1.empty', 'c1.shadowProne']]]);
+    const want = Math.max(dur(['c1.soundStood']), 1.2 + dur(['c1.empty']), 0.3 + dur(['c1.empty', 'c1.shadowProne']));
+    expect(lookBackRestEnd(10, xs)).toBeCloseTo(10 + want + 0.8, 9);
+    // 不是文字的后续事件（影子）不计时长
+    expect(lookBackRestEnd(10, [{ at: 3, type: 'shadow', mode: 'jellyfish', seconds: 3 } as TimedEventDef])).toBeCloseTo(10.8, 9);
+  });
+  it('R10 的精确边界：休息窗正好盖住最后一个可行的输入时刻就报 error，早 0.01 s 结束就通过（旧的 0.8 s 估算两种都放过）', () => {
+    // 4.8 掌/s × 1.0 m：窗口 @20–30 = 4.17–6.25 s。@46 一整行低矮障碍，只能在某个时刻之前起跳。
+    const mk = (at: number) => one({ cadence: 4.8, rows: [[46, 'LLL']], events: [{ at: 2, type: 'hint', hint: 'jump' }],
+      windows: [{ id: 'wl', from: 20, to: 30, type: 'lookBack', then: [{ at, type: 'text', line: 'c1.soundStood' }] }] });
+    const seg = compile(mk(0)).segments[0]!;
+    const tl = nominalTimeline(seg);
+    const b = timeAtS(tl, seg.s0 + 30 * seg.stride);
+    expect(b).toBeCloseTo(6.25, 6);
+    // 最后一个可行的输入时刻 L（求解网格 0.05 s）：禁止 [0, L] 内开始输入就无解
+    let L = -1;
+    for (let k = 140; k < 240; k++) { const x = k * 0.05; if (!solver.solve(seg, { forbid: [[0, x]] })) { L = x; break; } }
+    expect(L).toBeGreaterThan(b);
+    const textSpan = lookBackRestEnd(b, [{ at: 0, type: 'text', line: 'c1.soundStood' } as TimedEventDef]) - b - 0.8;
+    const atExact = L - (b + textSpan + 0.8);           // 让休息窗的终点正好落在 L
+    expect(atExact).toBeGreaterThan(0);
+    const hit = errors(mk(atExact)).filter((i) => i.rule === 'R10');
+    expect(hit.length).toBe(1);
+    expect(hit[0]!.msg).toContain(`, ${L.toFixed(2)}]s`);
+    expect(rules(mk(atExact - 0.01))).not.toContain('R10');
+    // 旧实现按每句 0.8 s 估算：终点 = b + at + 0.8 + 0.8，比 L 早得多，会把这处违规放过去
+    expect(b + atExact + 0.8 + 0.8).toBeLessThan(L - 1);
+  });
   it('R11：端盘段有低矮障碍', () => {
     expect(rules(one({ controls: { jump: false }, rows: [[30, '.L.']], events: [{ at: 2, type: 'hint', hint: 'jump' }] }))).toContain('R11');
   });
-  it('R12：暗色氛围都带描边；非暗色氛围里关灯的区间有必需障碍时报 warning', () => {
+  it('R12：暗色氛围都带描边；R4：非暗色氛围里关灯 / 声控灯的区间有必需障碍时报 error（没有灯也没有描边）', () => {
     for (const a of DARK_ATMOSPHERES) expect(CHALK_MIN[a]).toBeGreaterThanOrEqual(0.15);
-    const r = validateChapter(one({ rows: [[30, '.L.']], events: [{ at: 2, type: 'hint', hint: 'jump' }, { at: 20, type: 'lights', op: 'out', from: 20, to: 40 }] }), solver);
-    expect(r.issues.some((i) => i.rule === 'R12' && i.level === 'warn')).toBe(true);
-    const dark = validateChapter(one({ atmosphere: 'nightIndoor', rows: [[30, '.L.']], events: [{ at: 2, type: 'hint', hint: 'jump' }, { at: 20, type: 'lights', op: 'out', from: 20, to: 40 }] }), solver);
-    expect(dark.issues.some((i) => i.rule === 'R12')).toBe(false);
+    const lit = (atmosphere: RunSegmentDef['atmosphere'], ev: object) => one({ atmosphere, rows: [[30, '.L.']], events: [{ at: 2, type: 'hint', hint: 'jump' }, ev as never] });
+    const out = errors(lit('morning', { at: 20, type: 'lights', op: 'out', from: 20, to: 40 })).filter((i) => i.rule === 'R4');
+    expect(out.length).toBe(1);
+    expect(out[0]!.msg).toContain('lights out');
+    expect(rules(lit('morning', { at: 20, type: 'lights', op: 'sound', from: 20, to: 40 }))).toContain('R4');
+    // 没写 to：到下一个 lights on 为止
+    const closed = one({ rows: [[30, '.L.']], events: [{ at: 2, type: 'hint', hint: 'jump' }, { at: 10, type: 'lights', op: 'out' }, { at: 20, type: 'lights', op: 'on' }] });
+    expect(rules(closed)).not.toContain('R4');
+    expect(rules(lit('morning', { at: 20, type: 'lights', op: 'out', from: 34, to: 40 }))).not.toContain('R4');
+    expect(rules(lit('morning', { at: 20, type: 'lights', op: 'flicker', from: 20, to: 40, every: 1 }))).not.toContain('R4');
+    // 暗色氛围：所有必需障碍都带粉笔描边，关灯也读得到
+    const dark = validateChapter(lit('nightIndoor', { at: 20, type: 'lights', op: 'out', from: 20, to: 40 }), solver);
+    expect(dark.issues.some((i) => i.rule === 'R12' || i.rule === 'R4')).toBe(false);
   });
   it('R13：静场 > 15 s、非跑动占比 > 25%、七步的实际时长 > 15 s', () => {
     expect(rules(one({}, [stillSeg({ duration: 16 })]))).toContain('R13');
@@ -202,21 +249,44 @@ describe('静态检查', () => {
   });
 });
 
-describe('已知问题的豁免（§10.1：第一章 1-5 → 1-6 只隔 18.9 s，WP2 修）', () => {
-  it('第一章：精确匹配的那一条降为 warning，并写明豁免原因', () => {
-    const r = validateChapter(ch1 as ChapterDef, solver);
-    const w = r.issues.filter((i) => i.rule === 'R6');
-    if (w.length) {
-      expect(w.every((i) => i.level === 'warn' && i.msg.startsWith('[waived'))).toBe(true);
-      expect(WAIVERS.some((x) => w[0]!.msg.endsWith(x.msg))).toBe(true);
+describe('豁免只认 lead 的书面批准（lead 补充要求 2、§10.1）', () => {
+  it('每条豁免的 approval 都逐字出现在 DESIGN.md §10（lead 修订记录）里；工作包不得自行降级', () => {
+    const design = readFileSync(new URL('../../../docs/DESIGN.md', import.meta.url), 'utf8');
+    const s10 = design.slice(design.indexOf('## 10. Lead 修订记录'));
+    expect(s10.length).toBeGreaterThan(0);
+    for (const w of WAIVERS) expect(s10.includes(w.approval), `${w.chapter} ${w.rule}: approval text not in DESIGN §10`).toBe(true);
+  });
+  it('已实现章节的 R6（含最坏时序）一律报 error，没有降成 warning 的', () => {
+    for (const id of availableChapters()) {
+      const r = validateChapter(getChapter(id) as ChapterDef, solver);
+      expect(r.issues.filter((i) => i.rule === 'R6' && i.level === 'warn').map((i) => i.msg)).toEqual([]);
+      expect(r.issues.filter((i) => i.msg.startsWith('[waived') && !WAIVERS.some((w) => i.msg.endsWith(w.msg)))).toEqual([]);
     }
   });
-  it('数据一改（间隔变了）豁免自动失效，重新报 error', () => {
-    const def = structuredClone(ch1) as ChapterDef;
-    const seg = def.segments.find((s) => s.id === '1-6') as RunSegmentDef;
-    const stop = seg.events!.find((e) => e.type === 'stop')!;
-    stop.at = 22;
-    const e = errors(def).filter((i) => i.rule === 'R6');
-    expect(e.length).toBeGreaterThan(0);
+});
+
+describe('R14：接入 WP2 的 lint（src/levels/lint.ts，入口约定见 docs/contract-requests/WP1.md）', () => {
+  it('normalizeLint：数组、字符串、{ issues }、{ errors, warnings }、message / severity 都认；认不出的结构按 error', () => {
+    expect(normalizeLint([], 'ch1')).toEqual([]);
+    expect(normalizeLint(undefined, 'ch1')).toEqual([]);
+    const a = normalizeLint(['用了感叹号', { level: 'warn', rule: 'B.8', msg: '太长', where: 'c2.x' }, { severity: 'warning', message: 'm' }], 'ch2');
+    expect(a.map((i) => [i.level, i.rule, i.chapter])).toEqual([['error', 'R14', 'ch2'], ['warn', 'B.8', 'ch2'], ['warn', 'R14', 'ch2']]);
+    expect(a[1]!.msg).toBe('c2.x: 太长');
+    expect(normalizeLint({ issues: [{ level: 'error', msg: 'x' }] }, 'text').map((i) => i.level)).toEqual(['error']);
+    expect(normalizeLint({ errors: ['e'], warnings: ['w'] }, 'text').map((i) => i.level)).toEqual(['error', 'warn']);
+    expect(normalizeLint(42, 'text')[0]!.level).toBe('error');
+  });
+  it('runLint：lintAll 跑一次、lintChapter 每章一次；抛错、一个入口都没有都按 error', () => {
+    const seen: string[] = [];
+    const ok = runLint({ lintAll: () => [], lintChapter: (d: ChapterDef) => { seen.push(d.id); return d.id === 'test' ? [{ level: 'error', msg: '「！」' }] : []; } }, [test as ChapterDef, { ...(test as ChapterDef), id: 'ch2' }]);
+    expect(ok.entries).toEqual(['lintAll', 'lintChapter']);
+    expect(seen).toEqual(['test', 'ch2']);
+    expect(ok.issues.map((i) => [i.level, i.chapter])).toEqual([['error', 'test']]);
+    const threw = runLint({ lintAll: () => { throw new Error('boom'); } }, []);
+    expect(threw.issues[0]!.msg).toContain('boom');
+    const none = runLint({ checkLines: () => [] }, []);
+    expect(none.entries).toEqual([]);
+    expect(none.issues[0]!.level).toBe('error');
+    expect(none.issues[0]!.msg).toContain('checkLines');
   });
 });

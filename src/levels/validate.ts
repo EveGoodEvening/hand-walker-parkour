@@ -17,12 +17,15 @@
 //     「新种类首次出现时该行只有它」只报 warning（§10.1）。「首次」按整部作品算：第二章起三个类别都已学过，只查新种类。
 //   · R6 的「跟随者登场」= 从 hidden 变成有声音 / HUD 的模式（第一章 1-5）；absent 之后回来不算登场。
 //   · R4 的「雾的清晰距离」取 near + 0.35 × (far × 低档 fogMul − near)。亮度一项：暗色氛围带粉笔描边（R12）即视为可读；
-//     非暗色氛围按灯亮计（LampField 由 WP3 实现，校验器在 Node 里拿不到亮度场）。
+//     非暗色氛围按灯亮计（LampField 由 WP3 实现，校验器在 Node 里拿不到亮度场），但 lights out / sound 区间里的必需障碍
+//     既没有灯也没有描边，报 R4 error。
 //   · R9：腿自主抬起的「落在横档前 0.4 s」按「抬起时刻（预警开始 + 0.6 s）到横档接触时刻 = 0.4 ± 0.15 s」；「空地」= 预警开始到
 //     抬起结束（+1.8 s）之间，三条车道都没有必需障碍的接触。第一章不查（第二章起）。腿偏移：从任意车道被迫换进的那条道，
 //     在偏移发生后 1.2 s 内没有 block。
 //   · R12：暗色氛围（§5.2 标 dark 的 nightIndoor / rainNight / voidDark）的粉笔描边最低亮度 chalkMin ≥ 0.15，底亮度 ≥ 0.15
-//     只有 voidDark 由氛围保证，其余靠灯；另外，非暗色氛围里用 lights out 关掉灯的区间里如果有必需障碍，报 warning（没有描边兜底）。
+//     只有 voidDark 由氛围保证，其余靠灯。
+//   · R10：休息窗 = [窗口开始, 窗口结束 + then 里最后一句字幕消失的时刻 + 0.8 s]，字幕停留按 §7.2（字数 × 90 ms + 800 ms）。
+//   · 豁免：只认 lead 在 §10 书面批准的（WAIVERS.approval 逐字出现在 §10），工作包不得自行降级。
 //   · R13：站立段的实际时长 = max(duration, 第七步摔倒 + 最后一个按步事件)，不含起身前的等待。
 import { LANE_WIDTH, LIMITS, MIN_ACTION_GAP, TEXT, TICK_DT } from '../core/constants';
 import type { SolveFrom, SolverAPI } from '../core/contracts';
@@ -83,16 +86,12 @@ const R9_TOL = 0.15;
 const ANOMALY_GAP = 20;
 
 /**
- * 已知、已由 lead 指派给别的包修复的数据问题：只把这一条**精确**的报错降级为 warning（带说明），数据一改就自动失效。
- * 这样 WP1 的严格规则可以先合并，而不必等别的包（lead 集成时删除）。
+ * 临时豁免：只有 **lead 在 DESIGN.md §10 里书面批准**的才能写进来（`approval` 必须逐字出现在 §10 里，单元测试检查）。
+ * 每一条只把**精确**匹配的那一条 error 降为带说明的 warning，数据一改消息就变，豁免自动失效。
+ * 工作包不得自行添加（lead 补充要求 2：R6 违规报 error；验收员第 1 轮：在拿到批准之前不应自行降级）。目前没有任何豁免。
  */
-export const WAIVERS: ReadonlyArray<{ chapter: string; rule: string; msg: string; note: string }> = [
-  {
-    chapter: 'ch1', rule: 'R6',
-    msg: 'main anomalies shadow (1-5 look-back window emptyHall) and doubleMod (1-6) are only 18.9 s apart in the worst case (auto look-back at window end)',
-    note: 'DESIGN §10.1: WP2 must retime ch1 so the gap is ≥ 20 s; this waiver expires as soon as the data changes',
-  },
-];
+export interface Waiver { chapter: string; rule: string; msg: string; approval: string }
+export const WAIVERS: ReadonlyArray<Waiver> = [];
 
 /** 段内名义时间轴（不做任何动作、不受击）：从某一拍开始逐 tick 推进。 */
 export interface Timeline { t: Float64Array; s: Float64Array; n: number; tEnd: number; stopSec: number; t0: number; s0: number }
@@ -186,6 +185,21 @@ function textDurationOf(ids: readonly string[]): number {
   return (chars * TEXT.msPerChar + TEXT.baseMs) / 1000;
 }
 
+/**
+ * R10 休息窗的终点（段内秒）：窗口结束 + 回头后续文字的时长 + 0.8 s。
+ * 「后续文字的时长」= then 里最后一句字幕消失的时刻（相对回头时刻）：max(at + 停留)，停留按 §7.2 / TEXT
+ * （字数 × 90 ms + 800 ms，与 Game 的字幕队列同一公式）。最坏时序：玩家拖到窗口结束才回头。
+ */
+export function lookBackRestEnd(windowEndT: number, then: readonly TimedEventDef[] | undefined): number {
+  let thenDur = 0;
+  for (const x of then ?? []) {
+    if (x.type !== 'text') continue;
+    const ids = (Array.isArray(x.line) ? x.line : [x.line]) as string[];
+    thenDur = Math.max(thenDur, x.at + textDurationOf(ids));
+  }
+  return windowEndT + thenDur + 0.8;
+}
+
 /** 段内休息窗（以 tSeg 秒计），用于约束求解。 */
 function restWindows(seg: CompiledSegment, tl: Timeline, firstClassRows: Map<ObstacleClass, number>, chapterMode: { v: string }): Win[] {
   const W: Win[] = [];
@@ -201,9 +215,7 @@ function restWindows(seg: CompiledSegment, tl: Timeline, firstClassRows: Map<Obs
     if (w.to < fromBeat) continue;
     const a = tAtBeat(w.from), b = tAtBeat(w.to);
     if (w.type === 'lookBack') {
-      let thenDur = 0;
-      for (const x of w.then ?? []) if (x.type === 'text') thenDur = Math.max(thenDur, x.at + 0.8);
-      W.push({ a, b: b + thenDur + 0.8, rule: 'R10', why: `lookBack window ${w.id ?? ''}` });
+      W.push({ a, b: lookBackRestEnd(b, w.then), rule: 'R10', why: `lookBack window ${w.id ?? ''}` });
     } else if (w.type === 'rest') W.push({ a, b, rule: 'R5', why: `rest window ${w.id ?? ''}` });
   }
   for (const [cls, oid] of firstClassRows) {
@@ -431,15 +443,22 @@ export function validateChapter(def: ChapterDef, solver: SolverAPI, opts: { seed
     // R11：端盘段没有 low
     if (def2.controls?.jump === false) for (const o of seg.obstacles) if (o.cls === 'low') err('R11', `tray segment has low obstacle ${o.kind} @${o.beat}`, sid);
 
-    // R12：暗色氛围的描边；非暗色里关灯的区间
+    // R12：暗色氛围的描边。
+    // R4 的亮度一项：非暗色氛围没有粉笔描边兜底（chalkMin < 0.15），关灯（out）或声控灯（sound：拍地之前是黑的）的区间里
+    // LampField 达不到 0.35，区间里的必需障碍按「不可读」报 R4 error（不再只是 R12 warning）。区间：from–to；没写 to 时到下一个
+    // lights on，再没有就到段末。
     const atm = seg.def.atmosphere;
     if (DARK_ATMOSPHERES.has(atm) && CHALK_MIN[atm] < 0.15) err('R12', `dark atmosphere ${atm} has chalk outline minimum ${CHALK_MIN[atm]} < 0.15`, sid);
     if (!DARK_ATMOSPHERES.has(atm) && CHALK_MIN[atm] < 0.15) {
       for (const e of seg.events) {
-        if (e.body.type !== 'lights' || e.body.op !== 'out') continue;
-        const a = e.body.from ?? e.at, b = e.body.to ?? def2.beats;
-        const inDark = required.find((o) => o.beat >= a && o.beat <= b);
-        if (inDark) warn('R12', `lights out @${a}–${b} in non-dark atmosphere ${atm}: ${inDark.kind} @${inDark.beat} has no chalk outline to fall back on`, sid);
+        if (e.body.type !== 'lights' || (e.body.op !== 'out' && e.body.op !== 'sound')) continue;
+        const a = e.body.from ?? e.at;
+        const nextOn = seg.events.find((x) => x.at > a && x.body.type === 'lights' && x.body.op === 'on');
+        const b = e.body.to ?? nextOn?.at ?? def2.beats;
+        for (const o of required) {
+          if (o.beat < a || o.beat > b) continue;
+          err('R4', `${o.kind} @${o.beat} is inside lights ${e.body.op} @${a}–${b} in non-dark atmosphere ${atm}: no lamp light and no chalk outline, so it is never readable`, sid);
+        }
       }
     }
 
@@ -499,7 +518,12 @@ export function validateChapter(def: ChapterDef, solver: SolverAPI, opts: { seed
           err(r, `required action inside rest window from @${cp}: ${(culprits.length ? culprits : wins.filter((w) => w.rule === r)).map((w) => `${w.why} [${w.a.toFixed(2)}, ${w.b.toFixed(2)}]s`).join('; ')}`, sid);
         }
       }
-      if (!blamed) err('R5-R10', `rest windows together leave no route from @${cp}`, sid);
+      if (!blamed) {
+        // 单独哪一类都不挡路，合在一起才挡：列出「去掉它就有路」的那几个窗
+        const key = wins.filter((w) => solver.solve(seg, { from, noAsk, minGap, forbid: wins.filter((x) => x !== w).map((x) => [x.a, x.b] as const) }));
+        const list = key.length ? `; removing any one of these would leave a route: ${key.map((w) => `${w.rule} ${w.why} [${w.a.toFixed(2)}, ${w.b.toFixed(2)}]s`).join('; ')}` : '';
+        err('R5-R10', `rest windows together leave no route from @${cp}${list}`, sid);
+      }
     }
     for (const e of seg.events) if (e.body.type === 'follower' && e.body.def.mode) followerMode.v = e.body.def.mode;
     chapterT += sec;
@@ -527,10 +551,10 @@ export function validateChapter(def: ChapterDef, solver: SolverAPI, opts: { seed
   const ratio = total > 0 ? nonRunSec / total : 0;
   if (ratio > LIMITS.nonRunMaxRatio + 1e-9) err('R13', `non-run time ${(ratio * 100).toFixed(1)}% > 25%`);
 
-  // 已知数据问题的豁免（精确匹配，数据一改自动失效）
+  // lead 书面批准的临时豁免（精确匹配，数据一改自动失效）
   for (const is of issues) {
     const w = WAIVERS.find((x) => x.chapter === is.chapter && x.rule === is.rule && x.msg === is.msg);
-    if (w && is.level === 'error') { is.level = 'warn'; is.msg = `[waived: ${w.note}] ${is.msg}`; }
+    if (w && is.level === 'error') { is.level = 'warn'; is.msg = `[waived: ${w.approval}] ${is.msg}`; }
   }
 
   return {
@@ -615,3 +639,67 @@ function linesOfTimed(x: TimedEventDef, cb: (id: string) => void): void {
 
 /** 章内各段时长的简表（给报告用）。 */
 export function textDuration(ids: readonly string[]): number { return textDurationOf(ids); }
+
+// ——————————————————— R14：接入 WP2 的内容 lint（src/levels/lint.ts） ———————————————————
+// `npm run validate` = WP1 的校验器 + WP2 的 lint（§8.1、§8.10 WP2 验收 1）。lint.ts 归 WP2，WP1 只按约定的入口调用
+// （docs/contract-requests/WP1.md）：
+//   lintAll(): LintResult                 —— 与章节无关的文字检查（lines.ts、ui/strings.ts：R14 与附录 B.8）
+//   lintChapter(def: ChapterDef): LintResult —— 一章的文字检查（每个文字事件 ≤ 2 行等）
+//   LintResult = Array<{ level: 'error' | 'warn'; rule?: string; msg: string; chapter?: string; where?: string } | string>
+// 两个都可选，至少要有一个。为了容错，也接受 { issues: [...] }、{ errors: [...], warnings: [...] }、message 代替 msg、
+// severity 代替 level；字符串按 error 计。lint.ts 存在却一个入口都没有、抛错、或返回认不出的结构，都按 error 报，
+// 免得 R14 静默地没跑。
+
+/** 把 lint 的一个返回值归一化成 Issue（rule 缺省 R14）。 */
+export function normalizeLint(raw: unknown, chapter: string): Issue[] {
+  const out: Issue[] = [];
+  const push = (x: unknown, forced?: 'error' | 'warn') => {
+    if (typeof x === 'string') { out.push({ level: forced ?? 'error', rule: 'R14', chapter, msg: x }); return; }
+    if (!x || typeof x !== 'object') { out.push({ level: 'error', rule: 'R14', chapter, msg: `lint returned an unrecognized issue: ${String(x)}` }); return; }
+    const o = x as Record<string, unknown>;
+    const lv = String(o.level ?? o.severity ?? forced ?? 'error').toLowerCase();
+    const level: 'error' | 'warn' = lv.startsWith('warn') ? 'warn' : 'error';
+    const msg = String(o.msg ?? o.message ?? JSON.stringify(o));
+    const where = o.where ?? o.id ?? o.line ?? o.file;
+    const is: Issue = { level, rule: String(o.rule ?? 'R14'), chapter: String(o.chapter ?? chapter), msg: where !== undefined ? `${String(where)}: ${msg}` : msg };
+    if (typeof o.segment === 'string') is.segment = o.segment;
+    out.push(is);
+  };
+  if (raw === undefined || raw === null || raw === true) return out;
+  if (Array.isArray(raw)) { for (const x of raw) push(x); return out; }
+  if (typeof raw === 'object') {
+    const o = raw as Record<string, unknown>;
+    if (Array.isArray(o.issues)) { for (const x of o.issues) push(x); return out; }
+    if (Array.isArray(o.errors) || Array.isArray(o.warnings)) {
+      for (const x of (o.errors as unknown[] | undefined) ?? []) push(x, 'error');
+      for (const x of (o.warnings as unknown[] | undefined) ?? []) push(x, 'warn');
+      return out;
+    }
+  }
+  out.push({ level: 'error', rule: 'R14', chapter, msg: `lint returned an unrecognized result (${Object.prototype.toString.call(raw)}); expected an array of issues` });
+  return out;
+}
+
+/**
+ * 按约定调用 lint 模块：lintAll() 一次（chapter 记为 'text'），lintChapter(def) 每章一次。
+ * 返回实际调用了哪些入口，以及归一化后的问题。
+ */
+export function runLint(mod: Record<string, unknown>, defs: readonly ChapterDef[]): { entries: string[]; issues: Issue[] } {
+  const issues: Issue[] = [];
+  const entries: string[] = [];
+  const call = (name: string, chapter: string, f: () => unknown) => {
+    try { issues.push(...normalizeLint(f(), chapter)); } catch (e) { issues.push({ level: 'error', rule: 'R14', chapter, msg: `${name} threw: ${(e as Error)?.message ?? String(e)}` }); }
+  };
+  const all = mod.lintAll, per = mod.lintChapter;
+  if (typeof all === 'function') { entries.push('lintAll'); call('lintAll()', 'text', () => (all as () => unknown)()); }
+  if (typeof per === 'function') {
+    entries.push('lintChapter');
+    for (const d of defs) call(`lintChapter(${d.id})`, d.id, () => (per as (d: ChapterDef) => unknown)(d));
+  }
+  if (!entries.length) {
+    const names = Object.keys(mod).filter((k) => k !== 'default');
+    issues.push({ level: 'error', rule: 'R14', chapter: 'text',
+      msg: `src/levels/lint.ts exports neither lintAll() nor lintChapter(def) (exports: ${names.join(', ') || 'none'}); see docs/contract-requests/WP1.md` });
+  }
+  return { entries, issues };
+}
