@@ -1,5 +1,8 @@
 // tests/unit/render/rainNight.test.ts —— 第三章雨夜的光照（U6）：人和物体受冷色的灯光，路灯的碎金只留在地面光池上。
 // 以前 rainNight 的 LampField 灯色就是路灯色 #C8A15A，主角、障碍整体被染成赭黄（画面上躯干色相 46–49°）。
+// r2：只换灯色时，3-4 车棚、3-6、3-7 这些灯下的画面反而比以前暗了 20–35%（冷灯三个通道都有，Neutral 的 toe 按最小通道减得更多），
+// 灯的增益 1.2 → 2.3、底亮度 0.25：街道材质在任何灯光电平下都不比改动前暗。
+import { appendFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import type { LampSpec } from '../../../src/core/contracts';
@@ -10,9 +13,14 @@ import { propHex } from '../../../src/render/wallTone';
 import { World } from '../../../src/render/ChunkStreamer';
 import '../../../src/render/kits/outside/index';
 import { fakeCtx, snap } from './helpers';
+import { C as OC } from '../../../src/render/kits/outside/lib/colors';
+import type { AtmospherePreset } from '../../../src/core/registry';
 import { hexHsl, hsl, lin, screenColor, type V3 } from './shade';
 
 registerAtmospheres();
+
+/** 实测数字：设了 HW_ROWS（文件路径）时追加写进去（vitest 不打印通过的用例的输出）。 */
+function writeRows(rows: string[]): void { const f = process.env.HW_ROWS; if (f) appendFileSync(f, `${rows.join('\n')}\n`); }
 
 const RAIN = ATMOSPHERES.rainNight;
 /** 主角校服的反照率（WP5 rigBuild 写进顶点色的值：按 §5.1「画面上的颜色」反推，propHex）。 */
@@ -52,6 +60,7 @@ describe('rainNight：冷色受光（U6）', () => {
     expect(RAIN.dir?.intensity).toBeCloseTo(0.2, 6);
     expect(hexHsl(RAIN.dir?.color ?? 0).h).toBeGreaterThan(190);
     expect(ATMO_EXTRA.rainNight.lampFloor).toBeGreaterThanOrEqual(0.25);
+    expect(RAIN.lampGain).toBeCloseTo(2.3, 6);
     expect(ATMO_EXTRA.rainNight.poolColor).toBe(STREET_GOLD);
     const st = presetToState('rainNight', RAIN, 1, newState());
     // 平面影子的方向仍是预设的 planarDir（逆光是另一个方向）
@@ -81,9 +90,41 @@ describe('rainNight：冷色受光（U6）', () => {
     // 对照：灯色还是路灯碎金时，同样的灯光下躯干是赭黄（修改前的样子）
     const old = screenColor(UNIFORM, RAIN, BACK, { lamp: f.mean, y: TORSO_Y, lampColor: STREET_GOLD });
     expect(old.h).toBeGreaterThan(30); expect(old.h).toBeLessThan(60);
-    // 实测（lampFloor 0.35）：平均 0.59 → h 209° l 0.130；两灯之间 0.35 → l 0.096；灯下 1.0 → l 0.182；
-    // 3-4 小路（30 m 一盏）平均 0.43 → l 0.107；旧灯色同样灯光下 h 51°
+    // 实测（r2：增益 2.3、底亮度 0.25）见 HW_ROWS；r1（增益 1.2、底亮度 0.35）平均 l 0.130、两灯之间 0.096、灯下 0.182
+    writeRows(rows);
     expect(rows.length).toBe(4);
+  });
+
+  it('街道材质（WP4 户外 kit 的夜街色板）在任何灯光电平下都不比改动前（碎金灯色、增益 1.2、底亮度 0.15、半球光 0.25、无逆光）暗', () => {
+    const OLD: AtmospherePreset = { ...RAIN, hemi: { ...RAIN.hemi, intensity: 0.25 }, dir: null, lampColor: STREET_GOLD, lampGain: 1.2 };
+    const OLD_FLOOR = 0.15, NEW_FLOOR = ATMO_EXTRA.rainNight.lampFloor;
+    /** 画面亮度（sRGB 编码后按 Rec.709 加权，与评审截图的统计口径相同）。 */
+    const luma = (rgb: readonly number[]) => 0.2126 * (rgb[0] as number) + 0.7152 * (rgb[1] as number) + 0.0722 * (rgb[2] as number);
+    const UP: V3 = [0, 1, 0], SIDE: V3 = [1, 0, 0], CAM: V3 = [0, 0, 1];
+    const cases: Array<[string, number, V3, number]> = [
+      ['asphalt', OC.asphalt, UP, 0], ['asphaltWet', OC.asphaltWet, UP, 0], ['paver', OC.paver, UP, 0], ['concreteNight', OC.concreteNight, UP, 0], ['curb', OC.curb, UP, 0.1],
+      ['wallNight', OC.wallNight, SIDE, 1.5], ['wallNight2', OC.wallNight2, SIDE, 1.5], ['wallNightDark', OC.wallNightDark, CAM, 2],
+      ['shutter', OC.shutter, SIDE, 1.2], ['tin', OC.tin, CAM, 1], ['pole', OC.pole, CAM, 1.5], ['signDark', OC.signDark, CAM, 2],
+    ];
+    const rows: string[] = [];
+    let worst = Infinity;
+    for (const [name, hex, n, y] of cases) {
+      const a = lin(hex);
+      for (const field of [0, 0.15, 0.25, 0.35, 0.5, 0.7, 1.0, 1.3]) {
+        const before = luma(screenColor(a, OLD, n, { lamp: Math.max(OLD_FLOOR, field), y }).rgb);
+        const after = luma(screenColor(a, RAIN, n, { lamp: Math.max(NEW_FLOOR, field), y }).rgb);
+        worst = Math.min(worst, after / before);
+        expect(after, `${name} 灯光 ${field}`).toBeGreaterThanOrEqual(before * 0.995);
+      }
+      const mid = screenColor(a, RAIN, n, { lamp: 0.6, y });
+      rows.push(`${name}: 灯光 0.6 时 h ${mid.h.toFixed(0)} l ${mid.l.toFixed(3)}`);
+      // 冷色：受光后色相仍在冷色一侧
+      expect(mid.h, name).toBeGreaterThan(180);
+    }
+    rows.push(`最差 新 / 旧 = ${worst.toFixed(3)}`);
+    // 两灯之间的有效亮度（底亮度 × 增益）不低于 r1（0.35 × 1.2）
+    expect(NEW_FLOOR * RAIN.lampGain).toBeGreaterThanOrEqual(0.35 * 1.2);
+    writeRows(rows);
   });
 
   it('World：rainNight 下 uLampColor 是冷色；street 灯的地面光池贴花是碎金（色相 30–55°）', async () => {

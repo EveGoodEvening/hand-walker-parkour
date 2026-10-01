@@ -4,13 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { ATMOSPHERES, ATMO_EXTRA, AtmosphereMixer, DREAM_GRAY_END, MIN_FAR_OVER_NEAR, RAIN_LAMP, presetToState, newState } from '../../../src/render/atmosphere';
 import type { AtmosphereId } from '../../../src/core/types';
 
-// §5.2 表：[雾色, near, far, 半球强度, lampGain, chalkMin, dark, planarDir]。rainNight 的半球光按 U6 修订（0.25 → 0.45，建议 §10.3）。
+// §5.2 表：[雾色, near, far, 半球强度, lampGain, chalkMin, dark, planarDir]。rainNight 的半球光、灯的增益按 U6 修订（0.25 → 0.45，1.2 → 2.3，建议 §10.3）。
 const TABLE: Record<AtmosphereId, [number, number, number, number, number, number, boolean, [number, number, number]]> = {
   morning: [0xaab4b8, 10, 48, 1.2, 0.6, 0, false, [0.3, -1, -0.55]],
   noon: [0xb5bcbc, 12, 50, 1.3, 0.4, 0, false, [0.15, -1, -0.3]],
   labNorth: [0x8e9ca3, 8, 38, 1.0, 0.8, 0, false, [0.3, -1, -0.55]],
   nightIndoor: [0x0f151a, 6, 30, 0.35, 1.4, 0.35, true, [0.3, -1, -0.55]],
-  rainNight: [0x0e1419, 4, 26, 0.45, 1.2, 0.35, true, [0.2, -1, -0.4]],
+  rainNight: [0x0e1419, 4, 26, 0.45, 2.3, 0.35, true, [0.2, -1, -0.4]],
   busNight: [0x0b1014, 3, 14, 0.2, 0.8, 0, false, [0.3, -1, -0.55]],
   homeDark: [0x0b1014, 3, 14, 0.15, 0.5, 0, false, [0.3, -1, -0.55]],
   dream: [0xd9dee0, 20, 120, 1.8, 0, 0, false, [0.1, -0.35, -0.9]],

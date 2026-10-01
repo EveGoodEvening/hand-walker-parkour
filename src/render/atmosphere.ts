@@ -37,7 +37,10 @@ export const ATMOSPHERES: Record<AtmosphereId, AtmospherePreset> = {
   // 与水洼里的倒影（WP4 kit 的发光体）。半球光 0.25 → 0.45，另加一盏 0.2 的冷色逆光：从前方高处照向镜头，
   // 顶面和朝前的面受光、朝镜头的面不受光，剪影上沿镶一道冷边。平面影子方向仍按 planarDir（WP5 读预设）。
   // 以前整个画面（主角、障碍）都被路灯色染成赭黄：躯干色相 46–49°，3-3 到 3-7 的亮度中位 0.008–0.07。
-  rainNight:   P([0x0e1419, 4, 26], [NIGHT_SKY, NIGHT_GROUND, 0.45], { color: RAIN_LAMP, intensity: 0.2, dir: [0.15, -0.65, 0.75] }, [0.2, -1, -0.4], 1.2, 0.35, true, RAIN_LAMP),
+  // 灯的增益 1.2 → 2.3（U6 r2）：冷灯色本身比碎金暗 12%，而且三个通道都有，NeutralToneMapping 的 toe 按最小通道减，
+  // 暗色地面、墙在冷灯下比在碎金下少一半左右的亮度（3-4 车棚、3-6、3-7 的整帧亮度中位比改动前低 20–35%）。
+  // 2.3 让 3-3 到 3-7 的街道材质在任何灯光电平下都不比改动前暗（tests/unit/render/rainNight.test.ts 逐个材质比）。
+  rainNight:   P([0x0e1419, 4, 26], [NIGHT_SKY, NIGHT_GROUND, 0.45], { color: RAIN_LAMP, intensity: 0.2, dir: [0.15, -0.65, 0.75] }, [0.2, -1, -0.4], 2.3, 0.35, true, RAIN_LAMP),
   // §5.2 表里 busNight、homeDark 没有标 dark（描边最低亮度 0）；LampField 的底亮度仍按暗场景给 0.15（ATMO_EXTRA）
   busNight:    P([0x0b1014, 3, 14], [NIGHT_SKY, NIGHT_GROUND, 0.2], null, DEFAULT_PLANAR, 0.8, 0, false),
   homeDark:    P([0x0b1014, 3, 14], [NIGHT_SKY, NIGHT_GROUND, 0.15], null, DEFAULT_PLANAR, 0.5, 0, false),
@@ -70,12 +73,13 @@ export const STREET_GOLD = 0xc8a15a;
 /**
  * 预设之外的 LampField 参数（AtmospherePreset 冻结，额外的放这里）。
  * lampFloor：LampField 的最低亮度。暗色预设 ≥ 0.15（R12）；voidDark「底亮度 0.15，另加掌光」。
- * rainNight 0.35（U6：路灯每 12 m 一盏，3-4 小路上坏了一半、30 m 才有一盏亮的，两灯之间全靠这个底亮度；0.15 时主角和障碍只剩剪影）。
+ * rainNight 0.25（U6：路灯每 12 m 一盏，3-4 小路上坏了一半、30 m 才有一盏亮的，两灯之间全靠这个底亮度；0.15 时主角和障碍只剩剪影。
+ * 乘上增益 2.3 之后两灯之间的有效亮度 0.58，比 r1 的 0.35 × 1.2 = 0.42 还亮，比改动前的 0.15 × 1.2 = 0.18 亮三倍）。
  * poolColor：路灯（street）地面光池贴花的颜色；缺省 = 预设的 lampColor（灯照到哪里就是什么颜色）。
  */
 export const ATMO_EXTRA: Record<AtmosphereId, { lampFloor: number; poolColor?: number }> = {
   morning: { lampFloor: 0 }, noon: { lampFloor: 0 }, labNorth: { lampFloor: 0 },
-  nightIndoor: { lampFloor: 0.15 }, rainNight: { lampFloor: 0.35, poolColor: STREET_GOLD }, busNight: { lampFloor: 0.15 }, homeDark: { lampFloor: 0.15 },
+  nightIndoor: { lampFloor: 0.15 }, rainNight: { lampFloor: 0.25, poolColor: STREET_GOLD }, busNight: { lampFloor: 0.15 }, homeDark: { lampFloor: 0.15 },
   dream: { lampFloor: 0 }, dreamGray: { lampFloor: 0 }, dawn: { lampFloor: 0 }, overcast: { lampFloor: 0 },
   fluorescent: { lampFloor: 0 }, voidDark: { lampFloor: 0.15 },
 };
