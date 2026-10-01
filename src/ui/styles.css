@@ -30,6 +30,7 @@
 .hw-chname { position: absolute; left: calc(14px + var(--sal)); top: calc(12px + var(--sat)); font-size: 13px; letter-spacing: .15em; opacity: .4; transition: opacity 2s; white-space: nowrap; }
 .hw-chname.faded { opacity: .2; }
 .hw-pausebtn { position: absolute; right: calc(8px + var(--sar)); top: calc(4px + var(--sat)); width: 44px; height: 44px; padding: 0; border: 0; background: transparent; color: var(--chalk); opacity: .55; font: 18px/44px var(--sans); cursor: pointer; }
+.hw-hud.paused .hw-bottom, .hw-hud.paused .hw-notefl, .hw-hud.paused .hw-skipbtn { visibility: hidden; }
 .hw-bottom { position: absolute; left: 0; right: 0; bottom: calc(var(--gut) + var(--sab)); display: flex; flex-direction: column; align-items: center; }
 .hw-subs { width: min(92vw, 36em); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; font-size: 18px; }
 .hw-line { max-width: 100%; font-family: var(--serif); font-size: 18px; line-height: 1.5; text-align: center; color: rgba(223,230,234,.9); text-shadow: 0 1px 3px rgba(0,0,0,.85), 0 0 12px rgba(13,18,22,.6); animation: hw-sub .25s ease-out both; }
@@ -111,6 +112,8 @@
 .hw-pulse i { width: 6px; height: 6px; border-radius: 50%; background: var(--chalk); opacity: .15; animation: hw-pulse 1.8s infinite; }
 .hw-pulse i:nth-child(2) { animation-delay: .12s; } .hw-pulse i:nth-child(3) { animation-delay: .24s; }
 .hw-card { text-align: center; font-family: var(--serif); max-width: 92vw; }
+/* 窄屏折行时两行等长，不把一个「响。」单独甩到第二行 */
+.hw-card .line, .hw-line { text-wrap: balance; }
 .hw-boot { font-size: 11px; color: var(--dim); letter-spacing: .3em; }
 .hw-card .small { font-size: 14px; color: var(--dim); letter-spacing: .3em; }
 .hw-card .big { font-size: 30px; letter-spacing: .3em; margin: .6em 0 1.2em; opacity: 0; animation: hw-in .6s ease-out both; }

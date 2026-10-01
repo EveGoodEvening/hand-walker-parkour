@@ -212,6 +212,8 @@ export class UI implements UIAPI {
     }
     for (const [n, sc] of this.screens) sc.show(n === s);
     this.hud.root.classList.toggle('on', HUD_SCREENS.has(s));
+    // 暂停时只留章名和‖：字幕、提示、节拍器会从压暗的背景里透出来，和菜单项叠在一起
+    this.hud.root.classList.toggle('paused', s === 'pause');
     if (s === 'play') this.failEls = null;
   }
 
@@ -399,6 +401,9 @@ export class UI implements UIAPI {
   frame(snap: SimSnapshot, _dt: number): void {
     this.snap = snap;
     const t = snap.t;
+    // Game 在 frame() 之后才调 setDevice：先自己取一次，本帧的提示文字就已经是最后一次输入的设备
+    const inp = Input.active;
+    if (inp) this.setDevice(inp.device());
     const b = this.batch;
     const inGame = GAME_SCREENS.has(this.current);
     // 延后的字幕
@@ -446,7 +451,6 @@ export class UI implements UIAPI {
     const halves = !!snap.player.stand && (snap.player.stand.phase === 'walking' || snap.player.stand.phase === 'planted');
     if (halves !== this.lastStandHalves) {
       this.lastStandHalves = halves;
-      const inp = Input.active;
       if (inp) { inp.hooks.standHalves = halves; inp.refreshHooks(); }
     }
     b.flush();

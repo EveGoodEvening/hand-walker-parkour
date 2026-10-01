@@ -112,6 +112,23 @@ describe('情境按钮', () => {
     key('keydown', 'KeyK', 'k');
     expect(drain()).toEqual(['confirm:up', 'confirm:down']);
   });
+  it('界面在同一帧里就用最后一次输入的设备（失败卡：滑动之后摔倒 →「轻触，从检查点重来。」）', async () => {
+    const { UI } = await import('../../../src/ui/UI');
+    const { createSave } = await import('../../../src/core/save');
+    const { fakeCmd, ev, snap } = await import('./helpers');
+    const root = document.createElement('div'); document.body.appendChild(root);
+    const ui = new UI(); ui.mount(root, fakeCmd(), createSave());
+    inp.setContext({ kind: 'run', look: false, ask: false, standHalves: false });
+    const o = { pointerType: 'touch', pointerId: 3, bubbles: true, isPrimary: true } as const;
+    el.dispatchEvent(new PointerEvent('pointerdown', { ...o, clientX: 100, clientY: 300 }));
+    el.dispatchEvent(new PointerEvent('pointermove', { ...o, clientX: 140, clientY: 300 }));
+    el.dispatchEvent(new PointerEvent('pointerup', { ...o, clientX: 140, clientY: 300 }));
+    expect(inp.device()).toBe('touch');
+    ui.onEvent(ev('fall', { cause: 'legs', surface: 'terrazzo' }), snap({ t: 0 }));
+    ui.show('fail', { line: 'x' });
+    ui.frame(snap({ t: 1.3 }), 0);           // Game 还没调过 setDevice
+    expect((root.querySelector('[data-screen="fail"] .prompt') as HTMLElement).textContent).toBe('轻触，从检查点重来。');
+  });
   it('情境切换时松开所有按住的键', () => {
     inp.setContext({ kind: 'still', look: false, ask: false, standHalves: false });
     key('keydown', 'ArrowDown', 'ArrowDown');
