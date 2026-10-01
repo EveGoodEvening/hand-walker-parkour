@@ -47,6 +47,24 @@ export class InstPool {
     return i;
   }
 
+  /**
+   * 把下标 n0 起（到当前末尾）的实例以 (cx, cy, cz) 为中心整体缩放 k 倍（左乘 T(c)·S(k)·T(−c)）。
+   * 越过的障碍缩小消失用（ObstacleView）；k = 0 时收拢成一点（三角形退化）。
+   */
+  scaleFrom(n0: number, k: number, cx: number, cy: number, cz: number): void {
+    const a = this.mesh.instanceMatrix.array as Float32Array;
+    const ox = (1 - k) * cx, oy = (1 - k) * cy, oz = (1 - k) * cz;
+    for (let i = Math.max(0, n0); i < this.n; i++) {
+      for (let j = 0; j < 4; j++) {
+        const o = i * 16 + j * 4;
+        const w = a[o + 3] as number;
+        a[o] = k * (a[o] as number) + ox * w;
+        a[o + 1] = k * (a[o + 1] as number) + oy * w;
+        a[o + 2] = k * (a[o + 2] as number) + oz * w;
+      }
+    }
+  }
+
   /** 读回第 i 个实例的矩阵（测试与线框用）。 */
   matrixAt(i: number, out: THREE.Matrix4): THREE.Matrix4 { return out.fromArray(this.mesh.instanceMatrix.array as Float32Array, i * 16); }
   variantAt(i: number): number { return (this.hw.array as Float32Array)[i * 2] ?? 0; }

@@ -77,6 +77,8 @@ export class Crawlers {
   setQuality(q: QualityProfile): void { this.max = q.crawlersMax; }
 
   get meshes(): THREE.InstancedMesh[] { return [this.body.mesh, this.arms.mesh]; }
+  /** 全部实例池（越过的障碍缩小消失时用）。 */
+  instPools(): InstPool[] { return [this.body, this.arms]; }
 
   begin(): void { this.count = 0; this.body.begin(); this.arms.begin(); }
   end(): void { this.body.end(); this.arms.end(); }

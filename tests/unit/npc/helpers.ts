@@ -23,6 +23,15 @@ export function fakeCtx(tier: QualityTier = 'low'): ViewContext {
   };
 }
 
+/**
+ * 让假镜头转向身后（turnBack 机位的朝向）：越过的障碍照常画、身后保留 14 m（U6）。
+ * 只关心「障碍画成什么样」而不关心「越过以后消失」的测试用。
+ */
+export function faceBack(ctx: ViewContext): void {
+  ctx.camera.rotation.set(0, Math.PI, 0);
+  ctx.camera.updateMatrixWorld(true);
+}
+
 export function makeView(tier: QualityTier = 'low'): { view: ObstacleView; ctx: ViewContext } {
   const ctx = fakeCtx(tier);
   const view = new ObstacleView(ARCHETYPE_DEFS);

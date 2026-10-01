@@ -298,6 +298,8 @@ export class LegForest {
 
   /** 各部件（测试与 perf 用）。 */
   pool(id: PartId): InstPool { return this.parts.get(id) as InstPool; }
+  /** 全部部件的实例池（越过的障碍缩小消失时用）。 */
+  instPools(): InstPool[] { return Array.from(this.parts.values()); }
   get meshes(): THREE.InstancedMesh[] { return Array.from(this.parts.values(), (p) => p.mesh); }
 
   begin(): void { this.people = 0; this.hadTarget = false; for (const p of this.parts.values()) p.begin(); }

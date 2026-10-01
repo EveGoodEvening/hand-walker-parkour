@@ -11,11 +11,14 @@
 // 段内时间：每段记下它在模拟时钟上的开始时刻（segment 事件 / onReset）。已经过去的段照常计时（路边的人、爬行的人、
 // 门和脚在段界上不跳回原位），拍号取 +∞（让开的陈默、移动过的人墙保持最终状态）；还没到的段时间为 0、拍号 −1。
 // cue：crowd（turnShoes / centerShoes / silent / applaud / crawlOvertake / normal），由 index.ts 注册。
+// 越过的障碍（U6）：镜头在主角身后 2.35 m 以上，越过的障碍会在镜头和主角之间停留，形成横跨画面下部的暗条
+// （3-4 静音段里整屏被挡）。障碍远端落到玩家碰撞盒后沿之后 0.3 m（s1 < s − PASS_BEHIND）起，在 PASS_FADE 秒内
+// 以底面中心为原点缩小到 0（之后不画）；回头（lookBack > 0）或镜头转向身后（turnBack 机位）时照常画，身后保留 14 m。
 import * as THREE from 'three';
 import type { ArchetypeId, QualityProfile, ViewContext, ViewSystem } from '../../core/contracts';
 import { LANE_WIDTH } from '../../core/constants';
 import type { GameEvent } from '../../core/events';
-import { clamp01, easeInOutSine, lerp } from '../../core/math';
+import { clamp01, easeInOutSine, lerp, smoothstep } from '../../core/math';
 import { createRng } from '../../core/rng';
 import type { AABB, ChapterId, CrowdOp, KitId, SimSnapshot } from '../../core/types';
 import { urlParams } from '../../core/urlParams';
@@ -29,6 +32,7 @@ import {
 import { CRAWL, Crawlers, type Crawler } from './Crawlers';
 import { expandChapter, lowerBound, type Decor, type GroupInfo } from './crowds';
 import { HitboxDebug } from './hitboxDebug';
+import type { InstPool } from './InstPool';
 import { BODY, LegForest, STAND_HIP, newPerson, type Person } from './LegForest';
 import { KNEELER_BOY, KNEELER_CROWD } from './archetypes/kneeler';
 import { footSeat } from './archetypes/footOut';
@@ -52,6 +56,10 @@ export const CHEN_SQUAT: { hipH: number; hip: number; knee: number; legYaw: numb
 export const WALK_GAZE_MAX = 50 * DEG;
 /** 「进入 3 m」的凝视记录多久之后清掉（秒）：人早已在身后、被裁掉，不再遍历到。 */
 const GAZE_MEMO_TTL = 20;
+/** 越过的障碍：远端 s1 < 玩家 s − PASS_BEHIND（碰撞盒后沿之后 0.3 m）起，PASS_FADE 秒内缩为 0（U6）。 */
+export const PASS_BEHIND = 0.55, PASS_FADE = 0.12;
+/** 画身后多远的障碍和人（米）：平时 5，回头或镜头转向身后时 14。 */
+export const BEHIND_FORWARD = 5, BEHIND_LOOK = 14;
 /** 4-3「从两侧超过你」的爬行者最多持续多久（秒）；离开本段也清掉。 */
 export const OVERTAKE_LIFE = 16;
 const wrapPi = (a: number) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
@@ -100,6 +108,11 @@ export class ObstacleView implements ViewSystem {
   private gazeEvents: GazeEvent[] = [];
   private silences: number[] = [];
   private gazeMemo = new Map<number, number>();
+  /** 越过的障碍：障碍 id → 远端越过 s − PASS_BEHIND 的时刻（模拟时钟，按速度往回推到真正越过的那一刻）。 */
+  private passedAt = new Map<number, number>();
+  /** 全部实例池（越过的障碍缩小时按放置前后的实例数找到它的实例）；init 之后填。 */
+  private fadePools: InstPool[] = [];
+  private fadeMarks: number[] = [];
   private decor: Decor[] = [];
   private groups: GroupInfo[] = [];
   private groupState: Array<{ gaze: Decor['gaze'] | null; applaud: number; overtake: number; overtakeS: number }> = [];
@@ -125,7 +138,7 @@ export class ObstacleView implements ViewSystem {
   private readonly target = new THREE.Vector3();
   private readonly box: AABB = { x0: 0, x1: 0, y0: 0, y1: 0, s0: 0, s1: 0 };
   private readonly m = new THREE.Matrix4();
-  private readonly fctx: FrameCtx = { s: 0, px: 0, t: 0, tAnim: 0, beat: 0, tSeg: 0, speed: 0, bps: 5, ahead: 40, behind: 5, hush: 0, stand: false };
+  private readonly fctx: FrameCtx = { s: 0, px: 0, t: 0, tAnim: 0, beat: 0, tSeg: 0, speed: 0, bps: 5, ahead: 40, behind: BEHIND_FORWARD, hush: 0, stand: false, reveal: 0 };
   private readonly fallbackLook: Look = lookFor('student', 1, 'fallback');
   private readonly sway: Sway = { dx: 0, knee: 0, side: 1 };
   private readonly trem: Tremble = { roll: 0, pitch: 0 };
@@ -154,6 +167,8 @@ export class ObstacleView implements ViewSystem {
     }
     this.forest.init(ctx);
     this.crawlers.init(ctx);
+    this.fadePools = [...Array.from(this.pools.values(), (p) => p.pool), ...this.forest.instPools(), ...this.crawlers.instPools()];
+    this.fadeMarks = this.fadePools.map(() => 0);
     if (urlParams().debug.has('hitbox')) this.enableHitbox(true);
   }
 
@@ -218,7 +233,7 @@ export class ObstacleView implements ViewSystem {
   }
 
   private resetState(): void {
-    this.knocked.clear(); this.asks.clear(); this.gazeEvents = []; this.silences = []; this.gazeMemo.clear();
+    this.knocked.clear(); this.asks.clear(); this.gazeEvents = []; this.silences = []; this.gazeMemo.clear(); this.passedAt.clear();
     this.fallT = null;
     for (const g of this.groupState) { g.gaze = null; g.applaud = -1; g.overtake = -1; }
     this.globalOp.applaud = -1; this.globalOp.overtake = -1;
@@ -387,7 +402,9 @@ export class ObstacleView implements ViewSystem {
     const fog = this.ctx.scene.fog as THREE.Fog | null;
     const fogFar = fog && 'far' in fog ? fog.far : 60;
     const ahead = Math.min(this.ctx.quality.chunksAhead * 12 + 6, fogFar + 4);
-    const behind = N.lookBack > 0 ? 14 : 5;
+    // 身后的东西什么时候看得见：回头（lookBack 0..1）或镜头转向身后（turnBack 机位；读上一帧的镜头朝向）
+    const reveal = Math.max(N.lookBack > 0 ? smoothstep(0, 0.35, N.lookBack) : 0, cameraBackness(this.ctx.camera));
+    const behind = N.lookBack > 0 || reveal > 0 ? BEHIND_LOOK : BEHIND_FORWARD;
     const tAnim = silenceClock(t, this.silences);
     const hush = silenceLevel(t, this.silences);
     const pc = this.pc;
@@ -395,7 +412,7 @@ export class ObstacleView implements ViewSystem {
     pc.chapter = this.stage ? 'stage' : (this.chapter?.def.id ?? 'ch1') as ChapterId;
     const ctx = this.fctx;
     ctx.s = s; ctx.px = px; ctx.t = t; ctx.tAnim = tAnim; ctx.beat = beat; ctx.tSeg = tSeg; ctx.speed = speed; ctx.bps = bps;
-    ctx.ahead = ahead; ctx.behind = behind; ctx.hush = hush; ctx.stand = next.segKind === 'stand';
+    ctx.ahead = ahead; ctx.behind = behind; ctx.hush = hush; ctx.stand = next.segKind === 'stand'; ctx.reveal = reveal;
 
     // —— 障碍 ——
     if (this.stage) {
@@ -433,17 +450,50 @@ export class ObstacleView implements ViewSystem {
       st.ds += shift;
       const floorY = seg.floorY(Math.min(Math.max(s0, seg.s0), seg.s1));
       pc.o = o; pc.floorY = floorY; pc.knockedAt = this.knocked.get(o.id) ?? null;
-      const ask = this.asks.get(o.id);
-      pc.partX = ask && ask.part ? this.partDir(o, st) * partOffset(f.t - ask.t) : 0;
       if (this.hitbox) this.hitbox.obstacle(o, st, floorY, this.box, pc.knockedAt !== null);
-      if (this.chenFootIds.has(o.id)) continue;               // 陈默的脚由陈默自己画
-      if (o.archetype === 'legs') { this.legsObstacle(o, st, seg, f, cur, kit, variant, floorY); continue; }
-      if (o.archetype === 'crawler') { this.crawlerObstacle(o, st, f, tSeg, floorY); continue; }
-      const pool = this.pools.get(o.archetype);
-      if (!pool) continue;
-      if (o.archetype === 'kneeler' && this.kneelerSpecial(pool, o, f)) continue;
-      pool.placeEx(pc);
+      // 越过的障碍：缩小到 0 后不再画（回头时照常画）
+      const k = this.passScale(o.id, s1, f);
+      if (k <= 0) continue;
+      if (k < 1) {
+        this.markFade();
+        this.placeObstacle(o, st, seg, f, cur, kit, variant, floorY, tSeg);
+        this.applyFade(k, (st.x0 + st.x1) / 2, floorY, -(s0 + s1) / 2);
+        continue;
+      }
+      this.placeObstacle(o, st, seg, f, cur, kit, variant, floorY, tSeg);
     }
+  }
+
+  /**
+   * 越过的障碍的缩放：1 = 照常；远端越过 s − PASS_BEHIND 之后 PASS_FADE 秒内降到 0。越过的时刻按当前速度往回推，
+   * 帧率低（无头 SwiftShader 每帧 0.1 s 以上）时也不会多停一帧。回头时取 reveal（身后看得见的程度）。
+   */
+  private passScale(id: number, s1: number, f: FrameCtx): number {
+    const over = f.s - PASS_BEHIND - s1;
+    if (over <= 0) { if (this.passedAt.size > 0) this.passedAt.delete(id); return 1; }
+    let t0 = this.passedAt.get(id);
+    if (t0 === undefined || t0 > f.t) { t0 = f.t - over / Math.max(0.5, f.speed); this.passedAt.set(id, t0); }
+    const k = 1 - clamp01((f.t - t0) / PASS_FADE);
+    return Math.max(k, f.reveal);
+  }
+
+  private markFade(): void { for (let i = 0; i < this.fadePools.length; i++) this.fadeMarks[i] = (this.fadePools[i] as InstPool).n; }
+  private applyFade(k: number, x: number, y: number, z: number): void {
+    for (let i = 0; i < this.fadePools.length; i++) (this.fadePools[i] as InstPool).scaleFrom(this.fadeMarks[i] as number, k, x, y, z);
+  }
+
+  /** 按原型把一个障碍放进对应的实例池（人腿 → 腿的森林，爬行者 → Crawlers，其余 → 原型池）。 */
+  private placeObstacle(o: CompiledObstacle, st: ObstacleState, seg: CompiledSegment, f: FrameCtx, cur: boolean, kit: KitId, variant: string, floorY: number, tSeg: number): void {
+    const pc = this.pc;
+    const ask = this.asks.get(o.id);
+    pc.partX = ask && ask.part ? this.partDir(o, st) * partOffset(f.t - ask.t) : 0;
+    if (this.chenFootIds.has(o.id)) return;                 // 陈默的脚由陈默自己画
+    if (o.archetype === 'legs') { this.legsObstacle(o, st, seg, f, cur, kit, variant, floorY); return; }
+    if (o.archetype === 'crawler') { this.crawlerObstacle(o, st, f, tSeg, floorY); return; }
+    const pool = this.pools.get(o.archetype);
+    if (!pool) return;
+    if (o.archetype === 'kneeler' && this.kneelerSpecial(pool, o, f)) return;
+    pool.placeEx(pc);
   }
 
   /** 让开的方向：多车道时由各人自己决定（见 legsObstacle），单车道朝离中间远的一侧。 */
@@ -665,6 +715,7 @@ export class ObstacleView implements ViewSystem {
     if (t - this.lastPrune < 2 && t >= this.lastPrune) return;
     this.lastPrune = t;
     for (const [k, tt] of this.gazeMemo) if (t - tt > GAZE_MEMO_TTL || tt > t) this.gazeMemo.delete(k);
+    for (const [k, tt] of this.passedAt) if (t - tt > GAZE_MEMO_TTL || tt > t) this.passedAt.delete(k);
   }
 
   // ——— 路边的人、模仿者、爬行的人 ———
@@ -772,8 +823,8 @@ export class ObstacleView implements ViewSystem {
   /** 当前帧线框的全部顶点（测试用）。 */
   hitboxLines(): number[] { return this.hitbox ? this.hitbox.allPositions() : []; }
   /** 内部表的大小（测试用：长时间运行不增长）。 */
-  internalSizes(): { gazeMemo: number; gazeEvents: number; knocked: number; asks: number; silences: number } {
-    return { gazeMemo: this.gazeMemo.size, gazeEvents: this.gazeEvents.length, knocked: this.knocked.size, asks: this.asks.size, silences: this.silences.length };
+  internalSizes(): { gazeMemo: number; gazeEvents: number; knocked: number; asks: number; silences: number; passed: number } {
+    return { gazeMemo: this.gazeMemo.size, gazeEvents: this.gazeEvents.length, knocked: this.knocked.size, asks: this.asks.size, silences: this.silences.length, passed: this.passedAt.size };
   }
   get currentSegment(): number { return this.segIndex; }
   get obstacleSpec(): typeof OBSTACLES { return OBSTACLES; }
@@ -828,6 +879,24 @@ const OVERTAKE: OvertakeCrawler[] = (() => {
   return out;
 })();
 
-interface FrameCtx { s: number; px: number; t: number; tAnim: number; beat: number; tSeg: number; speed: number; bps: number; ahead: number; behind: number; hush: number; stand: boolean }
+interface FrameCtx {
+  s: number; px: number; t: number; tAnim: number; beat: number; tSeg: number; speed: number; bps: number; ahead: number; behind: number; hush: number; stand: boolean;
+  /** 身后看得见的程度（0..1）：回头或镜头转向身后时越过的障碍照常画。 */
+  reveal: number;
+}
+
+/**
+ * 镜头转向身后的程度（0..1）：按镜头的水平朝向，偏航 32° 以内为 0，80° 以上为 1（turnBack 机位、回头）。
+ * 读的是上一帧渲染时的 matrixWorld（CameraRig 在本系统之后更新），差一帧没有关系。
+ */
+export function cameraBackness(cam: THREE.Camera | null | undefined): number {
+  if (!cam) return 0;
+  const e = cam.matrixWorld.elements;
+  const fx = -(e[8] as number), fz = -(e[10] as number);
+  const h = Math.hypot(fx, fz);
+  if (h < 1e-6) return 0;
+  const cosYaw = -fz / h;                              // 朝前（−z）= 1
+  return 1 - smoothstep(0.17, 0.85, cosYaw);
+}
 
 const _e = new THREE.Euler();

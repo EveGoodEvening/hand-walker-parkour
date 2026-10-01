@@ -7,7 +7,7 @@ import { getChapter } from '../../../src/levels/chapters/index';
 import type { ChapterDef } from '../../../src/levels/schema';
 import { customStage, makeStage, toStage, type StageName } from '../../../src/render/npc/stage';
 import { chapter, runSeg } from '../core/helpers';
-import { ViewDriver, fakeCtx, instancedBounds, makeView, stageView } from './helpers';
+import { ViewDriver, faceBack, fakeCtx, instancedBounds, makeView, stageView } from './helpers';
 import { FEET, LegForest, newPerson } from '../../../src/render/npc/LegForest';
 import { EMBER_PEAK, emberGlow, lookFor } from '../../../src/render/npc/specials';
 import { LAMP_PEAK, lampGlow } from '../../../src/render/npc/archetypes/armBar';
@@ -283,7 +283,8 @@ describe('事件反应：让一下、安静的一秒、碰倒、拾取', () => {
 
   it('low 被碰到：记住碰倒时刻，0.3 s 内向前倒下；retry 后复原', () => {
     const def = chapter([runSeg({ id: 'k', beats: 40, rows: [[15, '.L.']], follower: { mode: 'hidden', steady: 3 } })]);
-    const { view } = makeView('low');
+    const { view, ctx } = makeView('low');
+    faceBack(ctx);                // 碰倒之后玩家已经越过它：回头看（U6：平时越过的障碍会缩小消失）
     const vd = new ViewDriver(view, def);
     const bag = vd.ch.segments[0]?.obstacles[0];
     expect(bag?.cls).toBe('low');

@@ -11,7 +11,7 @@ import { CHEN_STEP, chenStepAside } from '../../../src/render/npc/ObstacleView';
 import { obstacleState } from '../../../src/render/npc/simBridge';
 import { HIPS } from '../../../src/render/npc/specials';
 import { chapter, runSeg } from '../core/helpers';
-import { ViewDriver, instancedBounds, makeView } from './helpers';
+import { ViewDriver, faceBack, instancedBounds, makeView } from './helpers';
 
 const _m = new THREE.Matrix4(), _v = new THREE.Vector3();
 
@@ -57,7 +57,9 @@ describe('段界上画面连续（已经过去的段照常计时，不跳回出�
       }),
       runSeg({ id: 'B', beats: 40, stride: 1.4, cadence: 6, kit: 'plaza', follower: { mode: 'hidden', steady: 3 } }),
     ]);
-    const { view } = makeView('high');
+    const { view, ctx } = makeView('high');
+    // 跨过段界时陈默和行人障碍已经在身后：镜头转向身后（回头）时它们照常画，这里看的就是这个画面（U6：平时越过的障碍会缩小消失）
+    faceBack(ctx);
     const vd = new ViewDriver(view, def as ChapterDef);
     vd.d.sim.setInvincible(true);
     let snap = vd.step(1);
@@ -90,8 +92,9 @@ describe('段界上画面连续（已经过去的段照常计时，不跳回出�
 
   it('失败（fall）以后障碍的段内时间停住（模拟也不再推进 tSeg），retry 后重新同步', () => {
     const def = chapter([runSeg({
-      id: 'f', beats: 60, follower: { mode: 'hidden', steady: 3 },
-      items: [{ at: 9, lane: 1, kind: 'footOut', behavior: { type: 'stretch', period: 1.3, phase: 0, outFrac: 0.5 } }],
+      id: 'f', beats: 80, follower: { mode: 'hidden', steady: 3 },
+      // 放在采样期间玩家走不到的地方（越过的障碍会缩小消失，U6）
+      items: [{ at: 40, lane: 1, kind: 'footOut', behavior: { type: 'stretch', period: 1.3, phase: 0, outFrac: 0.5 } }],
     })]);
     const { view } = makeView('high');
     const vd = new ViewDriver(view, def as ChapterDef);
