@@ -21,20 +21,23 @@ const UNIFORM = lin(propHex(RIG_COLORS.uniform));
 const BACK: V3 = [0, Math.sin(70 * Math.PI / 180), Math.cos(70 * Math.PI / 180)];
 const TORSO_Y = 0.43;
 
-/** 第三章街道上的 LampField：路灯每 12 m 一盏（WP4 street kit 的 grid(12)），底亮度取 rainNight 的 lampFloor。 */
-function streetField(): { mean: number; min: number; max: number } {
+/**
+ * 第三章街道上的 LampField：路灯每 every 米一盏（WP4 street kit：校门内 grid(12)；3-4 小路每 15 m 一盏、坏了一半 = 30 m），
+ * 底亮度取 rainNight 的 lampFloor。取中间两个整周期的平均、最小、最大。
+ */
+function streetField(every = 12): { mean: number; min: number; max: number } {
   const lf = new LampField();
   const lamps: LampSpec[] = [];
-  for (let s = 0; s <= 144; s += 12) lamps.push({ s, x: 2.35, y: 3.6, kind: 'street', flickerable: false });
+  for (let s = 0; s <= 12 * every; s += every) lamps.push({ s, x: 2.35, y: 3.6, kind: 'street', flickerable: false });
   lf.addLamps('street', lamps);
   lf.floor = ATMO_EXTRA.rainNight.lampFloor;
-  lf.update(0, 60, 0);
-  // 取 48–72 m（两个整周期，远离两端）
+  lf.update(0, 5 * every, 0);
+  const a = 4 * every, b = 6 * every;
   const base = lf.textureBase;
   let sum = 0, n = 0, min = Infinity, max = 0;
   for (let i = 0; i < lf.field.length; i++) {
     const s = base + (i + 0.5) * LAMP_TEXEL_M;
-    if (s < 48 || s >= 72) continue;
+    if (s < a || s >= b) continue;
     const v = lf.field[i] as number;
     sum += v; n++; min = Math.min(min, v); max = Math.max(max, v);
   }
@@ -61,11 +64,11 @@ describe('rainNight：冷色受光（U6）', () => {
   });
 
   it('主角校服在街上（路灯每 12 m 一盏）的画面色：色相 190–235°，平均灯光下 l ≥ 0.12；两灯之间也不发黄、不全黑', () => {
-    const f = streetField();
+    const f = streetField(12), alley = streetField(30);
     expect(f.min).toBeCloseTo(ATMO_EXTRA.rainNight.lampFloor, 2);
     expect(f.max).toBeGreaterThan(0.9);
     const rows: string[] = [];
-    for (const [name, lamp, lMin] of [['平均', f.mean, 0.12], ['两灯之间', f.min, 0.07], ['灯下', f.max, 0.15]] as const) {
+    for (const [name, lamp, lMin] of [['平均', f.mean, 0.12], ['两灯之间', f.min, 0.09], ['灯下', f.max, 0.15], ['3-4 小路平均', alley.mean, 0.1]] as const) {
       const c = screenColor(UNIFORM, RAIN, BACK, { lamp, y: TORSO_Y });
       rows.push(`${name} lamp=${lamp.toFixed(2)} h=${c.h.toFixed(0)} l=${c.l.toFixed(3)}`);
       expect(c.h, name).toBeGreaterThanOrEqual(190);
@@ -75,8 +78,9 @@ describe('rainNight：冷色受光（U6）', () => {
     // 对照：灯色还是路灯碎金时，同样的灯光下躯干是赭黄（修改前的样子）
     const old = screenColor(UNIFORM, RAIN, BACK, { lamp: f.mean, y: TORSO_Y, lampColor: STREET_GOLD });
     expect(old.h).toBeGreaterThan(30); expect(old.h).toBeLessThan(60);
-    // 实测（lampFloor 0.3）：平均 0.58 → h 209° l 0.127；两灯之间 0.30 → l 0.089；灯下 1.0 → l 0.182；旧灯色 h 51°
-    expect(rows.length).toBe(3);
+    // 实测（lampFloor 0.35）：平均 0.59 → h 209° l 0.130；两灯之间 0.35 → l 0.096；灯下 1.0 → l 0.182；
+    // 3-4 小路（30 m 一盏）平均 0.43 → l 0.107；旧灯色同样灯光下 h 51°
+    expect(rows.length).toBe(4);
   });
 
   it('World：rainNight 下 uLampColor 是冷色；street 灯的地面光池贴花是碎金（色相 30–55°）', async () => {

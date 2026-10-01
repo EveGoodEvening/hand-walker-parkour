@@ -70,12 +70,12 @@ export const STREET_GOLD = 0xc8a15a;
 /**
  * 预设之外的 LampField 参数（AtmospherePreset 冻结，额外的放这里）。
  * lampFloor：LampField 的最低亮度。暗色预设 ≥ 0.15（R12）；voidDark「底亮度 0.15，另加掌光」。
- * rainNight 0.3（U6：路灯每 12 m 一盏，两灯之间全靠这个底亮度，0.15 时主角和障碍只剩剪影）。
+ * rainNight 0.35（U6：路灯每 12 m 一盏，3-4 小路上坏了一半、30 m 才有一盏亮的，两灯之间全靠这个底亮度；0.15 时主角和障碍只剩剪影）。
  * poolColor：路灯（street）地面光池贴花的颜色；缺省 = 预设的 lampColor（灯照到哪里就是什么颜色）。
  */
 export const ATMO_EXTRA: Record<AtmosphereId, { lampFloor: number; poolColor?: number }> = {
   morning: { lampFloor: 0 }, noon: { lampFloor: 0 }, labNorth: { lampFloor: 0 },
-  nightIndoor: { lampFloor: 0.15 }, rainNight: { lampFloor: 0.3, poolColor: STREET_GOLD }, busNight: { lampFloor: 0.15 }, homeDark: { lampFloor: 0.15 },
+  nightIndoor: { lampFloor: 0.15 }, rainNight: { lampFloor: 0.35, poolColor: STREET_GOLD }, busNight: { lampFloor: 0.15 }, homeDark: { lampFloor: 0.15 },
   dream: { lampFloor: 0 }, dreamGray: { lampFloor: 0 }, dawn: { lampFloor: 0 }, overcast: { lampFloor: 0 },
   fluorescent: { lampFloor: 0 }, voidDark: { lampFloor: 0.15 },
 };
