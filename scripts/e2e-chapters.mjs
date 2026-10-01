@@ -26,6 +26,7 @@ const LIMIT_MS = 10 * 60 * 1000;
 const DRAW_LIMIT = 50;
 const MAX_TICKS = 120 * 900;
 const CHUNK = Math.max(every, 240 - (240 % every));
+const OUTRO_PROMPT_MS = 2500;   // 结尾卡输入提示出现之前（0.3 s + 每句 0.9 s + 0.6 s）
 const OUTRO_WAIT_MS = 7000;   // 结尾卡输入超时 6 s（§4.4）+ 余量
 
 const meta = chapterMeta().filter((m) => !only || m.id === only);
@@ -121,6 +122,8 @@ try {
     let outroFired = [];
     if (r.ended && m.outroIds.length) {
       // 超时可能按真实时间（界面计时器）也可能按模拟时间（Game.tick）走：两种都给够
+      // lead 集成：结尾卡先逐行淡入，输入提示在第一句之后约 1.8 s 才开始等输入；先等它出现，按键才算数
+      await p.waitForTimeout(OUTRO_PROMPT_MS);
       for (let i = 0; i < 3; i++) { await p.keyboard.press('ArrowDown'); await p.evaluate(() => window.__game.step(30)); await p.waitForTimeout(250); }
       for (let waited = 0; waited < OUTRO_WAIT_MS; waited += 1000) { await p.evaluate(() => window.__game.step(120)); await p.waitForTimeout(1000); }
       outroFired = await p.evaluate(({ ids, ch }) => {
