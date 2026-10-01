@@ -206,6 +206,32 @@ describe('事件 → 声音（§2.7、§3、§8.7 中 WP7 的部分）', () => {
     expect(r.stepSelf.peakDb - r.stepPair.peakDb).toBe(3);
   });
 
+  it('换地点：两个 Convolver 交叉淡变 0.8 s；环境音换成该地点的缺省（第一章 1-1 教室 → 1-2 走廊 → 1-3 卫生间）', async () => {
+    const { e } = await run(4);
+    const S = (t: number, segIndex: number) => snap({ t, chapter: 'ch1', segIndex, segBeat: 0 });
+    e.frame(S(0, 0), 0);
+    e.onEvent(ev('chapter:start', { id: 'ch1' }, 0), S(0, 0));
+    e.onEvent(ev('segment', { id: '1-1', index: 0, kind: 'run' }, 0), S(0, 0));
+    expect(e.stats().reverb).toBe('classroom');
+    expect(e.stats().ambience).toBe('reading');
+    e.frame(S(1, 0), 1 / 60);
+    e.onEvent(ev('segment', { id: '1-2', index: 1, kind: 'run' }, 1), S(1, 1));
+    const at = 1 + (e.clock.offset as number);
+    expect(e.stats().reverb).toBe('corridor');
+    const slots = (e.mixer as unknown as { revA: { slots: Array<{ g: GainNode; id: string }> } }).revA.slots;
+    expect(slots.map((x) => x.id)).toEqual(['classroom', 'corridor']);
+    const [oldG, newG] = slots.map((x) => x.g.gain) as [AudioParam, AudioParam];
+    expect(paramAt(newG, at + 0.05)).toBeLessThan(0.3);                         // 渐入，不是跳变
+    expect(paramAt(oldG, at + 0.05)).toBeGreaterThan(0.7);
+    expect(paramAt(newG, at + 0.8)).toBeGreaterThan(0.95);
+    expect(paramAt(oldG, at + 0.8)).toBeLessThan(0.05);
+    e.frame(S(2, 2), 1 / 60);
+    e.onEvent(ev('segment', { id: '1-3', index: 2, kind: 'run' }, 2), S(2, 2));
+    e.frame(S(2.1, 2), 1 / 60);
+    expect(e.stats().reverb).toBe('washroom');
+    expect(e.stats().ambience).toBe('reading');                                  // 隔着墙的早读（电平 0.45）
+  });
+
   it('cue 日志与静音实现同名（bell / sfx / ambience / silence / hush）', async () => {
     const { e } = await run();
     e.frame(snap({ t: 0 }), 0);

@@ -6,6 +6,7 @@ import { attackTime, biquadCoefs, biquadRun, dbToGain, gainToDb, hasNonFinite, m
 import { LAG_BEATS } from '../../../src/core/constants';
 import { AudioEngine, type EngineDeps } from '../../../src/audio/Engine';
 import { NoiseBank } from '../../../src/audio/graph';
+import { Mixer } from '../../../src/audio/mixer';
 import { applauseLoop, renderOffline, renderOneShots, type ApplauseKind } from '../../../src/audio/library';
 import type { OneShot } from '../../../src/audio/recipes/common';
 import { allPalmKeys, palmRecipe } from '../../../src/audio/recipes/palm';
@@ -167,6 +168,28 @@ export async function bedReport(make: MakeCtx, sr: number, lib: Lib, dur = 3): P
   return rows;
 }
 
+// ——————————————————— 链路延迟 ———————————————————
+/**
+ * 整条输出链路的固定延迟（秒）：在一个只有 Mixer 的离线 context 里，往 sfx 总线送一个单样本脉冲，看它什么时候出来。
+ * Chromium 的 DynamicsCompressor 有 6 ms 前瞻（两级 = 12 ms）；Node 的最小实现为 0。所有声音的延迟都一样，测时间窗时要扣掉。
+ */
+export async function chainLatency(make: MakeCtx, sr: number): Promise<number> {
+  const oc = make(2, Math.ceil(0.1 * sr), sr);
+  const ctx = oc as unknown as BaseAudioContext;
+  const m = new Mixer(ctx, ctx.destination, 3);
+  const b = ctx.createBuffer(1, 1, sr);
+  b.copyToChannel(new Float32Array([0.1]), 0);
+  const src = ctx.createBufferSource();
+  src.buffer = b;
+  src.connect(m.dry('sfx'));
+  src.start(0.02);
+  const out = await renderOffline(oc);
+  const x = out.getChannelData(0);
+  let pk = 0, ip = 0;
+  for (let i = 0; i < x.length; i++) { const v = Math.abs(x[i] as number); if (v > pk) { pk = v; ip = i; } }
+  return ip / sr - 0.02;
+}
+
 // ——————————————————— 验收 3：时间误差 ———————————————————
 export interface TimingRow {
   key: string; kind: 'self' | 'follower'; part: ContactPart; triple: number; crisp: boolean;
@@ -174,57 +197,61 @@ export interface TimingRow {
   nominal: number;
   /** 引擎实际排程的时刻（含随机化 ±4 ms）。 */
   logged: number;
-  /** 渲染结果里用互相关定位到的时刻。 */
+  /** 渲染结果里用互相关定位到的时刻（已扣掉链路延迟）。 */
   measured: number;
 }
-export interface TimingReport { rows: TimingRow[]; latency: number; lagSec: number }
+export interface TimingReport { rows: TimingRow[]; latency: number; lagSec: number; offsets: number[] }
 
 /**
- * 四掌三段声（两掌干脆、两掌不干脆）加追随者（身后，稳度 3 = 半拍），离线渲染后逐个定位。
- * latency：整条链路的固定延迟（Chromium 的压缩器有前瞻预延迟），以第一个掌根为准，所有声音都一样。
+ * 四掌三段声（两掌干脆、两掌不干脆），追随者在身后半拍（lagBeats 0.5）。自己和追随者分两次渲染（同一套模拟时间、同一个时钟偏移），
+ * 免得追随者被自己的混响尾巴盖住、互相关找错位置。追随者的时间只取决于事件时间戳，与混音无关，所以这里用稳度 0 的混音
+ * （低通 8 kHz、混响 0.2）让波形清楚可测——稳度 3 的 2 kHz 低通加 0.6 混响会把指节、指腹埋进掌根的尾巴里；参考波形同样过 8 kHz 低通。
  */
 export async function timingScenario(make: MakeCtx, sr: number, lib: Lib): Promise<TimingReport> {
   const dur = 2.6;
-  const { e, ctx } = await engineFor(make, sr, dur, lib);
   const cad = 4.8, lag = 0.5;
   const lagSec = lag / cad;
   const fol = behind(lag);
+  const folSteady = 0;
+  const latency = await chainLatency(make, sr);
   const palms: Array<{ t: number; hand: Hand; crisp: boolean }> = [
     { t: 0.4, hand: 'L', crisp: true }, { t: 0.83, hand: 'R', crisp: false }, { t: 1.26, hand: 'L', crisp: true }, { t: 1.69, hand: 'R', crisp: false },
   ];
-  interface Item { t: number; e: GameEvent; kind: 'self' | 'follower'; part: ContactPart; triple: number; crisp: boolean }
-  const items: Item[] = [];
-  palms.forEach((tr, triple) => {
-    for (const [part, off] of [['heel', 0], ['knuckle', 0.026], ['pad', 0.052]] as const) {
-      const t = tr.t + off;
-      items.push({ t, kind: 'self', part, triple, crisp: tr.crisp, e: ev('contact', { hand: tr.hand, part, t, s: 0, x: 0, surface: 'terrazzo', crisp: tr.crisp && part === 'heel', heavy: false }, t) });
-      const tf = t + lagSec;
-      items.push({ t: tf, kind: 'follower', part, triple, crisp: true, e: ev('followerContact', { hand: tr.hand, part, t: tf, lagBeats: lag, steady: 3, from: 'behind' }, tf) });
-    }
-  });
-  items.sort((a, b) => a.t - b.t);
-  e.frame(snap({ t: 0, follower: fol }), 0);
-  let frameT = 0;
-  for (const it of items) {
-    while (frameT + 1 / 60 < it.t) { frameT += 1 / 60; e.frame(snap({ t: frameT, follower: fol }), 1 / 60); }
-    e.onEvent(it.e, snap({ t: tickUp(it.t), follower: fol }));
-  }
-  const off = e.clock.offset as number;
-  const log = e.scheduled.filter((x) => x.key.startsWith('self:') || x.key.startsWith('follower:'));
-  const out = await renderOffline(ctx);
-  const mix = mono(out);
   const rows: TimingRow[] = [];
-  const selfItems = items.filter((i) => i.kind === 'self'), folItems = items.filter((i) => i.kind === 'follower');
-  let si = 0, fi = 0;
-  // 先粗定位第一个掌根，得到链路延迟；之后每个声音都在「排程时刻 + 延迟」附近找
-  const first = log[0] as (typeof log)[number];
-  const latency = locate(first.buf as AudioBuffer, mix, sr, first.at + 0.006, 0.02) - first.at;
-  for (const x of log) {
-    const it = (x.key.startsWith('self:') ? selfItems[si++] : folItems[fi++]) as Item;
-    const measured = locate(x.buf as AudioBuffer, mix, sr, x.at + latency, 0.004) - latency;
-    rows.push({ key: x.key, kind: it.kind, part: it.part, triple: it.triple, crisp: it.crisp, nominal: it.t + off, logged: x.at, measured });
+  const offsets: number[] = [];
+  for (const kind of ['self', 'follower'] as const) {
+    const { e, ctx } = await engineFor(make, sr, dur, lib);
+    interface Item { t: number; e: GameEvent; part: ContactPart; triple: number; crisp: boolean }
+    const items: Item[] = [];
+    palms.forEach((tr, triple) => {
+      for (const [part, off] of [['heel', 0], ['knuckle', 0.026], ['pad', 0.052]] as const) {
+        const t = tr.t + off;
+        if (kind === 'self') items.push({ t, part, triple, crisp: tr.crisp, e: ev('contact', { hand: tr.hand, part, t, s: 0, x: 0, surface: 'terrazzo', crisp: tr.crisp && part === 'heel', heavy: false }, t) });
+        else items.push({ t: t + lagSec, part, triple, crisp: true, e: ev('followerContact', { hand: tr.hand, part, t: t + lagSec, lagBeats: lag, steady: folSteady, from: 'behind' }, t + lagSec) });
+      }
+    });
+    const S = (t: number) => snap({ t, follower: fol, steady: kind === 'follower' ? folSteady : 3 });
+    e.frame(S(0), 0);
+    let frameT = 0;
+    for (const it of items) {
+      while (frameT + 1 / 60 < it.t) { frameT += 1 / 60; e.frame(S(frameT), 1 / 60); }
+      e.onEvent(it.e, S(tickUp(it.t)));
+    }
+    const off = e.clock.offset as number;
+    offsets.push(off);
+    const log = e.scheduled.filter((x) => x.key.startsWith(`${kind}:`));
+    const out = await renderOffline(ctx);
+    const mix = mono(out);
+    const lp = kind === 'follower' ? biquadCoefs('lowpass', 8000, qDb(Math.SQRT1_2), 0, sr) : null;
+    log.forEach((x, i) => {
+      const it = items[i] as Item;
+      let ref = x.buf as AudioBuffer;
+      if (lp) { const y = biquadRun(ref.getChannelData(0), lp); const rb = { getChannelData: () => y } as unknown as AudioBuffer; ref = rb; }
+      const measured = locate(ref, mix, sr, x.at + latency, 0.004) - latency;
+      rows.push({ key: x.key, kind, part: it.part, triple: it.triple, crisp: it.crisp, nominal: it.t + off, logged: x.at, measured });
+    });
   }
-  return { rows, latency, lagSec };
+  return { rows, latency, lagSec, offsets };
 }
 
 // ——————————————————— 验收 4：静音段、安静的一秒 ———————————————————
@@ -233,7 +260,7 @@ export interface HushReport {
   hushAt: number;
   /** 开始前 0.65 s 的输出 RMS（dBFS）。 */
   preDb: number;
-  /** 开始 0.3 s 之后到结束的输出 RMS（dBFS）。 */
+  /** 开始 0.3 s 之后到结束的输出 RMS（dBFS）。时间窗都扣掉链路的固定延迟。 */
   postDb: number;
   /** 0.3 s 时各总线门的增益（dB）；只有 Node 的最小实现能读 AudioParam 的任意时刻，浏览器里为 null。 */
   gatesDb: Record<string, number> | null;
@@ -277,12 +304,14 @@ export async function hushScenario(make: MakeCtx, sr: number, lib: Lib, withSelf
       gatesDb[b] = db((mixer.gate(b).param as unknown as { valueAt: (t: number) => number }).valueAt(hushAt + 0.3));
     }
   }
+  const lat = await chainLatency(make, sr);
   const out = await renderOffline(ctx);
   const chs = [out.getChannelData(0), out.getChannelData(1)];
+  const at = (x: number) => Math.floor((x + lat) * sr);
   return {
     hushAt,
-    preDb: db(rmsOf(chs, Math.floor((hushAt - 0.7) * sr), Math.floor((hushAt - 0.05) * sr))),
-    postDb: db(rmsOf(chs, Math.floor((hushAt + 0.3) * sr), Math.floor((dur - 0.05) * sr))),
+    preDb: db(rmsOf(chs, at(hushAt - 0.7), at(hushAt - 0.05))),
+    postDb: db(rmsOf(chs, at(hushAt + 0.3), at(dur - 0.08))),
     gatesDb,
   };
 }
@@ -290,7 +319,7 @@ export async function hushScenario(make: MakeCtx, sr: number, lib: Lib, withSelf
 export interface QuietReport { hitAt: number; preDb: number; edgeDb: number; cutDb: number; recoverDb: number; gateAt60Db: number | null }
 /**
  * 人群段绊倒：「安静的一秒」。只开环境音量（sfx 音量 0，擦地声不进输出），环境是操场的远处人声（没有底噪层）。
- * edgeDb：受击后 60–70 ms 的输出；cutDb：0.1–1.0 s；recoverDb：恢复 0.6 s 之后。
+ * edgeDb：受击后 60–70 ms 的输出；cutDb：0.1–1.0 s；recoverDb：恢复 0.6 s 之后。时间窗都扣掉链路的固定延迟。
  */
 export async function quietScenario(make: MakeCtx, sr: number, lib: Lib): Promise<QuietReport> {
   const dur = 3.6;
@@ -310,9 +339,10 @@ export async function quietScenario(make: MakeCtx, sr: number, lib: Lib): Promis
   let gateAt60Db: number | null = null;
   const p = (e.mixer as NonNullable<typeof e.mixer>).gate('ambience').param as unknown as { valueAt?: (t: number) => number };
   if (typeof p.valueAt === 'function') gateAt60Db = db(p.valueAt(hitAt + 0.06));
+  const lat = await chainLatency(make, sr);
   const out = await renderOffline(ctx);
   const chs = [out.getChannelData(0), out.getChannelData(1)];
-  const at = (x: number) => Math.floor(x * sr);
+  const at = (x: number) => Math.floor((x + lat) * sr);
   return {
     hitAt,
     preDb: db(rmsOf(chs, at(0.4), at(hitAt - 0.02))),
@@ -514,7 +544,7 @@ export function centroid(x: Float32Array, sr: number): number {
 
 /**
  * 干声（库里的缓冲）：每段的谱质心、600 Hz 以下的能量占比、从峰值衰减到 −40 dB 的时间。
- * 湿声（整个引擎，走廊混响 1.2 s）：三段的起点（包络峰）、尾巴（掌后 150–700 ms）相对直达（0–80 ms）的能量比、
+ * 湿声（整个引擎，走廊混响 1.2 s）：三段在混音里的起点（互相关定位）、尾巴（掌后 150–700 ms）相对直达（0–80 ms）的能量比、
  * 输出从峰值落到 −60 dB 的时间。
  */
 export async function palmScenario(make: MakeCtx, sr: number, lib: Lib): Promise<PalmReport> {
@@ -545,26 +575,15 @@ export async function palmScenario(make: MakeCtx, sr: number, lib: Lib): Promise
   }
   while (ft + 1 / 60 < dur) { ft += 1 / 60; e.frame(S(ft), 1 / 60); }
   const at0 = t0 + (e.clock.offset as number);
+  const lat = await chainLatency(make, sr);
+  const log = e.scheduled.filter((x) => x.key.startsWith('self:'));
   const out = await renderOffline(ctx);
   const m = mono(out);
-  // 粗略的链路延迟：输出第一次越过峰值 −30 dB 的位置
   const pk = peakAbs([m]);
-  let first = 0;
-  for (let i = 0; i < m.length; i++) if (Math.abs(m[i] as number) >= pk * dbToGain(-30)) { first = i; break; }
-  const lat = Math.max(0, first / sr - at0);
   const base = at0 + lat;
-  // 三段的起点：分别在 0 / 26 / 52 ms 附近 ±8 ms 找 1 ms RMS 包络的最大上升沿
-  const env = (i0: number) => energy(m, i0, i0 + Math.round(0.001 * sr));
-  const onsetsMs: number[] = [];
-  for (const nom of [0, 0.026, 0.052]) {
-    let best = -Infinity, bi = 0;
-    for (let d = -0.008; d <= 0.008; d += 1 / sr) {
-      const i = Math.floor((base + nom + d) * sr);
-      const rise = env(i) - env(i - Math.round(0.002 * sr));
-      if (rise > best) { best = rise; bi = i; }
-    }
-    onsetsMs.push((bi / sr - base) * 1000);
-  }
+  // 三段的起点：在混音里用互相关定位各自的缓冲，相对掌根
+  const pos = log.map((x) => locate(x.buf as AudioBuffer, m, sr, x.at + lat, 0.004));
+  const onsetsMs = pos.map((p) => (p - (pos[0] as number)) * 1000);
   const direct = energy(m, Math.floor(base * sr), Math.floor((base + 0.08) * sr));
   const tail = energy(m, Math.floor((base + 0.15) * sr), Math.floor((base + 0.7) * sr));
   const last = lastAboveIdx(m, pk * dbToGain(-60));

@@ -3,7 +3,8 @@
 // 让 vitest 能把配方和整个引擎离线渲染出来、测峰值 / NaN / 起音 / 时间误差 / 总线电平。
 // 实现要点（与规范一致的部分）：128 帧渲染量子；AudioParam 的 set / linear / exponential / target / curve 自动化与
 // cancelScheduledValues；a-rate / k-rate；节点输入的上下混（speakers）；BiquadFilter 用规范公式（src/audio/dsp.ts）；
-// StereoPanner 等功率；BufferSource 亚样本起点与线性插值；Convolver 均匀分块 FFT（重叠保留，零延迟）；WaveShaper 查表插值。
+// StereoPanner 等功率；BufferSource 亚样本起点与线性插值（缓冲内的 offset 取整到样本，与 Chromium 一致）；Oscillator 的方波 / 锯齿 / 三角
+// 是按规范傅里叶系数生成的带限波表；Convolver 均匀分块 FFT（重叠保留，零延迟）；WaveShaper 查表插值。
 // 简化：DynamicsCompressor 只有静态曲线 + 起音 / 释放，没有前瞻和补偿增益（引擎会用校准量出这里的补偿增益 = 0 dB）。
 import { biquadCoefs, type BiquadType } from '../../../../src/audio/dsp';
 
@@ -388,7 +389,8 @@ export class MiniBufferSource extends MiniSource {
       const f = q * Q + i;
       const t = f / sr;
       if (t < this.startTime || t >= this.stopTime) continue;
-      if (this.pos < 0) this.pos = this.offset * b.sampleRate + (t - this.startTime) * sr * step;
+      // 缓冲内的 offset 取整到样本（Chromium 的做法；按小数插值相当于给白噪声加了一个低通，高频噪声会比浏览器里轻 0.5–1 dB）
+      if (this.pos < 0) this.pos = Math.round(this.offset * b.sampleRate) + (t - this.startTime) * sr * step;
       let p = this.pos;
       if (this.loop && le > ls) { while (p >= le) p -= le - ls; }
       else if (p >= len) { this.ended = true; break; }
@@ -429,11 +431,11 @@ export class MiniOscillator extends MiniSource {
       if (this.phase < 0) this.phase = ((t - this.startTime) * hz) % 1;
       const p = this.phase;
       let v: number;
-      switch (this.type) {
-        case 'square': v = (p < 0.5 ? 1 : -1) + blep(p, dt) - blep((p + 0.5) % 1, dt); break;
-        case 'sawtooth': { const s = (p + 0.5) % 1; v = 2 * s - 1 - blep(s, dt); break; }
-        case 'triangle': v = p < 0.25 ? 4 * p : p < 0.75 ? 2 - 4 * p : 4 * p - 4; break;
-        default: v = Math.sin(2 * Math.PI * p);
+      if (this.type === 'sine') v = Math.sin(2 * Math.PI * p);
+      else {
+        const tab = bandTable(this.type as 'square' | 'sawtooth' | 'triangle', Math.max(1, Math.min(2048, Math.floor(sr / 2 / Math.max(1e-3, Math.abs(hz))))));
+        const x = p * TAB, k = Math.floor(x), f = x - k;
+        v = (tab[k & (TAB - 1)] as number) * (1 - f) + (tab[(k + 1) & (TAB - 1)] as number) * f;
       }
       y[i] = v;
       this.phase = (p + dt) % 1;
@@ -442,11 +444,30 @@ export class MiniOscillator extends MiniSource {
     return out;
   }
 }
-function blep(t: number, dt: number): number {
-  if (dt <= 0) return 0;
-  if (t < dt) { const x = t / dt; return x + x - x * x - 1; }
-  if (t > 1 - dt) { const x = (t - 1) / dt; return x * x + x + x + 1; }
-  return 0;
+/**
+ * 基本波形（规范「Basic Waveform Phase」的傅里叶系数）做成带限波表：只取奈奎斯特以下的分音，按规范归一到峰值 1。
+ * Chromium 也是带限波表，所以方波 / 锯齿 / 三角波的电平与它一致（朴素波形加 polyBLEP 的方波会响 1.4 dB 左右）。
+ */
+const TAB = 4096;
+const tables = new Map<string, Float32Array>();
+function bandTable(type: 'square' | 'sawtooth' | 'triangle', partials: number): Float32Array {
+  const key = `${type}:${partials}`;
+  const hit = tables.get(key);
+  if (hit) return hit;
+  const t = new Float64Array(TAB);
+  for (let n = 1; n <= partials; n++) {
+    const b = type === 'square' ? (2 / (n * Math.PI)) * (1 - (n % 2 ? -1 : 1))
+      : type === 'sawtooth' ? ((n % 2 ? 1 : -1) * 2) / (n * Math.PI)
+      : (8 * Math.sin((n * Math.PI) / 2)) / (Math.PI * n) ** 2;
+    if (b === 0) continue;
+    for (let i = 0; i < TAB; i++) t[i] = (t[i] as number) + b * Math.sin((2 * Math.PI * n * i) / TAB);
+  }
+  let max = 0;
+  for (let i = 0; i < TAB; i++) max = Math.max(max, Math.abs(t[i] as number));
+  const out = new Float32Array(TAB);
+  for (let i = 0; i < TAB; i++) out[i] = (t[i] as number) / (max || 1);
+  tables.set(key, out);
+  return out;
 }
 
 export class MiniConstantSource extends MiniSource {
