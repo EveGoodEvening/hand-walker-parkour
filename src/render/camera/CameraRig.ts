@@ -20,7 +20,7 @@ import type { ShotId, SimSnapshot } from '../../core/types';
 import type { CompiledSegment, StillSegmentDef } from '../../levels/schema';
 import { WP5 } from '../actors/shared';
 import {
-  FOLLOW, PUDDLE_GAZE, RUN_SHOT_OFFSETS, SEGMENT_SHOTS, SET_DEFAULT_SHOT, SET_SHOT_LATE, SET_SHOT_RETURN, SET_SHOTS, STAND_SHOTS, STILL_TURN_BACK,
+  FOLLOW, PUDDLE_GAZE, RUN_SHOT_OFFSETS, SEGMENT_SHOTS, SET_DEFAULT_SHOT, SET_SHOT_LATE, SET_SHOT_PORTRAIT, SET_SHOT_RETURN, SET_SHOTS, STAND_SHOTS, STILL_TURN_BACK,
   STILL_TURN_DEFAULT_YAW, THROUGH_GLASS_SHOT, TURN_RAMP, DEFAULT_SET_SHOT, type SetShot, type StillTurnShot,
 } from './shots';
 
@@ -162,6 +162,7 @@ export class CameraRig implements ViewSystem {
       const id = this.stillShot ?? SET_DEFAULT_SHOT[key] ?? (st ? SET_DEFAULT_SHOT[st.set] : undefined) ?? 'deskFeet';
       let sh: SetShot = SET_SHOTS[id] ?? DEFAULT_SET_SHOT;
       if ((this.stillCuts.get(id) ?? 0) >= 2 && SET_SHOT_RETURN[id]) sh = SET_SHOT_RETURN[id] as SetShot;
+      else if (portrait && SET_SHOT_PORTRAIT[id]) sh = SET_SHOT_PORTRAIT[id] as SetShot;
       // 静场里 Actor 总会更新锚点（主角不显示时也一样，lead 集成）
       const M = WP5.stillAnchor;
       o.pos.set(sh.pos[0], sh.pos[1], sh.pos[2]).applyMatrix4(M);

@@ -269,6 +269,40 @@ describe('still turnBack (B3 r3): 2-9 turns from the shadow to the board and sta
     }
   });
 
+  // 竖屏：黑板机位换成 SET_SHOT_PORTRAIT（水平视角只有约 40°，原来的机位拍不全那一行字，第一个字出画）
+  it('2-9: the whole chalk line is in frame and not behind his head from 6.0 s (portrait 0.45–0.75 and landscape), and the portrait turn keeps clear of his head', async () => {
+    const line: THREE.Vector3[] = [];
+    const r = labBoardSet.surfaces!('default')[0]!.rect;
+    const half = (r[2] - r[0]) * 0.86 / 2, y = r[3] - (r[3] - r[1]) * 0.45;    // 贴图里居中、占板宽 86%、上沿往下 45%
+    for (let i = 0; i <= 8; i++) line.push(new THREE.Vector3(-half + 2 * half * i / 8, y, BOARD_Z + 0.012).add(O));
+    // 字高约 0.24 m（贴图 2:1 拉到 3.6 × 1.25 m 的板上）：这一行字的上下沿，用来查他的头有没有挡住字
+    const band: THREE.Vector3[] = [];
+    for (let i = 0; i <= 16; i++) for (const dy of [-0.12, 0, 0.12]) band.push(new THREE.Vector3(-half + 2 * half * i / 16, y + dy, BOARD_Z + 0.012).add(O));
+    const sphere: THREE.Vector3[] = [];
+    for (let i = 0; i < 64; i++) {
+      const u = (i + 0.5) / 64, th = Math.acos(1 - 2 * u), ph = i * 2.39996;
+      sphere.push(new THREE.Vector3(Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)).multiplyScalar(0.15));
+    }
+    for (const t of [6.0, 7.4, 13.0]) {
+      const w = await camAt(ch2 as ChapterDef, '2-9', t);
+      for (const aspect of [0.45, 390 / 844, 360 / 640, 768 / 1024, 16 / 9, 2560 / 1080]) {
+        const c = camAspect(w, '2-9', t, aspect);
+        expect(line.every((p) => inFrame(c, p, 0.97)), `${t} s, aspect ${aspect.toFixed(2)}`).toBe(true);
+        // 他的头（半径 0.15 m 的球）在画面上的包围框里没有这一行字的点
+        const hb: [number, number, number, number] = [9, 9, -9, -9];
+        for (const d of sphere) { const q = WP5.playerHead.clone().add(d).project(c); hb[0] = Math.min(hb[0], q.x); hb[1] = Math.min(hb[1], q.y); hb[2] = Math.max(hb[2], q.x); hb[3] = Math.max(hb[3], q.y); }
+        const hidden = band.filter((p) => { const q = p.clone().project(c); return q.x > hb[0] && q.x < hb[2] && q.y > hb[1] && q.y < hb[3]; });
+        expect(hidden.length, `${t} s, aspect ${aspect.toFixed(2)}: chalk line behind his head`).toBe(0);
+      }
+    }
+    const w = await camAt(ch2 as ChapterDef, '2-9', 5.2);
+    for (let t = 5.2; t <= 6.05; t += 0.05) {
+      const c = camAspect(w, '2-9', t, 390 / 844);
+      expect(c.position.distanceTo(WP5.playerHead), `${t.toFixed(2)}`).toBeGreaterThan(0.3);
+      if (t <= 5.2 + 1e-6) expect(boardPts().filter((p) => inFrame(c, p)).length).toBe(0);
+    }
+  });
+
   it('3-10: turns over 1.0 s to the door and the dripping towel, holds while he asks both questions, and cuts to the last look at the mirror at 10.4 s', async () => {
     const half = anchorDir(await camAt(ch3 as ChapterDef, '3-10', 5.9));
     expect(half.z).toBeGreaterThan(-0.7); expect(half.z).toBeLessThan(0.7);                 // 1.0 s 慢慢转：到一半还在侧面
