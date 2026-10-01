@@ -191,8 +191,8 @@ export class Mixer {
   private folSend!: GainNode;
   private folMute!: Gate;
   private irCache = new Map<ReverbId, AudioBuffer>();
-  /** 实测的补偿增益（dB）；未校准前用估计值。 */
-  makeupDb = { comp: 6.3, limiter: 5.1, calibrated: false };
+  /** 实测的补偿增益（dB）；未校准前用 Chromium 的稳态值。 */
+  makeupDb = { comp: 5.15, limiter: 5.13, calibrated: false };
 
   constructor(private readonly ctx: BaseAudioContext, dest: AudioNode, private readonly seed = 3) {
     this.master = gain(ctx, 1);
@@ -312,8 +312,10 @@ export class Mixer {
   /** 量出两个压缩器的补偿增益，在它们后面乘倒数（见文件头注释）。 */
   async calibrate(makeOffline: MakeOffline): Promise<void> {
     const measure = async (setup: (c: DynamicsCompressorNode) => void): Promise<number> => {
+      // Chromium 的补偿增益从 0 dB 起要约 0.3 s 才爬到稳态（实测：72–120 ms 时只有 2.7 / 1.4 dB，0.3 s 后 5.15 / 5.13 dB），
+      // 所以渲染 0.6 s、取最后 0.2 s 的平均。早先只渲染 0.12 s，量小了约 6 dB，整体输出因此偏响。
       const sr = this.ctx.sampleRate;
-      const n = Math.ceil(0.12 * sr);
+      const n = Math.ceil(0.6 * sr);
       const oc = makeOffline(1, n, sr);
       const buf = oc.createBuffer(1, n, sr);
       const x = new Float32Array(n).fill(0.001);
@@ -327,7 +329,7 @@ export class Mixer {
       const out = await renderOffline(oc);
       const y = out.getChannelData(0);
       let s = 0, k = 0;
-      for (let i = Math.floor(n * 0.6); i < n; i++) { s += Math.abs(y[i] as number); k++; }
+      for (let i = Math.floor(0.4 * sr); i < n; i++) { s += Math.abs(y[i] as number); k++; }
       const g = k ? s / k / 0.001 : 1;
       return Number.isFinite(g) && g > 0.1 && g < 10 ? 20 * Math.log10(g) : 0;
     };
