@@ -225,8 +225,10 @@ describe('1-3: the reflection that lifts its head half a beat late is readable (
   // 25 px 只要求 −1、0 两条车道。右道离左墙的镜子最远：倒影在镜中的深度是 0.3 + 0.75 × 玩家到墙的距离，右道的倒影比中道深约 0.8 m，
   // 镜头也离墙远 0.77 m，头只有 19–20 px（验收员 verify-U5-r1/probe-1-3）。把倒影往镜面拉近会被台盆挡住（台面 0.87 m），
   // 所以右道只要求头在台面投影线以上、在画面里（|NDC| < 0.8）。截图（WP5.json u5-1-3-*）和自动驾驶走中道。
+  // 集成（U1 × U5）：U1 把 @38 的 headDownHold 从 1.0 s 加到 2.8 s（「它还在低头。」显示期间一直低着头），倒影要到约 @51 才晚半拍
+  // 抬头，所以第二个时刻从 @44.9 挪到抬头之后的 @52.5。低头期间头比抬头时低约 0.1 m，见下一个用例。
   for (const lane of [-1, 0, 1] as const) {
-    for (const b1 of [40.5, 44.9]) {
+    for (const b1 of [40.5, 52.5]) {
       it(`lane ${lane} @${b1}: the head is above the counter line${lane < 1 ? ' and ≥ 25 px tall at 1280×720' : ''}`, async () => {
         const ch1 = (await import('../../../src/levels/chapters/ch1')).default as ChapterDef;
         const w = await scene(ch1);
@@ -246,6 +248,21 @@ describe('1-3: the reflection that lifts its head half a beat late is readable (
       });
     }
   }
+});
+
+describe('1-3: 「它还在低头。」 the reflection holds its head down through the line (U1 × U5)', () => {
+  it('@44–@50 the head is lowered (≥ 0.08 m below the lifted head at @52.5) in the middle lane', async () => {
+    const ch1 = (await import('../../../src/levels/chapters/ch1')).default as ChapterDef;
+    const headY = async (b1: number) => {
+      const w = await scene(ch1);
+      playRun(w, '1-3', 30, b1, 0);
+      const d = w.dbl.active().find((q) => q.id === 'wc')!;
+      expect(d.visible).toBe(true);
+      return (d.head[1] as number) - w.ch.segments.find((q) => q.def.id === '1-3')!.floorY(0);
+    };
+    const up = await headY(52.5);
+    for (const b1 of [44, 46, 48, 50]) expect(up - await headY(b1)).toBeGreaterThan(0.08);
+  });
 });
 
 describe('other still compositions (U5)', () => {
