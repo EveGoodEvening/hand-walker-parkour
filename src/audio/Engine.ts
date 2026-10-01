@@ -101,6 +101,8 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   private skipKnuckleUntil = -1;
   private crispUntil: Record<Hand, number> = { L: -1, R: -1 };
   private palmJitter: Record<Hand, number> = { L: 0, R: 0 };
+  /** 离线模式的「现在」（单调不减）。 */
+  private vnow = 0;
   private lastVariant = new Map<string, number>();
   private lastSnap: SimSnapshot | null = null;
   private lastTick = 0;
@@ -155,7 +157,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     try {
       this.lastSnap = snap;
       // 离线（测试）：「现在」由模拟时间反推，第一帧就对齐时钟——否则没有触地声的场景（只有环境音）永远停在 0
-      if (this.deps.offline && this.ctx && this.clock.offset === null) this.clock.toAudio(snap.t, 0);
+      if (this.deps.offline && this.ctx && this.clock.offset === null) this.clock.toAudio(snap.t, this.vnow);
       this.observe(snap);
       if (this.ctx && this.mixer) {
         if (this.pendingAmb) this.flushPendingAmb(snap);
@@ -319,7 +321,10 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   /** 音频时钟的「现在」。离线模式由最新模拟时刻反推。 */
   now(): number {
     if (!this.ctx) return 0;
-    return this.deps.offline ? this.clock.virtualNow(this.lastSnap?.t ?? 0) : this.ctx.currentTime;
+    if (!this.deps.offline) return this.ctx.currentTime;
+    // 离线：时钟重置（换章）之后、重新对齐之前，「现在」停在上一次的值，不能倒回 0
+    if (this.clock.offset !== null) this.vnow = Math.max(this.vnow, this.clock.virtualNow(this.lastSnap?.t ?? 0));
+    return this.vnow;
   }
   /** 模拟时刻 → 音频时刻（前瞻调度）。 */
   private at(simT: number): number { return this.clock.toAudio(simT, this.now()); }
@@ -332,7 +337,8 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     switch (e.type) {
       case 'chapter:start':
         this.jump = true; this.segIndex = -1; this.skipKnuckleUntil = -1; this.crispUntil = { L: -1, R: -1 };
-        this.clock.reset();                       // 模拟时间从 0 重新开始
+        // 模拟时间从 0 重新开始：实时模式下重新对齐（离线模式的「现在」由模拟时间定义，倒回时 toAudio 自己会重新对齐）
+        if (!this.deps.offline) this.clock.reset();
         this.setFail(false, snap);
         this.clearTransient();
         if (e.data.id === 'ch4' && this.ctx) setTimeout(() => { this.loopBuffer('sparse'); this.loopBuffer('dense'); this.loopBuffer('aligned'); }, 0);
