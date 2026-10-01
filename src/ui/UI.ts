@@ -189,6 +189,8 @@ export class UI implements UIAPI {
   show(s: ScreenName, data?: unknown): void {
     const prev = this.current;
     this.current = s;
+    // 上一个界面里按下、还没被 Game 取走的键作废（选章的回车不能顺带跳过开场卡，见 Input.dropPending）
+    if (prev !== s) Input.active?.dropPending();
     if (prev === 'outro' && s !== 'outro') this.outroScreen.dispose();
     if (this.creditsTimer && s !== 'credits') { clearTimeout(this.creditsTimer); this.creditsTimer = null; }
     switch (s) {

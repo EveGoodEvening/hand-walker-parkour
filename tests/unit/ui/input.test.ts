@@ -92,6 +92,26 @@ describe('情境按钮', () => {
     inp.hooks.standHalves = true; inp.refreshHooks();
     expect(inp.context.standHalves).toBe(true);
   });
+  it('界面切换时丢掉上一个界面里按下的键（选章的回车不会顺带跳过开场卡），松开事件保留', async () => {
+    inp.setContext({ kind: 'menu', look: false, ask: false, standHalves: false });
+    key('keydown', 'ArrowDown', 'ArrowDown'); key('keyup', 'ArrowDown', 'ArrowDown');
+    key('keydown', 'Enter', 'Enter');
+    inp.dropPending();
+    expect(drain()).toEqual(['down:up']);
+    // 经过 UI：show() 换界面时调用
+    const { UI } = await import('../../../src/ui/UI');
+    const { createSave } = await import('../../../src/core/save');
+    const { fakeCmd } = await import('./helpers');
+    const root = document.createElement('div'); document.body.appendChild(root);
+    const ui = new UI(); ui.mount(root, fakeCmd(), createSave());
+    ui.show('chapters');
+    key('keydown', 'Enter', 'Enter');
+    ui.show('intro', { chapter: 'ch1', title: '第一章', name: '早自习', lines: [] });
+    expect(drain()).toEqual([]);
+    key('keyup', 'Enter', 'Enter');
+    key('keydown', 'KeyK', 'k');
+    expect(drain()).toEqual(['confirm:up', 'confirm:down']);
+  });
   it('情境切换时松开所有按住的键', () => {
     inp.setContext({ kind: 'still', look: false, ask: false, standHalves: false });
     key('keydown', 'ArrowDown', 'ArrowDown');

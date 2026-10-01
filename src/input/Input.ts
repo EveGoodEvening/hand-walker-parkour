@@ -149,6 +149,15 @@ export class Input implements InputAPI {
   }
 
   drain(): InputEvent[] { const q = this.queue; this.queue = []; return q; }
+
+  /**
+   * 界面切换时由 UI 调用：丢掉还没被 Game 取走的「按下」。它们属于上一个界面——
+   * 例如在章节列表里按回车选章，同一次回车会作为「任意键」立刻跳过刚出现的开场卡；
+   * 在暂停菜单按回车「继续」，那次回车不该再进入游玩。松开事件保留（按住集合要配对）。
+   */
+  dropPending(): void {
+    if (this.queue.some((e) => e.phase === 'down')) this.queue = this.queue.filter((e) => e.phase === 'up');
+  }
   held(): ReadonlySet<Action> { return this.heldSet; }
   device(): Device { return this.dev; }
   get context(): Readonly<InputContext> { return this.ctx; }
