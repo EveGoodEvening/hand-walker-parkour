@@ -1,0 +1,398 @@
+// src/audio/mixer.ts —— 总线、门、混响交叉淡变与主输出链（DESIGN.md §6.1）。WP7。
+//
+//   self / npc / sfx / ui ──(各自音量 → 门)──────────────────────────┐
+//          └→ 混响发送（音量 → 同一个门）→ 混响 A / B                  │
+//   follower ── 音量 → 低通 → 回头静音 → 电平 → 门 ─────────────────────┤
+//                              └→ 混响量 → 混响 B                       ├→ master → 压缩(−14 dB, 4:1, 3 ms, 250 ms)
+//   ambience / floor ──(环境音量 → 门)──────────────────────────────────┤        → 限幅(−9 dB, 20:1, 1 ms)
+//   floorSfx：膝盖闷响、失败时合一的节拍 ──(音效音量 → 自己的门)─────────┤
+//                                                                             → 软削波保险（WaveShaper，≤ −8.1 dBFS）→ destination
+//   混响 A（self / sfx / ui 的发送）、混响 B（follower / npc 的发送）──门──┘
+//
+// 门（Gate）：每条总线一个 GainNode，按「若干个带起止时间的门」的乘积排程（静音段、安静的一秒、失败、回头、玻璃触碰、界面）。
+// 有混响发送的总线（self / npc / sfx / ui），同一个门也排在发送上：门掉一条总线时，它的混响尾巴一起掉。
+// 只用 setTargetAtTime 排程，取消之后重排也是连续的（不会咔哒）。
+// 混响分两组：静音段要连同追随者和 NPC 的混响尾巴一起掐掉（§8.10 WP7 验收 4），自己掌声的混响不受影响（混响 A；
+// 音效进混响 A 的发送跟着音效总线的门走，静音段里不再送进新的，已经在房间里的尾巴按衰减时间自然消失）。
+// DynamicsCompressorNode 按规范会自动加「补偿增益」（makeup gain，Chromium 里约 +5–6 dB），会把峰值推过 −8 dBFS；
+// 所以解锁时用一次极短的离线渲染量出补偿增益，再在压缩器后面乘它的倒数。
+import type { ReverbId } from '../core/types';
+import type { Volumes } from '../core/contracts';
+import { impulseResponse } from './dsp';
+import { gain } from './graph';
+import { renderOffline, type MakeOffline } from './library';
+import { REVERB_RT60 } from './places';
+import type { BusId } from './recipes/common';
+
+/**
+ * floorSfx：摔倒的一次性声音（膝盖闷响、两串节拍合一）。和房间底噪一样失败时不淡出，但有自己的门——
+ * 静音段、静默 cue 门掉房间底噪时，摔倒照样听得见（§2.7 失败演出第一步「膝盖着地的闷响」）。
+ */
+export type GateBus = BusId | 'floorSfx' | 'revA' | 'revB';
+export const ALL_GATE_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'sfx', 'ambience', 'floor', 'floorSfx', 'ui', 'revA', 'revB'];
+
+interface GateItem { gain: number; from: number; until: number; att: number; rel: number }
+
+/** 一个（或几个同步的）增益参数上的若干个门；目标值 = 当前生效的门的增益之积。 */
+export class Gate {
+  private items = new Map<string, GateItem>();
+  private readonly params: AudioParam[];
+  /** param：总线输出；also：跟着同一个门走的其他参数（这条总线的混响发送）。 */
+  constructor(readonly param: AudioParam, also: readonly AudioParam[] = []) { this.params = [param, ...also]; }
+
+  /** 从 from 起把增益压到 gain（时间常数 att），直到 until（之后以时间常数 rel 恢复）。 */
+  set(id: string, g: number, from: number, until: number, att: number, rel: number, now: number): void {
+    this.items.set(id, { gain: g, from, until, att, rel });
+    this.reschedule(now);
+  }
+  /** 在 at 时刻结束这个门（以时间常数 rel 恢复）。 */
+  clear(id: string, at: number, rel: number, now: number): void {
+    const it = this.items.get(id);
+    if (!it) return;
+    it.until = Math.min(it.until, Math.max(at, it.from));
+    it.rel = rel;
+    this.reschedule(now);
+  }
+  has(id: string): boolean { return this.items.has(id); }
+  /** t 时刻的目标增益（门的乘积）。 */
+  target(t: number): number {
+    let g = 1;
+    for (const it of this.items.values()) if (t >= it.from && t < it.until) g *= it.gain;
+    return g;
+  }
+
+  /** 已经排上参数的点（按时间升序）；早于 now 的只留最后一个。 */
+  private sched: Array<{ t: number; v: number }> = [];
+
+  private reschedule(now: number): void {
+    for (const [id, it] of this.items) if (it.until < now - 5) this.items.delete(id);
+    // 此刻真正生效的目标：取消之后还留在参数上的最后一个点。cancelScheduledValues(now) 连「恰好在 now」的事件也一起取消，
+    // 所以只看 t < now 的点——同一时刻连着改两次（例如重来时先清「失败」再清早已结束的「安静的一秒」），
+    // 第二次如果把第一次排在 now 的恢复当成「已经生效」而跳过，参数就会停在失败时的 0。
+    let last: { t: number; v: number } | null = null;
+    for (const s of this.sched) if (s.t < now) last = s;
+    const cur = last ? last.v : 1;
+    this.sched = last ? [last] : [];
+    const pts = new Set<number>([now]);
+    for (const it of this.items.values()) {
+      if (it.from > now) pts.add(it.from);
+      if (Number.isFinite(it.until) && it.until > now) pts.add(it.until);
+    }
+    const times = Array.from(pts).sort((a, b) => a - b);
+    for (const p of this.params) p.cancelScheduledValues(now);
+    let prev = cur;
+    for (const t of times) {
+      const v = this.target(t);
+      if (Math.abs(v - prev) < 1e-9) continue;           // 不变：保留正在进行的自动化（连同它的时间常数）
+      let tau: number;
+      if (v < prev) {
+        tau = Infinity;
+        for (const it of this.items.values()) if (t >= it.from && t < it.until && it.gain < 1) tau = Math.min(tau, it.att);
+        if (!Number.isFinite(tau)) tau = 0.05;
+      } else {
+        tau = 0;
+        for (const it of this.items.values()) if (it.until <= t + 1e-9 && it.until >= t - 0.5) tau = Math.max(tau, it.rel);
+        if (tau <= 0) tau = 0.05;
+      }
+      for (const p of this.params) p.setTargetAtTime(v, t, Math.max(1e-4, tau));
+      this.sched.push({ t, v });
+      prev = v;
+    }
+  }
+}
+
+/** 全作峰值上限（附录 A-2、LIMITS.peakDbfs = −8）留 0.1 dB 余量。 */
+export const CEIL_DB = -8.1;
+/** 软削波的拐点：这以下完全线性。 */
+export const KNEE_DB = -9.5;
+
+/**
+ * 最后一道保险：WaveShaperNode（原生节点）的静态曲线。|x| ≤ 拐点时 y = x（分段线性插值对直线是精确的，不染色）；
+ * 以上用 tanh 软拐点逼近上限，输入再大（WaveShaper 把输入截在 ±1）输出也不会超过 CEIL_DB。
+ * 限幅器是 1 ms 起音的压缩器：Chromium 有 6 ms 前瞻，大多数瞬态它自己就接住了；没有前瞻的实现（或者极端叠加）
+ * 会漏过第一毫秒，这道曲线保证「全作任何声音的峰值 ≤ −8 dBFS」不依赖压缩器的实现细节。
+ */
+export function safetyCurve(n = 8193, kneeDb = KNEE_DB, ceilDb = CEIL_DB): Float32Array<ArrayBuffer> {
+  const T = Math.pow(10, kneeDb / 20), C = Math.pow(10, ceilDb / 20), w = C - T;
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (2 * i) / (n - 1) - 1;
+    const a = Math.abs(x);
+    c[i] = Math.sign(x) * (a <= T ? a : T + w * Math.tanh((a - T) / w));
+  }
+  return c;
+}
+
+/** 音量设置（0–100）→ 线性增益：(v/100)^1.5（50 ≈ −9 dB）。 */
+export function volumeGain(v: number): number {
+  const x = Math.max(0, Math.min(100, v)) / 100;
+  return Math.pow(x, 1.5);
+}
+
+interface Bus { in: GainNode; sendIn: GainNode | null; gate: Gate; out: AudioNode }
+
+/** 追随者的混音参数（§2.6 表的四个声音通道）。 */
+export interface FollowerMix { audible: boolean; gainDb: number; lowpass: number; panWidth: number; reverb: number }
+
+class ReverbGroup {
+  readonly in: GainNode;
+  readonly out: GainNode;
+  private slots: Array<{ conv: ConvolverNode; g: GainNode; id: ReverbId; since: number }> = [];
+  /**
+   * 已经装好脉冲响应的 Convolver（按地点缓存，可以复用）。Chromium 在主线程上给 ConvolverNode.buffer 赋值时就做分块 FFT：
+   * 1.2 s 的走廊约 6 ms，3 s 的广场约 14 ms，4 s 的虚空走廊约 18 ms——两组混响各一个，换地点那一帧会卡 12–36 ms。
+   * 所以读章时在空闲时预先装好本章用到的，换地点时只是接线。
+   */
+  private pool = new Map<ReverbId, ConvolverNode>();
+  constructor(private readonly ctx: BaseAudioContext) {
+    this.in = gain(ctx, 1);
+    this.out = gain(ctx, 1);
+  }
+  get current(): ReverbId | null { return this.slots[this.slots.length - 1]?.id ?? null; }
+  has(id: ReverbId): boolean { return this.pool.has(id); }
+  /** 预先装好一个 Convolver（不接线）。 */
+  prepare(id: ReverbId, ir: AudioBuffer): ConvolverNode {
+    let c = this.pool.get(id);
+    if (!c) {
+      c = this.ctx.createConvolver();
+      c.normalize = false;
+      c.buffer = ir;
+      this.pool.set(id, c);
+    }
+    return c;
+  }
+  /** 丢掉不在 keep 里、也不在用的 Convolver（换章时）。 */
+  evict(keep: ReadonlySet<ReverbId>): void {
+    for (const [id, c] of this.pool) {
+      if (keep.has(id) || this.slots.some((s) => s.conv === c)) continue;
+      try { c.disconnect(); } catch { /* 已断开 */ }
+      this.pool.delete(id);
+    }
+  }
+  /**
+   * 交叉淡变到新的脉冲响应（两个 Convolver，§6.1 的 0.8 s）。用 setTargetAtTime（τ = fade / 4）而不是曲线：
+   * 淡变途中再次切换也不会和已排的曲线冲突（setValueCurveAtTime 与其它事件重叠会抛 NotSupportedError）。
+   */
+  set(id: ReverbId, ir: AudioBuffer, at: number, fade: number): void {
+    if (this.current === id) return;
+    const ctx = this.ctx;
+    while (this.slots.length > 1) this.drop(this.slots.shift() as { conv: ConvolverNode; g: GainNode });
+    const conv = this.prepare(id, ir);
+    const g = ctx.createGain();
+    this.in.connect(conv);
+    conv.connect(g);
+    g.connect(this.out);
+    if (this.slots.length === 0 || fade <= 0) {
+      g.gain.value = 1;
+      for (const s of this.slots) this.drop(s);
+      this.slots = [{ conv, g, id, since: at }];
+      return;
+    }
+    const old = this.slots[0] as { g: GainNode };
+    g.gain.value = 0;
+    g.gain.setTargetAtTime(1, at, fade / 4);
+    old.g.gain.cancelScheduledValues(at);
+    old.g.gain.setTargetAtTime(0, at, fade / 4);
+    this.slots.push({ conv, g, id, since: at });
+  }
+  /** 淡变结束（再加上尾巴）之后断开旧的 Convolver。 */
+  tidy(now: number): void {
+    while (this.slots.length > 1) {
+      const next = this.slots[1] as { since: number };
+      if (now < next.since + 2.5) break;
+      this.drop(this.slots.shift() as { conv: ConvolverNode; g: GainNode });
+    }
+  }
+  private drop(s: { conv: ConvolverNode; g: GainNode }): void {
+    try { this.in.disconnect(s.conv); } catch { /* 已断开 */ }
+    try { s.conv.disconnect(); } catch { /* 已断开 */ }
+    try { s.g.disconnect(); } catch { /* 已断开 */ }
+  }
+}
+
+export class Mixer {
+  readonly master: GainNode;
+  readonly comp: DynamicsCompressorNode;
+  readonly compFix: GainNode;
+  readonly limiter: DynamicsCompressorNode;
+  readonly limFix: GainNode;
+  /** 软削波保险（见 safetyCurve）。 */
+  readonly clip: WaveShaperNode;
+  readonly revA: ReverbGroup;
+  readonly revB: ReverbGroup;
+  readonly rainIn: GainNode;
+  readonly rainLp: BiquadFilterNode;
+  readonly rainLevel: GainNode;
+  /**
+   * floor 上的一次性声音（膝盖闷响、失败时「两串节拍合一」）的入口：floorSfx 总线（见 GateBus）。
+   * 音量跟「音效」滑块——环境音量调到 0 时摔倒照样听得见。
+   */
+  readonly floorSfx: GainNode;
+  private readonly buses = new Map<GateBus, Bus>();
+  private folLp!: BiquadFilterNode;
+  private folLevel!: GainNode;
+  private folSend!: GainNode;
+  private folMute!: Gate;
+  private irCache = new Map<ReverbId, AudioBuffer>();
+  /** 实测的补偿增益（dB）；未校准前用 Chromium 的稳态值。 */
+  makeupDb = { comp: 5.15, limiter: 5.13, calibrated: false };
+
+  constructor(private readonly ctx: BaseAudioContext, dest: AudioNode, private readonly seed = 3) {
+    this.master = gain(ctx, 1);
+    this.comp = ctx.createDynamicsCompressor();
+    this.comp.threshold.value = -14; this.comp.ratio.value = 4; this.comp.knee.value = 6;
+    this.comp.attack.value = 0.003; this.comp.release.value = 0.25;
+    this.compFix = gain(ctx, Math.pow(10, -this.makeupDb.comp / 20));
+    this.limiter = ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -9; this.limiter.ratio.value = 20; this.limiter.knee.value = 0;
+    this.limiter.attack.value = 0.001; this.limiter.release.value = 0.25;
+    this.limFix = gain(ctx, Math.pow(10, -this.makeupDb.limiter / 20));
+    this.clip = ctx.createWaveShaper();
+    this.clip.curve = safetyCurve();
+    this.clip.oversample = 'none';
+    this.master.connect(this.comp); this.comp.connect(this.compFix); this.compFix.connect(this.limiter);
+    this.limiter.connect(this.limFix); this.limFix.connect(this.clip); this.clip.connect(dest);
+
+    this.revA = new ReverbGroup(ctx);
+    this.revB = new ReverbGroup(ctx);
+    for (const b of ALL_GATE_BUSES) {
+      const g = gain(ctx, 1);
+      g.connect(this.master);
+      if (b === 'revA' || b === 'revB') {
+        const grp = b === 'revA' ? this.revA : this.revB;
+        grp.out.connect(g);
+        this.buses.set(b, { in: grp.in, sendIn: null, gate: new Gate(g.gain), out: g });
+        continue;
+      }
+      const input = gain(ctx, 1);
+      if (b === 'follower') {
+        const gate = new Gate(g.gain);
+        this.folLp = ctx.createBiquadFilter();
+        this.folLp.type = 'lowpass'; this.folLp.frequency.value = 2000; this.folLp.Q.value = -3.01;
+        const mute = gain(ctx, 1);
+        this.folMute = new Gate(mute.gain);
+        this.folLevel = gain(ctx, 0);
+        this.folSend = gain(ctx, 0);
+        input.connect(this.folLp); this.folLp.connect(mute); mute.connect(this.folLevel); this.folLevel.connect(g);
+        mute.connect(this.folSend); this.folSend.connect(this.revB.in);
+        this.buses.set(b, { in: input, sendIn: null, gate, out: g });
+        continue;
+      }
+      input.connect(g);
+      if (b === 'self' || b === 'sfx' || b === 'ui' || b === 'npc') {
+        // 发送：音量 → 同一个门 → 混响组（门掉这条总线时，它的混响尾巴一起掉）
+        const sendIn = gain(ctx, 1);
+        const sendGate = gain(ctx, 1);
+        sendIn.connect(sendGate);
+        sendGate.connect(b === 'npc' ? this.revB.in : this.revA.in);
+        this.buses.set(b, { in: input, sendIn, gate: new Gate(g.gain, [sendGate.gain]), out: g });
+      } else this.buses.set(b, { in: input, sendIn: null, gate: new Gate(g.gain), out: g });
+    }
+    // 雨：自己的一条小链（露天 / 车里 / 室内），接进环境总线
+    this.rainIn = gain(ctx, 1);
+    this.rainLp = ctx.createBiquadFilter();
+    this.rainLp.type = 'lowpass'; this.rainLp.frequency.value = 16000; this.rainLp.Q.value = -3.01;
+    this.rainLevel = gain(ctx, 1);
+    this.rainIn.connect(this.rainLp); this.rainLp.connect(this.rainLevel); this.rainLevel.connect(this.dry('ambience'));
+    this.floorSfx = (this.buses.get('floorSfx') as Bus).in;
+  }
+
+  dry(b: BusId): AudioNode { return (this.buses.get(b) as Bus).in; }
+  /** 一次性声音的入口：floor 上的走 floorSfx（音效音量），其余同 dry。 */
+  dryFor(b: BusId): AudioNode { return b === 'floor' ? this.floorSfx : this.dry(b); }
+  send(b: BusId): AudioNode | null { return (this.buses.get(b) as Bus).sendIn; }
+  gate(b: GateBus): Gate { return (this.buses.get(b) as Bus).gate; }
+  get followerMute(): Gate { return this.folMute; }
+
+  setVolumes(v: Volumes, at: number): void {
+    const m = volumeGain(v.master), s = volumeGain(v.sfx), a = volumeGain(v.ambience);
+    this.master.gain.setTargetAtTime(m, at, 0.03);
+    for (const [b, bus] of this.buses) {
+      if (b === 'revA' || b === 'revB') continue;
+      const g = b === 'ambience' || b === 'floor' ? a : s;          // floorSfx 跟音效音量
+      bus.in.gain.setTargetAtTime(g, at, 0.03);
+      bus.sendIn?.gain.setTargetAtTime(g, at, 0.03);
+    }
+  }
+
+  /** 追随者的四个声音通道：增益、低通、混响（声像由每个声部自己设），档位之间 300 ms 滑变（§2.6）。 */
+  setFollower(m: FollowerMix, at: number, slide = 0.3): void {
+    const tau = slide / 3;
+    const g = m.audible ? Math.pow(10, m.gainDb / 20) : 0;
+    this.folLevel.gain.cancelScheduledValues(at);
+    this.folLevel.gain.setTargetAtTime(g, at, tau);
+    this.folLp.frequency.cancelScheduledValues(at);
+    this.folLp.frequency.setTargetAtTime(m.lowpass, at, tau);
+    this.folSend.gain.cancelScheduledValues(at);
+    this.folSend.gain.setTargetAtTime(m.audible ? m.reverb : 0, at, tau);
+  }
+
+  /** 雨声的听感位置。 */
+  setRainExposure(kind: 'open' | 'bus' | 'indoor', at: number): void {
+    const [f, l] = kind === 'open' ? [16000, 1] : kind === 'bus' ? [900, 0.8] : [500, 0.35];
+    this.rainLp.frequency.cancelScheduledValues(at);
+    this.rainLp.frequency.setTargetAtTime(f, at, 0.3);
+    this.rainLevel.gain.cancelScheduledValues(at);
+    this.rainLevel.gain.setTargetAtTime(l, at, 0.3);
+  }
+
+  irFor(id: ReverbId): AudioBuffer {
+    const hit = this.irCache.get(id);
+    if (hit) return hit;
+    const sr = this.ctx.sampleRate;
+    const [l, r] = impulseResponse(REVERB_RT60[id], sr, this.seed + id.length * 31);
+    const b = this.ctx.createBuffer(2, l.length, sr);
+    b.copyToChannel(l, 0);
+    b.copyToChannel(r, 1);
+    this.irCache.set(id, b);
+    return b;
+  }
+
+  /** 两组混响都已经装好这个地点的 Convolver（换地点时不会在主线程上做 FFT）。 */
+  reverbReady(id: ReverbId): boolean { return this.revA.current === id || (this.revA.has(id) && this.revB.has(id)); }
+  /** 预先装好一组混响的 Convolver（空闲时调用；A、B 分两次，每次一个 FFT）。 */
+  prepareReverb(id: ReverbId, group: 'A' | 'B'): void { (group === 'A' ? this.revA : this.revB).prepare(id, this.irFor(id)); }
+  /** 换章：只留本章用得到的 Convolver。 */
+  keepReverbs(keep: ReadonlySet<ReverbId>): void { this.revA.evict(keep); this.revB.evict(keep); }
+
+  /** 切换混响预设：两个 Convolver 交叉淡变 0.8 s（§6.1）。 */
+  setReverb(id: ReverbId, at: number, fade = 0.8): void {
+    const ir = this.irFor(id);
+    this.revA.set(id, ir, at, fade);
+    this.revB.set(id, ir, at, fade);
+  }
+  get reverb(): ReverbId | null { return this.revA.current; }
+  tidy(now: number): void { this.revA.tidy(now); this.revB.tidy(now); }
+
+  /** 量出两个压缩器的补偿增益，在它们后面乘倒数（见文件头注释）。 */
+  async calibrate(makeOffline: MakeOffline): Promise<void> {
+    const measure = async (setup: (c: DynamicsCompressorNode) => void): Promise<number> => {
+      // Chromium 的补偿增益从 0 dB 起要约 0.3 s 才爬到稳态（实测：72–120 ms 时只有 2.7 / 1.4 dB，0.3 s 后 5.15 / 5.13 dB），
+      // 所以渲染 0.6 s、取最后 0.2 s 的平均。早先只渲染 0.12 s，量小了约 6 dB，整体输出因此偏响。
+      const sr = this.ctx.sampleRate;
+      const n = Math.ceil(0.6 * sr);
+      const oc = makeOffline(1, n, sr);
+      const buf = oc.createBuffer(1, n, sr);
+      const x = new Float32Array(n).fill(0.001);
+      buf.copyToChannel(x, 0);
+      const src = oc.createBufferSource();
+      src.buffer = buf;
+      const c = oc.createDynamicsCompressor();
+      setup(c);
+      src.connect(c); c.connect(oc.destination);
+      src.start(0);
+      const out = await renderOffline(oc);
+      const y = out.getChannelData(0);
+      let s = 0, k = 0;
+      for (let i = Math.floor(0.4 * sr); i < n; i++) { s += Math.abs(y[i] as number); k++; }
+      const g = k ? s / k / 0.001 : 1;
+      return Number.isFinite(g) && g > 0.1 && g < 10 ? 20 * Math.log10(g) : 0;
+    };
+    const comp = await measure((c) => { c.threshold.value = -14; c.ratio.value = 4; c.knee.value = 6; c.attack.value = 0.003; c.release.value = 0.25; });
+    const lim = await measure((c) => { c.threshold.value = -9; c.ratio.value = 20; c.knee.value = 0; c.attack.value = 0.001; c.release.value = 0.25; });
+    this.makeupDb = { comp, limiter: lim, calibrated: true };
+    const at = this.ctx.currentTime;
+    this.compFix.gain.setTargetAtTime(Math.pow(10, -comp / 20), at, 0.02);
+    this.limFix.gain.setTargetAtTime(Math.pow(10, -lim / 20), at, 0.02);
+  }
+}
