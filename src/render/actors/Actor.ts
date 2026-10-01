@@ -11,10 +11,12 @@ import { clamp, lerp, smoothstep } from '../../core/math';
 import { getSet } from '../../core/registry';
 import { copyPose, createPose, type Pose } from '../../core/rig';
 import type { PoseClipId, SimSnapshot } from '../../core/types';
+import type { CompiledChapter } from '../../levels/schema';
 import { clipPose, SET_DEFAULT_CLIP } from './clips';
 import { CrawlAnimator, crawlPose, jumpDur, PoseBuilder, type CrawlInput } from './handCycle';
 import { applyPosture, blendPoses, standing, standPose } from './poses';
 import { applyThirdHand } from './ThirdHand';
+import { patchUpperFade, stepUpperFade, upperAlpha, upperFadeWanted } from './readability';
 import type { ActorRigFactory, Rig } from './rigBuild';
 import { WP5, type PoseTestName } from './shared';
 
@@ -52,11 +54,19 @@ export class PlayerActor implements ViewSystem {
   private clip: { id: PoseClipId; t0: number; until: number } | null = null;
   private clipWeight = 0;
   private lastFrameT = 0;
+  private chapter: CompiledChapter | null = null;
+  /** 上半身淡出（readability.ts）：权重与着色器 uniform。 */
+  private fadeW = 0;
+  private readonly fadeU = { value: 1 };
+  /** 本帧上半身的不透明度（测试 / wp5State 用）。 */
+  get upperAlpha(): number { return this.fadeU.value; }
 
   init(ctx: ViewContext): void {
     this.ctx = ctx;
     this.factory = ctx.rig as unknown as ActorRigFactory;
-    this.rig = this.factory.make('player');
+    const mat = patchUpperFade(ctx.mat.lambert({ vertexColors: true, flat: true }), this.fadeU);
+    mat.name = 'rigPlayer';
+    this.rig = this.factory.make('player', mat);
     this.rig.root.name = 'player';
     ctx.scene.add(this.rig.root);
   }
@@ -71,7 +81,9 @@ export class PlayerActor implements ViewSystem {
     if (e.type === 'segment' || e.type === 'retry') { this.clip = null; this.clipWeight = 0; }
   }
 
-  onReset(): void { this.anim.reset(); this.lastTick = -1; this.clip = null; this.clipWeight = 0; }
+  onReset(): void { this.anim.reset(); this.lastTick = -1; this.clip = null; this.clipWeight = 0; this.fadeW = 0; this.fadeU.value = 1; }
+
+  async loadChapter(ch: CompiledChapter): Promise<void> { this.chapter = ch; this.fadeW = 0; this.fadeU.value = 1; }
 
   setQuality(): void { this.factory.setQuality(this.ctx.quality); }
 
@@ -91,9 +103,19 @@ export class PlayerActor implements ViewSystem {
     rig.root.matrixAutoUpdate = true;
     rig.root.position.set(0, 0, 0); rig.root.quaternion.identity(); rig.root.scale.set(1, 1, 1);
 
+    if (next.segKind !== 'run' || WP5.poseTest) { this.fadeW = 0; this.fadeU.value = 1; }
     if (next.segKind === 'run') {
       crawlInputFrom(prev, next, a, this.inp);
       this.backfill(next);
+      if (!WP5.poseTest) {
+        // 本车道前方有必需障碍：上半身淡到 40%（回头时不淡，镜头在他前面）
+        const seg = this.chapter?.segments[next.segIndex];
+        const N = next.player;
+        const want = !!seg && seg.kind === 'run' && N.lookBack < 0.3 && N.mode !== 'fall'
+          && upperFadeWanted(seg.obstacles, this.inp.s, N.lane, N.laneTarget, N.speed);
+        this.fadeW = stepUpperFade(this.fadeW, want, sdt);
+        this.fadeU.value = upperAlpha(this.fadeW);
+      }
       let pose = WP5.poseTest ? this.testPose(WP5.poseTest, t) : this.anim.update(this.inp, dt, this.b);
       if (this.clip && this.clipWeight > 0) {
         clipPose(this.clip.id, t - this.clip.t0, this.b2, this.clipOut, { x: this.inp.x, y: this.inp.floorY, s: this.inp.s, yaw: pose.root[3] ?? 0 });

@@ -57,7 +57,7 @@ registerDebug('wp5State', () => ({
   focus: WP5.focus ? { kind: WP5.focus.kind, weight: WP5.focus.weight, point: WP5.focus.point.toArray() } : null,
   poseTest: WP5.poseTest, forceNoStencil: WP5.forceNoStencil,
   triangles: factory ? triangleCount(factory.geometry()) : 0, history: factory ? factory.history.size : 0,
-  player: WP5.playerRoot.toArray(),
+  player: WP5.playerRoot.toArray(), upperAlpha: playerActor.upperAlpha,
 }));
 
 /** 在玩家前方放一个调试水洼，并在里面放一个站着的替身（像素检查用）。 */

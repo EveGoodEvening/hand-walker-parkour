@@ -58,8 +58,12 @@ export const STAND_SHOTS = {
   trackSky: { pos: [0.1, 0.32, 0.9] as const, look: [0.2, 3.2, -0.2] as const },
 };
 
-/** 追尾机位（§5.4）。 */
+/**
+ * 追尾机位（§5.4）。横屏（修复轮 U5，偏离 §5.4 的 (0.7·x, 0.92, +2.35) 注视 (·, 0.45, −7)）：抬高到 1.15 m、拉远到 2.8 m、
+ * 注视点压到 0.20 m，本车道前方的障碍从主角头顶上方露出来；剩下约 5 m 的盲区由上半身淡出补上（actors/readability.ts，
+ * 单元测试 occlusion.test.ts 检查全部章节）。竖屏不动。
+ */
 export const FOLLOW = {
-  landscape: { k: 0.7, h: 0.92, back: 2.35, ly: 0.45, lz: -7, lookK: 0.42, hfov: 76, vMin: 50, vMax: 62 },
+  landscape: { k: 0.7, h: 1.15, back: 2.8, ly: 0.2, lz: -7, lookK: 0.42, hfov: 76, vMin: 50, vMax: 62 },
   portrait: { k: 0.6, h: 1.3, back: 3.8, ly: 0.3, lz: -6, lookK: 0.3, vMax: 80 },
 } as const;

@@ -66,11 +66,14 @@ export const REST_OFFSET: Readonly<Record<BoneName, V3>> = Object.fromEntries(BO
 /** 色板（§5.1）。 */
 export const RIG_COLORS = {
   uniform: 0x2f4a6d, stripe: 0xd9dee3, pants: 0x2a3a52, skin: 0xc9b8a6, callus: 0x9b8f82, lines: 0x8c8279, hair: 0x1e2226,
-  eye: 0x2a2f33, shoe: 0x2b3034, sole: 0xcfd4d6, third: 0xe6ebee, steel: 0x9ba5a9, bag: 0x3c4650, knuckle: 0xbba997, bowl: 0xdde2e4,
+  // 鞋底（修复轮 U5）：以前是 §5.5 的 #CFD4D6，两块浅色鞋底是画面里最抢眼的东西；改成暗灰，画面上约 #5E6366
+  eye: 0x2a2f33, shoe: 0x2b3034, sole: 0x5e6366, third: 0xe6ebee, steel: 0x9ba5a9, bag: 0x3c4650, knuckle: 0xbba997, bowl: 0xdde2e4,
 } as const;
-/** lead 集成：深色衣物按 §5.1「画面上的颜色」反推（WP3 的 propHex）；眼睛、鞋底等测试用到的颜色不动。 */
-const TONED: ReadonlySet<string> = new Set(['uniform', 'pants', 'hair', 'shoe', 'bag']);
+/** lead 集成：深色衣物按 §5.1「画面上的颜色」反推（WP3 的 propHex）；眼睛等测试用到的颜色不动。 */
+const TONED: ReadonlySet<string> = new Set(['uniform', 'pants', 'hair', 'shoe', 'bag', 'sole']);
 const C = Object.fromEntries(Object.entries(RIG_COLORS).map(([k, v]) => [k, TONED.has(k) ? propHex(v) : v])) as Record<keyof typeof RIG_COLORS, number>;
+/** 写进顶点色的颜色（深色衣物、鞋底已按早晨的受光补偿）。测试与户外的颜色倍率用它找顶点。 */
+export function rigColor(k: keyof typeof RIG_COLORS): number { return C[k]; }
 
 /** 画质 → 基本体细分。 */
 export interface RigDetail { radial: number; cap: number; ico: 0 | 1 }
@@ -184,7 +187,7 @@ export function buildRigGeometry(d: RigDetail): THREE.BufferGeometry {
     const sn2 = at(`shin${side}`), ft = REST[`foot${side}`];
     capsule(g, d, sn2, ft, 0.05, SEG.shin + 0.05, C.pants);
     const f = at(`foot${side}`);
-    // 鞋面 + 鞋底（静止时鞋尖朝 −z，鞋底朝下）；鞋底是全身最亮的一块（§5.4「朝向镜头的浅色鞋底」）
+    // 鞋面 + 鞋底（静止时鞋尖朝 −z，鞋底朝下）；鞋底暗灰（修复轮 U5，取代 §5.4「朝向镜头的浅色鞋底」）
     g.box([f[0], f[1] - 0.04, f[2] - 0.06], [0.095, 0.07, 0.25], C.shoe);
     g.box([f[0], f[1] - 0.0825, f[2] - 0.06], [0.1, 0.02, 0.255], C.sole);
   }

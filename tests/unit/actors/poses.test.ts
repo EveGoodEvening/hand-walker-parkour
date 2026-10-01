@@ -1,6 +1,6 @@
 // tests/unit/actors/poses.test.ts —— §5.6 的特殊姿势与追尾镜头下的可读性（验收员第 1 轮的问题）：
 // 腿自主抬起（髋部升高 0.25 m、前脚掌贴地）、伏低（整个身体在最低的横档下沿 0.36 m 以下）、
-// 「用手爬」在默认追尾机位下的读法（腿成 V 字、摆动手的肘抬起、鞋底在画面里且避开 HUD 节拍点）。
+// 「用手爬」在默认追尾机位下的读法（修复轮 U5：腿低低地拖在身后、两腿并拢、小腿与地面 ≤ 20°，鞋底暗灰；摆动手的肘抬起）。
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { QUALITY } from '../../../src/core/quality';
@@ -9,7 +9,9 @@ import { OBSTACLES } from '../../../src/levels/obstacles';
 import { FOLLOW } from '../../../src/render/camera/shots';
 import { vFromH } from '../../../src/render/camera/CameraRig';
 import { crawlPose, PoseBuilder } from '../../../src/render/actors/handCycle';
-import { buildRigGeometry, Rig, RIG_COLORS, rigDetail } from '../../../src/render/actors/rigBuild';
+import { buildRigGeometry, Rig, rigColor, rigDetail } from '../../../src/render/actors/rigBuild';
+import { presetOf, screenColor } from '../../../src/render/kits/outside/lib/tone';
+import '../../../src/render/atmosphere';
 import { crawlInput } from './helpers';
 
 const geo = buildRigGeometry(rigDetail(QUALITY.low));
@@ -18,7 +20,7 @@ const pos = geo.getAttribute('position') as THREE.BufferAttribute;
 const col = geo.getAttribute('color') as THREE.BufferAttribute;
 const skin = geo.getAttribute('skinIndex') as THREE.BufferAttribute;
 const SKIP = new Set(['arm3Upper', 'arm3Fore', 'arm3Hand', 'propHead', 'propBack'].map((n) => BONE_INDEX[n as 'propHead']));
-const sole = new THREE.Color().setHex(RIG_COLORS.sole);
+const sole = new THREE.Color().setHex(rigColor('sole'));
 const _v = new THREE.Vector3();
 
 /** 姿势下全身（不含缩放为 0 的第三只手与道具）的世界坐标顶点。 */
@@ -107,8 +109,6 @@ describe('special poses (§5.6)', () => {
 
 describe('crawl readability in the default chase camera (lead requirement 2, §10.1)', () => {
   const W = 640, H = 360;
-  /** HUD 节拍点（WP8 styles.css：.hw-metro 居中、距底 8%，两行点约 ±60 px）。 */
-  const HUD = { x0: 255, x1: 385, y0: 318, y1: 352 };
   function chaseCam(x: number): THREE.PerspectiveCamera {
     const L = FOLLOW.landscape;
     const fov = Math.min(L.vMax, Math.max(L.vMin, vFromH(L.hfov, W / H)));
@@ -119,20 +119,33 @@ describe('crawl readability in the default chase camera (lead requirement 2, §1
     return cam;
   }
 
-  it('the legs trail in a V behind the hips and swing sideways with the gait', () => {
+  it('the legs drag low behind the hips, close together (no V, no scorpion tail), and swing sideways with the gait (U5)', () => {
     const xs: number[] = [];
     for (const beat of BEATS) {
       crawlPose(crawlInput({ s: 0, beat }), b);
       const L = b.jointWorld('footL', new THREE.Vector3()), R = b.jointWorld('footR', new THREE.Vector3());
       const hip = b.jointWorld('pelvis', new THREE.Vector3());
-      expect(R.x - L.x).toBeGreaterThan(0.3);                   // 两脚分开（V 字）
-      expect(L.z - hip.z).toBeGreaterThan(0.45);                 // 在髋后方拖着（+z 是身后）
-      expect(R.z - hip.z).toBeGreaterThan(0.45);
-      const kL = b.jointWorld('shinL', new THREE.Vector3());
-      expect(kL.y).toBeLessThan(0.2);                           // 膝盖贴近地面
+      expect(R.x - L.x).toBeGreaterThan(0.1);                   // 两脚没有并成一条
+      expect(R.x - L.x).toBeLessThan(0.36);                     // 也不再张成 V 字
+      expect(L.z - hip.z).toBeGreaterThan(0.6);                  // 在髋后方拖着（+z 是身后）
+      expect(R.z - hip.z).toBeGreaterThan(0.6);
+      expect(L.y).toBeLessThan(0.42); expect(R.y).toBeLessThan(0.42);   // 鞋不翘过髋
       xs.push((L.x + R.x) / 2);
     }
     expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.08);   // 行李左右甩
+  });
+
+  it('crawl: the shin makes at most 20° with the ground, in every phase and at the leg-spring extremes (U5)', () => {
+    let worst = 0;
+    for (const beat of BEATS) for (const legKnee of [-0.3, 0, 0.3]) for (const legHip of [-0.25, 0, 0.25]) {
+      crawlPose(crawlInput({ s: 0, beat, legKnee, legHip }), b);
+      for (const side of ['L', 'R'] as const) {
+        const knee = b.jointWorld(`shin${side}`, new THREE.Vector3()), ankle = b.jointWorld(`foot${side}`, new THREE.Vector3());
+        const d = ankle.sub(knee);
+        worst = Math.max(worst, Math.abs(Math.atan2(d.y, Math.hypot(d.x, d.z))) * 180 / Math.PI);
+      }
+    }
+    expect(worst).toBeLessThanOrEqual(20);
   });
 
   it('the swing arm lifts its elbow; the stance arm stays tucked', () => {
@@ -146,25 +159,36 @@ describe('crawl readability in the default chase camera (lead requirement 2, §1
     expect(maxGap).toBeGreaterThan(0.08);
   });
 
-  it('the soles are fully inside the frame and clear of the HUD metronome dots, in every gait phase and lane', () => {
-    const P = new THREE.Vector3();
-    for (const lane of [-1, 0, 1] as const) {
-      const cam = chaseCam(lane * 1.1);
-      for (const beat of BEATS) {
-        const p = crawlPose(crawlInput({ s: 0, x: lane * 1.1, laneTarget: lane, beat }), b);
-        let n = 0, inHud = 0, maxY = -Infinity;
-        skinned(p, (v, i) => {
-          if (Math.abs(col.getX(i) - sole.r) > 1e-4 || Math.abs(col.getZ(i) - sole.b) > 1e-4) return;
-          P.copy(v).project(cam);
-          const px = (P.x * 0.5 + 0.5) * W, py = (1 - (P.y * 0.5 + 0.5)) * H;
-          n++; maxY = Math.max(maxY, py);
-          expect(px).toBeGreaterThan(0); expect(px).toBeLessThan(W);
-          if (lane === 0 && px > HUD.x0 && px < HUD.x1 && py > HUD.y0 && py < HUD.y1) inHud++;
-        });
-        expect(n).toBeGreaterThan(0);
-        expect(maxY).toBeLessThan(H - 4);              // 不被画面下沿切掉
-        expect(inHud).toBe(0);
+  it('the soles are dark: their vertex colour lit by morning (Lambert ÷ π, Neutral, sRGB) has HSL lightness ≤ 0.45 (U5)', () => {
+    // 鞋底朝后上方（正对追尾镜头），也正对着早晨的平行光：取爬姿里鞋底的实际法线
+    crawlPose(crawlInput({ s: 0, beat: 6.2 }), b);
+    const n = new THREE.Vector3(0, -1, 0).applyQuaternion(b.wq[BONE_INDEX.footL]!).applyQuaternion(b.rootQ).normalize();
+    let found = 0;
+    for (let i = 0; i < col.count; i++) {
+      if (Math.abs(col.getX(i) - sole.r) > 1e-4 || Math.abs(col.getY(i) - sole.g) > 1e-4 || Math.abs(col.getZ(i) - sole.b) > 1e-4) continue;
+      found++;
+      for (const atmo of ['morning', 'noon', 'dream'] as const) {
+        const c = screenColor([col.getX(i), col.getY(i), col.getZ(i)], presetOf(atmo), [n.x, n.y, n.z]);
+        const l = (Math.max(...c) + Math.min(...c)) / 2;
+        expect(l).toBeLessThanOrEqual(atmo === 'morning' ? 0.45 : 0.5);
       }
+      break;
+    }
+    expect(found).toBe(1);
+  });
+
+  it('the planted hands show beside the torso in the chase camera (reach 0.38, hands 0.38 m out; U5)', () => {
+    const cam = chaseCam(0);
+    const P = new THREE.Vector3();
+    const torso = new Set([BONE_INDEX.spine, BONE_INDEX.chest]);
+    for (const beat of [6.1, 6.3, 7.1, 7.3]) {
+      const p = crawlPose(crawlInput({ s: 0, beat }), b);
+      let tx0 = Infinity, tx1 = -Infinity;
+      skinned(p, (v, i) => { if (!torso.has(skin.getX(i))) return; P.copy(v).project(cam); tx0 = Math.min(tx0, P.x); tx1 = Math.max(tx1, P.x); });
+      const side = Math.floor(beat) % 2 === 0 ? 'L' : 'R';                   // 偶数拍左手支撑
+      const palm = b.jointWorld(`pad${side}`, new THREE.Vector3()).project(cam);
+      // 指腹在躯干剪影外侧至少约 10 px（640 宽；以前 reach 0.3、handX 0.33 时只有约 8 px）
+      expect(side === 'L' ? tx0 - palm.x : palm.x - tx1).toBeGreaterThan(0.032);
     }
   });
 

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, type Settings } from '../../../src/core/settings';
 import { CameraRig, vFromH } from '../../../src/render/camera/CameraRig';
+import { FOLLOW } from '../../../src/render/camera/shots';
 import { snap } from './helpers';
 
 function apply(cam: THREE.PerspectiveCamera, o: { pos: THREE.Vector3; look: THREE.Vector3; roll: number; fov: number }, aspect: number): void {
@@ -24,13 +25,14 @@ function settle(rig: CameraRig, s0: ReturnType<typeof snap>, aspect: number, set
 }
 
 describe('CameraRig (§5.4)', () => {
-  it('landscape follow camera matches the table: (0.7·x, 0.92, +2.35), vertical fov 50–62°', () => {
+  it('landscape follow camera matches FOLLOW.landscape: (0.7·x, 1.15, +2.8) (U5, replaces §5.4 0.92 / 2.35), vertical fov 50–62°', () => {
     const rig = new CameraRig();
     const settings = { ...DEFAULT_SETTINGS, reducedMotion: true };
     const { out, last } = settle(rig, snap({ s: 10, lane: 1 }), 16 / 9, settings);
     expect(out.pos.x).toBeCloseTo(0.7 * 1.1, 2);
-    expect(out.pos.y).toBeCloseTo(0.92, 3);
-    expect(out.pos.z).toBeCloseTo(-last.player.s + 2.35, 3);
+    expect(out.pos.y).toBeCloseTo(FOLLOW.landscape.h, 3);
+    expect(out.pos.z).toBeCloseTo(-last.player.s + FOLLOW.landscape.back, 3);
+    expect(out.look.y).toBeCloseTo(FOLLOW.landscape.ly, 3);
     expect(out.fov).toBeGreaterThanOrEqual(50);
     expect(out.fov).toBeLessThanOrEqual(62);
   });

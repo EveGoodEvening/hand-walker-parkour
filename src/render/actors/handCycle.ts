@@ -7,8 +7,8 @@
 //
 // 基础体态（§5.6，偏差见 CRAWL 的注释）：肩高约 0.43 m、髋高 0.34 m、头心约 0.6 m，躯干前倾（肩比髋略高）。髋高、伏低、腿自主抬起、摔倒
 // 都通过移动根的高度实现（骨盆关节的静止高度是 REST.pelvis = 0.34 m），不是只改躯干的倾角。
-// 腿是「行李」：大腿贴着地面向后、向外拖（两腿成 V 字），膝盖离地几厘米，小腿向后上方翘起，鞋底朝后上方、对着镜头
-// （§10.1：鞋底要进画面；V 字让鞋底落在 HUD 节拍点的两侧）。行李随身体的摆动左右甩，相位落后。
+// 腿是「行李」：大腿、小腿几乎水平地低低拖在身后，两腿并拢，鞋底朝后上方、暗灰色（修复轮 U5：浅色鞋底 V 字张开
+// 是画面里最抢眼的东西）。行李随身体的摆动左右甩，相位落后。
 // 正后方的追尾镜头（lead 补充要求 2：「用手爬」一眼可读）：手撑得比肩宽；支撑手的肘收向身后（贴着身体，不向外撇），
 // 摆动手的肘向外上方抬起再落下，两条手臂一撑一抬地交替；躯干侧弯、髋滚转比 §5.6 的数值略大，从身后看得出「游动」。
 import * as THREE from 'three';
@@ -206,16 +206,17 @@ export interface CrawlInput {
  * 爬姿常量（§5.6）。与 §5.6 字面数值不同的几处（lead 补充要求 2 / §10.1 优先：默认追尾机位下「用手爬」一眼可读）：
  * - 肩高 0.43 m（§5.6 写 0.46）、脊柱每节只弯 3°：肩只比髋高约 0.1 m，躯干更接近水平。肩比髋高得越多，
  *   追尾镜头（只比背高约 11°）看到的背就越像一块竖着的板。
- * - 腿：大腿向后下 30°、膝盖离地几厘米，小腿向后上 50°，两腿成 V 字（legSpread），鞋底斜对镜头。
- *   §5.6 的「膝弯 110°、小腿贴地」在追尾机位下鞋底出画（§10.1），而且从正后方看像跪着；
- *   现在鞋底在画面里、在 HUD 节拍点之上和两侧（单元测试 poses.test.ts 按追尾机位投影检查）。
+ * - 腿（修复轮 U5）：大腿只向后下 12°、小腿向后上 12°，两腿几乎并拢（legSpread 0.08）、脚尖只外撇 6°，整条腿低低地拖在身后。
+ *   以前的「大腿 30°、小腿翘起 50°、V 字张开」让两块浅色鞋底成了画面里最抢眼的东西，正面看像蝎子式或跪地前滑；
+ *   鞋底也改成暗灰（rigBuild.ts），可以部分出画。小腿与地面的夹角含弹簧不超过 SHIN_MAX。
+ * - 手：落在肩前 0.38 m、离身体中线 0.38 m（以前 0.3 / 0.33）：着地的手从躯干两侧露出来，追尾镜头看得见。
  * - 躯干侧弯 ±9°、髋滚转 ±8°、根滚转 ±5°（§5.6：±6° / ±5° / ±4°），行李左右甩 legSwing：从正后方看得出「游动」。
  */
 export const CRAWL = {
-  hipY: 0.34, shoulderY: 0.43, reach: 0.3, handX: 0.33, spineCurve: 3 * DEG,
+  hipY: 0.34, shoulderY: 0.43, reach: 0.38, handX: 0.38, spineCurve: 3 * DEG,
   swingLift: 0.07, dreamLift: 0.14, pushOff: 0.06, dorsiflex: 25 * DEG, knuckleUp: 20 * DEG, padUp: 15 * DEG,
   roll: 5 * DEG, yaw: 3 * DEG, pitch: 1.5 * DEG, bob: 0.0075, bend: 9 * DEG, hipRoll: 8 * DEG, shoulderDip: 0.02,
-  thighDown: 30 * DEG, shinUp: 50 * DEG, legSpread: 0.23, legSwing: 0.12,
+  thighDown: 12 * DEG, shinUp: 12 * DEG, legSpread: 0.08, legSwing: 0.12, toeOut: 6 * DEG,
   /**
    * 伏低（§5.6）：骨盆关节高、肩高。整个身体在最低的横档下沿（0.36 m）以下，所以胸盒（0.26 m 厚）下沿离地约 0.06–0.1 m，
    * 比 §5.6 的 0.12 m 低一点（0.12 m 时胸盒上沿就到 0.38 m，会穿过横档）。
@@ -224,6 +225,9 @@ export const CRAWL = {
   /** 腿自主抬起：髋部升高。 */
   twitchLift: 0.25,
 } as const;
+
+/** 爬姿下小腿与地面的最大夹角（含腿的弹簧；伏低、腿自主抬起不受限）。 */
+export const SHIN_MAX = 18 * DEG;
 
 /** 骨盆关节的静止高度（根在地面时）。姿势里的髋高 hipY 通过把根抬高 hipY − PELVIS_REST_Y 实现。 */
 export const PELVIS_REST_Y = REST.pelvis[1];
@@ -386,7 +390,7 @@ export function luggageLegs(b: PoseBuilder, o: { thighDown: number; shinUp: numb
     _d.set(spread + sw, -Math.sin(td), Math.cos(td)).normalize();
     _n.set(0, -Math.cos(td), -Math.sin(td) * 0.3).normalize();
     b.aim(`thigh${side}`, DOWN, FWD, _d, _n);
-    const su = lerp(o.shinUp + o.knee, 2 * DEG, o.flat);
+    const su = lerp(Math.min(SHIN_MAX, o.shinUp + o.knee), 2 * DEG, o.flat);
     _d.set(spread * 0.4 + sw * 1.4, Math.sin(su), Math.cos(su)).normalize();
     _n.set(0, -Math.cos(su), Math.sin(su)).normalize();
     b.aim(`shin${side}`, DOWN, FWD, _d, _n);
@@ -395,7 +399,7 @@ export function luggageLegs(b: PoseBuilder, o: { thighDown: number; shinUp: numb
     // 脚像死物一样向外歪（toeOut），鞋底斜对镜头，不会正对着镜头变成两块白板
     const fa = lerp(12 * DEG, 62 * DEG - su, smoothstep(8 * DEG, 30 * DEG, su));
     _d.set(0, -Math.sin(fa), Math.cos(fa)); _n.set(0, Math.cos(fa), Math.sin(fa));
-    const toeOut = sx * 22 * DEG * (1 - o.flat * 0.5);
+    const toeOut = sx * CRAWL.toeOut * (1 - o.flat * 0.5);
     _d.applyAxisAngle(_v5.set(0, Math.sin(su), Math.cos(su)), toeOut); _n.applyAxisAngle(_v5, toeOut);
     if (Math.abs(yaw) > 1e-4) { _d.applyAxisAngle(UP, yaw); _n.applyAxisAngle(UP, yaw); }
     b.aim(`foot${side}`, FWD, DOWN, _d, _n);
