@@ -64,7 +64,10 @@ describe('B.2 操作提示按设备与情境', () => {
       rows.set(m[1] as string, [clean(m[2] as string), clean(m[3] as string)]);
     }
     expect(rows.size).toBeGreaterThanOrEqual(17);
-    // anyKey 不在 B.2 表里（取 B.4 失败卡文字的前半句），其余每一条都必须在表里且逐字一致。
+    // anyKey 不在 B.2 表里：它用 B.4 失败卡的整句（B.4 只允许列出的文字，不能截短）；其余每一条都必须在表里且逐字一致。
+    expect(HINTS.anyKey).toEqual([STR.failKey, STR.failTouch]);
+    const b4 = doc.slice(doc.indexOf('### B.4'), doc.indexOf('### B.5'));
+    for (const x of HINTS.anyKey) expect(b4).toContain(`「${x}」`);
     const ids = Object.keys(HINTS).filter((k) => k !== 'anyKey').sort();
     expect([...rows.keys()].sort()).toEqual(ids);
     for (const [id, pair] of rows) expect([id, ...HINTS[id as keyof typeof HINTS]]).toEqual([id, ...pair]);

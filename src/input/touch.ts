@@ -10,8 +10,9 @@ import { SwipeRecognizer, type SwipeConfig } from './gestures';
 
 export type TouchContextKind = 'run' | 'still' | 'stand' | 'menu';
 export interface TouchSink {
-  press(a: Action, t: number): void;
-  release(a: Action, t: number): void;
+  /** pointerType：菜单里鼠标点空白处也走这里，Input 按它记设备（鼠标 = 键盘端），不能一律记成触屏。 */
+  press(a: Action, t: number, pointerType?: string): void;
+  release(a: Action, t: number, pointerType?: string): void;
   context(): { kind: TouchContextKind; standHalves: boolean };
 }
 
@@ -41,7 +42,7 @@ export class TouchInput {
     if (ctx.kind === 'menu') {
       if (e.button > 0) return;                                        // 只认主键 / 手指
       if (e.isPrimary === false) return;
-      this.sink.press('confirm', t); this.sink.release('confirm', t);
+      this.sink.press('confirm', t, e.pointerType); this.sink.release('confirm', t, e.pointerType);
       return;
     }
     if (e.pointerType === 'mouse') return;                             // 游玩时鼠标只用于点界面按钮

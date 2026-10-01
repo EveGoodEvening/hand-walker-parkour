@@ -36,7 +36,7 @@ export const SPEAKERS: Record<Speaker, string> = {
  * 操作提示（B.2）：[键盘, 触摸]。B.2 表格里的括号是给实现者的注释，按情境取值：
  *   · hold 的触摸：跑段「下滑不松手」，静场「按住屏幕」（HOLD_TOUCH_STILL）；
  *   · straighten 的键盘：显示偏移方向的反方向箭头（STRAIGHTEN_KEY）。
- * anyKey 不在 B.2 表里，取 B.4 失败卡文字的前半句。
+ * anyKey 不在 B.2 表里：用 B.4 失败卡的整句（B.4「只允许以下这些」，不能自己截短）。游戏里需要「按任意键」的只有失败卡。
  */
 export const HINTS: Record<HintId, readonly [string, string]> = {
   jump: ['↑ 撑跃', '上滑 撑跃'], lane: ['← → 换道', '左右滑 换道'], duck: ['↓ 伏低', '下滑 伏低'],
@@ -44,7 +44,7 @@ export const HINTS: Record<HintId, readonly [string, string]> = {
   ask: ['E 让一下', '点「让一下」'], tray: ['端着餐盘：只能换道、伏低', '端着餐盘：只能换道、伏低'],
   wipe: ['↓ 按住 擦掉', '按住屏幕 擦掉'], slap: ['↓ 拍地 亮灯', '下滑 拍地 亮灯'], straighten: ['← / → 掰正', '反方向滑 掰正'],
   rise: ['↑ 按住 站起来', '按住屏幕 站起来'], balance: ['← → 稳住', '按住左半 / 右半屏 稳住'], kneel: ['↓', '下滑'],
-  taps3: ['↓ ↓ ↓', '轻点三下'], fist: ['↓ 按住', '按住屏幕'], anyKey: ['按任意键', '轻触'], skip: ['按住 Enter 跳过', '长按「跳过」'],
+  taps3: ['↓ ↓ ↓', '轻点三下'], fist: ['↓ 按住', '按住屏幕'], anyKey: ['按任意键，从检查点重来。', '轻触，从检查点重来。'], skip: ['按住 Enter 跳过', '长按「跳过」'],
 };
 /** hold 在静场里的触摸文字（B.2「静场：按住屏幕」）。 */
 export const HOLD_TOUCH_STILL = '按住屏幕';

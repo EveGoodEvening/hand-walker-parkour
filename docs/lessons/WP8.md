@@ -17,3 +17,10 @@
 - 「每帧最多一次 DOM 写入」要连 Input 一起算：Game 在模拟 tick 里调 `Input.setContext()`，情境按钮如果在那里直接改 `style.display`，开关回头窗口的那一帧就会写两次。现在 Input 只维护模型（`buttonView()`），UI 挂载时调 `deferButton()`，由 `UI.frame()` 经 DomBatch 写。没有 UI 的场合（CORE 的 `tests/unit/core/input.test.ts`）仍然立即写，所以那个冻结的测试不受影响。
 - 本机有 PreToolUse hook：凡是会起无头浏览器的命令（`npm run e2e:*`、`shot.mjs`、`verify` 里的 e2e:smoke）必须写成 `~/.claude/bin/heavy-gate -l '<标签>' -- <命令>`，并用 `run_in_background: true`，不要套 `timeout`；`heavy-gate --status` 看槽位。
 - WP2 收录对白时可能保留原文的 ASCII 双引号（`"让一下。"`）。按文字找 LineId 时先逐字匹配，再忽略两端引号匹配（`bareLine`）；self / other 样式会自动加「“”」，显示前要去掉原文引号，否则变成两层引号。
+- 「最后一次输入的设备」不能只靠动作事件记：界面按钮、情境按钮、「跳过」都带 `data-ui-control`，不进 TouchInput，也不发动作。手机上点「开始」之后让开场卡自己走完，设备一直是缺省的键盘，教学提示全是键盘文字，而且每个只显示一次（hintsSeen）。现在 `Input.attach` 在 window 上挂捕获阶段的 `pointerdown`（比按钮自己的 `stopPropagation` 先到），只记设备、不发动作：touch / pen = 触屏，mouse = 键盘，没写 pointerType 的合成事件不改。初始值按 `matchMedia('(pointer: coarse)')` 猜。菜单里点空白处的 confirm 也按 pointerType 记设备，鼠标不再被记成触屏。
+- e2e 里读情境按钮之前必须先 `__game.render()`：按钮的显隐由 `UI.frame()` 经 DomBatch 写，`step()` 不渲染，直接读 DOM 永远是隐藏的，「点回头」那一步从来没执行过（回头次数来自窗口结束时的自动回头）。现在 e2e 读 `__game.ext.ui().ctxLook`（模型），窗口开着时渲染一帧再点，并断言 lookBack 的 `auto: false`。
+- 提前出现的教学提示（cue，3.2 s）会比它对应的情境活得久：1-5 的「Q 回头」在 122 拍出现，窗口 124–136 拍，玩家回过头之后它还挂着。窗口关上（prompt 的 context.look 由真变假）或 lookBack 开始时撤掉 `look` 提示。
+- 静场「看过」只在按顺序走到下一段（segment 事件的 index = 上一段 + 1）时记。`?seg=<静场>` 启动时 load 和 goto 各发一次同一段的 segment 事件，按「离开就算看过」会让还没看过的静场第一次就能跳过。
+- 竖屏 360 px 下 18 px 的字幕一行只放得下 18 字，24 字的句子折成两行，「最多 2 行」实际是 3–4 行。窄屏（≤ 520 px）把字号缩到 24 字正好一行（约 14 px）；玩家选了「大字号」时保持 18 px，宁可折行。
+- 附录 B.4 是「只允许以下这些」：不在表里的 HintId（anyKey）也不能自己截短 B.4 的句子，直接用整句。
+- 更正上面「shot 清单里 `touch: true` 设备仍是键盘」那条：现在 Input 开机按 `(pointer: coarse)` 猜设备，Playwright 的 `hasTouch + isMobile` 模拟下它成立，所以 `touch: true` 的截图一开始就是触摸文字。要在 e2e 里证明「点按钮会切设备」，先用 `__game.input('confirm', 'up')` 把设备拨回键盘（标题界面不处理输入），再点按钮。`__game.ext.ui().device` 是最后一次渲染时的值，`step()` 不渲染，读之前要 `__game.render()`。

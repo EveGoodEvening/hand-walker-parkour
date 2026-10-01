@@ -93,7 +93,9 @@ export class UI implements UIAPI {
   private failReady = false;
   // 跳过静场
   private readonly seenStills = new Set<string>();
-  private prevSeg: { id: string; kind: 'run' | 'still' | 'stand' } | null = null;
+  private prevSeg: { id: string; index: number; kind: 'run' | 'still' | 'stand' } | null = null;
+  /** 回头窗口是否开着（prompt 事件的 context.look）：窗口关上时撤掉还挂着的「Q 回头」。 */
+  private lookOpen = false;
   private enterAt: number | null = null;
   private skipAt: number | null = null;
   private skipDone = '';
@@ -274,6 +276,7 @@ export class UI implements UIAPI {
         this.scheduled = [];
         this.fallT = -1;
         this.prevSeg = null;
+        this.lookOpen = false;
         this.askWhispered = false;
         this.hud.subs.replayed = chapterDone(e.data.id, this.save.load(), this.store.data.completed);
         break;
@@ -288,10 +291,13 @@ export class UI implements UIAPI {
         break;
       case 'segment': {
         const prev = this.prevSeg;
-        if (prev && prev.kind === 'still' && this.chapter) this.seenStills.add(`${this.chapter}:${prev.id}`);
+        // 只有按顺序走到下一段才算看过这段静场。读章再跳转（?seg=<静场>：load 和 goto 各发一次 segment）、
+        // 从暂停里重来，都不能让一段还没看过的静场第一次就能跳过。
+        if (prev && prev.kind === 'still' && this.chapter && e.data.index === prev.index + 1) this.seenStills.add(`${this.chapter}:${prev.id}`);
         const cut = !!prev && prev.kind !== e.data.kind && (prev.kind === 'still' || e.data.kind === 'still');
         this.overlays.segment(t, cut);
-        this.prevSeg = { id: e.data.id, kind: e.data.kind };
+        this.prevSeg = { id: e.data.id, index: e.data.index, kind: e.data.kind };
+        this.lookOpen = false;
         this.hud.inStill = e.data.kind === 'still';
         this.hud.clearPromptHint();
         this.skipDone = '';
@@ -305,6 +311,9 @@ export class UI implements UIAPI {
       case 'prompt': {
         const inp = Input.active;
         if (inp && inp.hooks.ask !== e.data.context.ask) { inp.hooks.ask = e.data.context.ask; inp.refreshHooks(); }
+        // 回头窗口关上（回过头了，或者窗口结束）：提前出现的教学提示「Q 回头」（cue，3.2 s）也一起撤掉
+        if (this.lookOpen && !e.data.context.look) this.clearLookHint();
+        this.lookOpen = e.data.context.look;
         if (!e.data.hint) { this.hud.clearPromptHint(); break; }
         const still = snap.segKind !== 'run';
         this.policyHint(e.data.hint, still ? 'still' : 'prompt', t, 600);
@@ -321,6 +330,7 @@ export class UI implements UIAPI {
         break;
       }
       case 'fall': this.overlays.fall(t); this.fallT = t; break;
+      case 'lookBack': if (e.data.phase === 'start') this.clearLookHint(); break;
       case 'twitch':
         if (e.data.phase === 'warn') {
           if (this.settings?.vibrate && this.device === 'touch') vibrate(30);
@@ -351,6 +361,8 @@ export class UI implements UIAPI {
       default: break;
     }
   }
+
+  private clearLookHint(): void { if (this.hud.hint?.id === 'look') this.hud.clearHint(); }
 
   /** 在模拟时间 at 执行（字幕延后出现）。 */
   private later(at: number, fn: (t: number) => void): void { this.scheduled.push({ at, fn: () => fn(at) }); }
@@ -508,6 +520,7 @@ export class UI implements UIAPI {
       chapterName: this.hud.chname.textContent, count: this.hud.countShown(), metro: this.hud.lastMetro,
       canvasTransform: this.canvas?.style.transform ?? '', canvasFilter: this.canvas?.style.filter ?? '',
       black: this.layers.black.style.opacity, seenStills: Array.from(this.seenStills),
+      ctxLook: Input.active?.context.look ?? false,
     };
   }
 }

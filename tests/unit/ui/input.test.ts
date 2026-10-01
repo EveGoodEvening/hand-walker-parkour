@@ -140,6 +140,59 @@ describe('情境按钮', () => {
     ui.frame(snap({ t: 1.3 }), 0);           // Game 还没调过 setDevice
     expect((root.querySelector('[data-screen="fail"] .prompt') as HTMLElement).textContent).toBe('轻触，从检查点重来。');
   });
+  it('点界面按钮（不进 TouchInput）也把设备切到触屏，且不发出动作；鼠标按下切回键盘（§7.3）', () => {
+    inp.setContext({ kind: 'menu', look: false, ask: false, standHalves: false });
+    expect(inp.device()).toBe('keyboard');
+    const b = document.createElement('button'); b.textContent = '开始'; b.setAttribute('data-ui-control', '1');
+    // 按钮自己的监听会 stopPropagation（「跳过」、情境按钮都是这样），设备照样要记下
+    b.addEventListener('pointerdown', (e) => e.stopPropagation());
+    document.body.appendChild(b);
+    b.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', pointerId: 4, bubbles: true, isPrimary: true }));
+    expect(inp.device()).toBe('touch');
+    expect(drain()).toEqual([]);
+    b.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'mouse', pointerId: 1, bubbles: true, isPrimary: true }));
+    expect(inp.device()).toBe('keyboard');
+    b.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'pen', pointerId: 5, bubbles: true, isPrimary: true }));
+    expect(inp.device()).toBe('touch');
+    // 没写 pointerType 的合成事件不改设备
+    b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    expect(inp.device()).toBe('touch');
+  });
+  it('菜单里鼠标点空白处 = 确认，设备记成键盘（不再一律记成触屏）', () => {
+    inp.setContext({ kind: 'menu', look: false, ask: false, standHalves: false });
+    el.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', pointerId: 2, bubbles: true, isPrimary: true, button: 0 }));
+    expect(inp.drain().map((e) => `${e.action}:${e.phase}:${e.device}`)).toEqual(['confirm:down:touch', 'confirm:up:touch']);
+    el.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'mouse', pointerId: 1, bubbles: true, isPrimary: true, button: 0 }));
+    expect(inp.drain().map((e) => `${e.action}:${e.phase}:${e.device}`)).toEqual(['confirm:down:keyboard', 'confirm:up:keyboard']);
+    expect(inp.device()).toBe('keyboard');
+  });
+  it('初始设备按 (pointer: coarse) 猜：手机上第一个提示就是触摸文字', () => {
+    inp.detach();
+    const orig = window.matchMedia;
+    window.matchMedia = ((q: string) => ({ matches: q === '(pointer: coarse)', media: q, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+    try {
+      inp = new Input(); inp.attach(el);
+      expect(inp.device()).toBe('touch');
+    } finally { window.matchMedia = orig; }
+  });
+  it('手机上点「开始」、让开场卡自己走完：第一个教学提示就是「上滑 撑跃」', async () => {
+    const { UI } = await import('../../../src/ui/UI');
+    const { createSave } = await import('../../../src/core/save');
+    const { fakeCmd, ev, snap, settings } = await import('./helpers');
+    const root = document.createElement('div'); el.appendChild(root);
+    const save = createSave();
+    const ui = new UI(); ui.mount(root, fakeCmd(), save);
+    ui.onEvent(ev('settings', settings()), snap());
+    ui.show('title');
+    const start = Array.from(root.querySelectorAll('[data-screen="title"] button')).find((b) => b.textContent === '开始') as HTMLButtonElement;
+    expect(start).toBeTruthy();
+    start.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', pointerId: 6, bubbles: true, isPrimary: true }));
+    ui.show('intro', { chapter: 'ch1', title: '第一章', name: '早自习', lines: [] });
+    ui.show('play');
+    ui.cueHint({ type: 'hint', hint: 'jump' }, { snap: snap({ t: 1 }), segment: { events: [] } as never });
+    ui.frame(snap({ t: 1.1 }), 0);
+    expect(ui.hud.hintEl.textContent).toBe('上滑 撑跃');
+  });
   it('情境切换时松开所有按住的键', () => {
     inp.setContext({ kind: 'still', look: false, ask: false, standHalves: false });
     key('keydown', 'ArrowDown', 'ArrowDown');

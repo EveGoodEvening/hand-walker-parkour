@@ -5,13 +5,15 @@
 //             → Esc 暂停 → ↓↓ 回车「设置」→ → 改一项 → Esc 返回暂停 → 回车「继续」→ 按求解器路线用方向键玩
 //             （静场按住 ↓，回头按 Q）→ 1-5 追随者登场后故意不动，直到摔倒 → 失败卡：1.2 s 之前按键无效，之后按任意键从检查点重来
 //             → 继续玩完第一章 → 结尾卡。
-//   touch   ：360×640 竖屏、Chrome 设备模拟（hasTouch / isMobile），只用触摸。点「章节」→ 点「第一章」→ 轻触跳过开场卡
-//             → 点右上角‖ → 点「设置」→ 点「返回」→ 点「继续」→ 用 CDP 触摸事件滑动（左右滑换道、上滑撑跃、下滑不松手 = 伏低 / 按住）、
-//             点情境按钮「回头」→ 故意摔倒 → 轻触重来 → 结尾卡。
+//   touch   ：360×640 竖屏、Chrome 设备模拟（hasTouch / isMobile），只用触摸。点「章节」→ 点「第一章」（点按钮本身就把设备记成触屏）
+//             → 轻触跳过开场卡 → 点右上角‖ → 点「设置」→ 点「返回」→ 点「继续」→ 用 CDP 触摸事件滑动（左右滑换道、上滑撑跃、
+//             下滑不松手 = 伏低 / 按住）、点情境按钮「回头」（必须是手动回头，auto: false）→ 故意摔倒 → 轻触重来 → 结尾卡。
+//   touch-start：360×640 触摸。点「开始」→ 开场卡不碰、让它自己走完 → 第一个教学提示是「上滑 撑跃」，存档 hintsSeen 记下 jump
+//             （验收员第 2 轮：点按钮不记设备时，这里会是「↑ 撑跃」，而且只显示这一次）。
 //   layout  ：360×640（触摸）与 1920×1080，标题 / 章节 / 设置 / 纸条 / 暂停 / 失败 / 结尾卡 / HUD（hudDemo 把每个元素都填上最长的内容）：
 //             没有横向滚动条、没有元素伸出视口左右边；字幕与其余 HUD 元素两两不重叠，HUD 栈里的元素互不重叠。
 // 断言：到达结尾卡、只摔倒那一次、必备节拍全部触发、HUD 章名、提示文字随设备切换（静场「↓ 按住」/「按住屏幕」）、零页面错误。
-// 用法：node tests/e2e-touch.mjs [--only keyboard|touch|layout] [--url http://localhost:5173/]（缺省用 dist/index.html）
+// 用法：node tests/e2e-touch.mjs [--only keyboard|touch|touch-start|layout] [--url http://localhost:5173/]（缺省用 dist/index.html）
 import { mkdirSync } from 'node:fs';
 import { ensureBuilt, openGame } from '../scripts/e2e-lib.mjs';
 
@@ -78,6 +80,9 @@ async function flow(mode) {
     st = await step(p, 2);
     expect(st.screen === 'intro', `the key that picked the chapter also skipped the intro (screen ${st.screen})`);
     seen.intro = true;
+    // 点界面按钮就记下设备（还没轻触过空白处）；ext.ui() 反映最后一次渲染的帧，先 render
+    const dev0 = await p.evaluate(() => { window.__game.render(); return window.__game.ext.ui().device; });
+    expect(dev0 === (touch ? 'touch' : 'keyboard'), `device after picking the chapter is ${dev0}`);
     // 「按任意键 / 轻触」跳过开场卡：键盘用一个没有映射的键
     if (touch) await tapBlank(); else await p.keyboard.press('KeyK');
     st = await step(p, 2);
@@ -108,13 +113,11 @@ async function flow(mode) {
     let seg = null, plan = null, cursor = 0, stillHeld = false, guard = 0, failed = false;
     const looked = new Set();
     while (guard++ < 20_000) {
-      const r = await p.evaluate(() => {
-        const b = document.querySelector('.hw-context-btn');
-        return {
-          st: window.__game.getState(), look: !!b && b.style.display !== 'none' && b.textContent === '回头',
-          chname: document.querySelector('.hw-chname')?.textContent ?? '', hint: document.querySelector('.hw-hint.on')?.textContent ?? '',
-        };
-      });
+      // 回头窗口读输入情境（模型）：情境按钮的 DOM 只在 render 时才写，不能直接读
+      const r = await p.evaluate(() => ({
+        st: window.__game.getState(), look: !!window.__game.ext.ui()?.ctxLook,
+        chname: document.querySelector('.hw-chname')?.textContent ?? '', hint: document.querySelector('.hw-hint.on')?.textContent ?? '',
+      }));
       st = r.st;
       if (r.chname) seen.chapterName.add(r.chname);
       if (r.hint) seen.hints.add(r.hint);
@@ -171,12 +174,16 @@ async function flow(mode) {
         cursor = 0;
         while (cursor < plan.length && plan[cursor].s < st.s - 1e-6) cursor++;
       }
-      // 回头窗口：情境按钮「回头」出现就回头一次
+      // 回头窗口：先渲染一帧让情境按钮「回头」出现，再点它（键盘按 Q）；必须是手动回头
       if (r.look && !looked.has(seg)) {
         looked.add(seg);
+        const btn = await p.evaluate(() => { window.__game.render(); const b = document.querySelector('.hw-context-btn'); return b ? { display: getComputedStyle(b).display, text: b.textContent } : null; });
+        expect(btn && btn.display !== 'none' && btn.text === '回头', `look button not shown in the window: ${JSON.stringify(btn)}`);
         if (touch) await p.tap('.hw-context-btn'); else await p.keyboard.press('KeyQ');
+        st = await step(p, 2);
+        const lb = await p.evaluate(() => window.__game.events(200).filter((e) => e.type === 'lookBack' && e.data.phase === 'start').map((e) => e.data.auto));
+        expect(lb.length && lb[lb.length - 1] === false, `${touch ? 'tapping 回头' : 'Q'} did not start a manual look-back (${JSON.stringify(lb)})`);
         log.push(`${seg}: look`);
-        await step(p, 1);
         continue;
       }
       const nx = plan[cursor];
@@ -233,6 +240,41 @@ async function flow(mode) {
     console.log(JSON.stringify({ mode, sec: Math.round((Date.now() - t0) / 1000), screen: st.screen, falls: st.falls, stumbles: st.stumbles,
       crashes: st.crashes, lookBacks: st.lookBacks, notes: st.notes, beats: beats.length, actions: log.length,
       hints: [...seen.hints], failPrompt: seen.failPrompt, outroButtons: outro.buttons, flow: log.filter((l) => !l.includes('@')) }));
+    return problems;
+  } finally {
+    await g.close();
+  }
+}
+
+// ——————————————————————————— 触屏：点「开始」，开场卡自己走完 ———————————————————————————
+async function touchStart() {
+  const g = await openGame('', { touch: true, url, viewport: { width: 360, height: 640 }, who: 'e2e-touch:touch-start' });
+  const { p } = g;
+  const problems = [];
+  try {
+    // 先把设备拨回键盘（一台 (pointer: coarse) 不成立的触屏设备）：要证明是「点按钮」本身把设备记成触屏，而不是开机时的猜测。
+    // 标题界面不处理输入，注入一个松开事件只改设备。ext.ui() 反映最后一次渲染的帧，读之前先 render。
+    await p.evaluate(() => window.__game.input('confirm', 'up'));
+    const dev0 = await p.evaluate(() => { window.__game.render(); return window.__game.ext.ui().device; });
+    if (dev0 !== 'keyboard') problems.push(`could not reset the device to keyboard (${dev0})`);
+    await p.tap('[data-screen="title"] button:has-text("开始")');
+    let st = await step(p, 1);
+    const dev = await p.evaluate(() => { window.__game.render(); return window.__game.ext.ui().device; });
+    if (dev !== 'touch') problems.push(`device after tapping 开始 is ${dev}`);
+    for (let i = 0; i < 40 && st.screen !== 'play'; i++) st = await step(p, 60);   // 不碰屏幕，等开场卡自己走完
+    if (st.screen !== 'play') problems.push(`intro did not end by itself (screen ${st.screen})`);
+    await p.evaluate(() => window.__game.setAutopilot('perfect'));   // 自动驾驶在模拟里走，不经过 Input，不改设备
+    let first = '';
+    for (let i = 0; i < 120 && !first; i++) {
+      st = await step(p, 12);
+      first = await p.evaluate(() => { window.__game.render(); return document.querySelector('.hw-hint.on')?.textContent ?? ''; });
+    }
+    if (first !== '上滑 撑跃') problems.push(`first hint "${first}" at ${st.segment}@${st.beat.toFixed(1)}, expected "上滑 撑跃"`);
+    const seenIds = await p.evaluate(() => { try { return JSON.parse(localStorage.getItem('hw-parkour:v1') ?? 'null')?.hintsSeen ?? []; } catch { return []; } });
+    if (!seenIds.includes('jump')) problems.push(`hintsSeen ${JSON.stringify(seenIds)} has no jump`);
+    await p.screenshot({ path: 'shots/e2e-touch-start-hint.png' });
+    if (g.errors.length) problems.push(`page errors: ${g.errors.slice(0, 3).join(' | ')}`);
+    console.log(JSON.stringify({ mode: 'touch-start', deviceBefore: dev0, device: dev, firstHint: first, at: `${st.segment}@${st.beat.toFixed(1)}`, hintsSeen: seenIds }));
     return problems;
   } finally {
     await g.close();
@@ -348,10 +390,10 @@ async function layout() {
 
 if (!url) ensureBuilt();
 const problems = [];
-for (const m of ['keyboard', 'touch', 'layout']) {
+for (const m of ['keyboard', 'touch', 'touch-start', 'layout']) {
   if (only && only !== m) continue;
   try {
-    const pr = m === 'layout' ? await layout() : await flow(m);
+    const pr = m === 'layout' ? await layout() : m === 'touch-start' ? await touchStart() : await flow(m);
     for (const x of pr) problems.push(`${m}: ${x}`);
   } catch (e) {
     problems.push(`${m}: ${e && e.message ? e.message : e}`);

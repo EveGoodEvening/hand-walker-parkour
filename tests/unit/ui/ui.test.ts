@@ -257,6 +257,34 @@ describe('操作提示（附录 B.2）', () => {
     ui.frame(snap({ t: 9.1, segKind: 'still' }), 0);
     expect(ui.hud.hintEl.textContent).toBe('');
   });
+  it('「Q 回头」：回头开始或回头窗口关上时撤掉，不会挂到窗口之后', async () => {
+    const { ui } = await mountUI();
+    ui.show('play');
+    const look = (t: number, on: boolean) => ui.onEvent(ev('prompt', { hint: on ? 'look' : null, context: { look: on, ask: false } }), snap({ t }));
+    // 窗口开始前 2 拍的教学提示（cue，3.2 s）
+    ui.cueHint({ type: 'hint', hint: 'look' }, { snap: snap({ t: 1 }), segment: seg });
+    ui.frame(snap({ t: 1.1 }), 0);
+    expect(ui.hud.hintEl.textContent).toBe('Q 回头');
+    look(1.4, true);
+    ui.frame(snap({ t: 1.5 }), 0);
+    expect(ui.hud.hintEl.textContent).toBe('Q 回头');
+    // 玩家按了 Q：回头开始，Sim 随后撤掉情境
+    ui.onEvent(ev('lookBack', { phase: 'start', gain: 1, auto: false }), snap({ t: 1.8 }));
+    ui.frame(snap({ t: 1.9 }), 0);
+    expect(ui.hud.hintEl.textContent).toBe('');
+    // 另一种：窗口结束（没有回头事件，只有情境撤销）
+    ui.hud.showHint('look', 'cue', 10, 3.2);
+    look(10.2, true);
+    look(11, false);
+    ui.frame(snap({ t: 11.1 }), 0);
+    expect(ui.hud.hintEl.textContent).toBe('');
+    // 别的提示不受影响
+    ui.hud.showHint('jump', 'cue', 20, 3.2);
+    look(20.1, true); look(20.2, false);
+    ui.onEvent(ev('lookBack', { phase: 'start', gain: 0, auto: true }), snap({ t: 20.3 }));
+    ui.frame(snap({ t: 20.4 }), 0);
+    expect(ui.hud.hintEl.textContent).toBe('↑ 撑跃');
+  });
   it('「显示操作提示」关闭后全部不显示，wet、tray 除外', async () => {
     const { ui } = await mountUI({ settings: { hints: false } });
     ui.show('play');
@@ -352,6 +380,24 @@ describe('跳过静场（§2.2、§2.7；lead 补充 5）', () => {
     ui.frame(snap({ t: 30.75, segKind: 'still', segment: '1-4' }), 0);
     await flushMicrotasks();
     expect(cmd.calls.filter((c) => c === 'skipStill').length).toBe(1);
+  });
+  it('读章后跳到同一段静场（?seg=<静场>：load 与 goto 各发一次 segment）、从暂停重来：都不算看过', async () => {
+    const { ui } = await mountUI();
+    ui.show('play');
+    const still = (t: number) => ui.onEvent(ev('segment', { id: '1-4', index: 3, kind: 'still' }), snap({ t, segKind: 'still', segment: '1-4' }));
+    ui.onEvent(ev('chapter:start', { id: 'ch1' }), snap({ t: 0 }));
+    still(0); still(0);
+    ui.frame(snap({ t: 0.1, segKind: 'still', segment: '1-4' }), 0);
+    expect(ui.skipAvailable).toBe(false);
+    // 静场里从暂停「从检查点重来」：回到上一段（1-3），不是按顺序走到下一段
+    ui.onEvent(ev('retry', { segment: '1-3', beat: 0 }), snap({ t: 3 }));
+    ui.onEvent(ev('segment', { id: '1-3', index: 2, kind: 'run' }), snap({ t: 3 }));
+    still(20);
+    ui.frame(snap({ t: 20.1, segKind: 'still', segment: '1-4' }), 0);
+    expect(ui.skipAvailable).toBe(false);
+    // 按顺序走到 1-5 才算看过
+    ui.onEvent(ev('segment', { id: '1-5', index: 4, kind: 'run' }), snap({ t: 32 }));
+    expect((ui.debugState().seenStills as string[])).toEqual(['ch1:1-4']);
   });
   it('键盘：按住 Enter 0.6 s；这一章打完之后所有静场都能跳过', async () => {
     const { ui, cmd } = await mountUI();

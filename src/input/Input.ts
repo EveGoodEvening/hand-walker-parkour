@@ -7,6 +7,9 @@
 // · 长按 Enter 跳过静场由 UI 计时（它知道哪些静场看过），这里不再自己发 skip，避免与 Game 的判断重复跳过。
 // · UI 通过 hooks 补充 Game 没有传进来的情境：可请求「让一下」（Game 的 setContext 总是 ask: false）、
 //   站立段是否已起身（按住左 / 右半屏），以及菜单子界面里 Esc 的「返回」。
+// · 最后一次输入的设备（§7.3，提示文字随之切换）：window 上的捕获阶段 pointerdown 记下每一次按下的指针类型，
+//   界面按钮、情境按钮、「跳过」也算（它们不进 TouchInput）。否则手机上点「开始」之后让开场卡自己走完，
+//   教学提示还是键盘文字，而每个提示只显示一次。初始值按 (pointer: coarse) 猜。
 import type { InputAPI } from '../core/contracts';
 import { loadSettings } from '../core/save';
 import { SWIPE_PX, type Settings } from '../core/settings';
@@ -28,6 +31,12 @@ export interface InputHooks {
 }
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+/** 指针类型 → 设备。未知类型（合成事件没写 pointerType）返回 null，不改设备。 */
+export function deviceOf(pointerType: string | undefined): Device | null {
+  if (pointerType === 'touch' || pointerType === 'pen') return 'touch';
+  if (pointerType === 'mouse') return 'keyboard';
+  return null;
+}
 
 export class Input implements InputAPI {
   /** 最近一次 attach 的实例（UI 用它挂 hooks；同一个工作包内部）。 */
@@ -43,20 +52,23 @@ export class Input implements InputAPI {
   private flip = false;
   private btn: HTMLButtonElement | null = null;
   private touch: TouchInput | null = null;
-  private attached: Array<[EventTarget, string, EventListener]> = [];
+  private attached: Array<[EventTarget, string, EventListener, boolean]> = [];
   /** 最近一次物理输入（任意键 / 触摸）的时刻。 */
   lastAny = 0;
 
   attach(el: HTMLElement): void {
     Input.active = this;
     if (typeof window === 'undefined') return;
-    const on = (t: EventTarget, type: string, fn: EventListener) => { t.addEventListener(type, fn); this.attached.push([t, type, fn]); };
+    const on = (t: EventTarget, type: string, fn: EventListener, capture = false) => { t.addEventListener(type, fn, capture); this.attached.push([t, type, fn, capture]); };
+    try { if (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) this.dev = 'touch'; } catch { /* 不支持就当键盘 */ }
+    // 捕获阶段：比按钮自己的监听（会 stopPropagation）先到；只记设备，不发出任何动作
+    on(window, 'pointerdown', (e) => this.notePointer(e as PointerEvent), true);
     on(window, 'keydown', (e) => this.onKey(e as KeyboardEvent, 'down'));
     on(window, 'keyup', (e) => this.onKey(e as KeyboardEvent, 'up'));
     on(window, 'blur', () => this.releaseAll());
     this.touch = new TouchInput({
-      press: (a, t) => this.push(a, 'down', t, 'touch'),
-      release: (a, t) => this.push(a, 'up', t, 'touch'),
+      press: (a, t, pt) => this.push(a, 'down', t, deviceOf(pt) ?? 'touch'),
+      release: (a, t, pt) => this.push(a, 'up', t, deviceOf(pt) ?? 'touch'),
       context: () => ({ kind: this.ctx.kind, standHalves: this.ctx.standHalves }),
     });
     this.touch.attach(el);
@@ -82,7 +94,7 @@ export class Input implements InputAPI {
 
   /** 解除监听（测试用）。 */
   detach(): void {
-    for (const [t, type, fn] of this.attached) t.removeEventListener(type, fn);
+    for (const [t, type, fn, capture] of this.attached) t.removeEventListener(type, fn, capture);
     this.attached = [];
     this.btn?.remove();
     if (Input.active === this) Input.active = null;
@@ -95,6 +107,14 @@ export class Input implements InputAPI {
   get swipeThreshold(): number { return this.touch?.swipe.cfg.threshold ?? SWIPE_PX.mid; }
   /** 触摸识别器（测试用）。 */
   get touchInput(): TouchInput | null { return this.touch; }
+
+  /** 任何指针按下（包括界面按钮）：记下设备。手指 / 笔 = 触屏，鼠标 = 键盘（桌面端）。 */
+  private notePointer(e: PointerEvent): void {
+    const d = deviceOf(e.pointerType);
+    if (!d) return;
+    this.dev = d;
+    this.lastAny = now();
+  }
 
   private onKey(e: KeyboardEvent, phase: 'down' | 'up'): void {
     const a = actionOfKey(e.code, e.key);
