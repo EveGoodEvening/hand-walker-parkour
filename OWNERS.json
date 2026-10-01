@@ -1,6 +1,6 @@
 {
   "$comment": "文件所有权（DESIGN.md §8.2、§8.11）。CORE 冻结，只有 lead 能改。键 = 所有者，值 = glob 列表（** 跨目录，* 不跨目录，{a,b} 任选）。每个文件恰好一个所有者；APPEND 里的文件只能追加（不得删改已有行）。npm run check:owners 检查覆盖率，并在 wp/<ID> 分支上检查越界。",
-  "lead": ["AGENTS.md", "docs/DESIGN.md", ".gitignore"],
+  "lead": ["AGENTS.md", "docs/DESIGN.md", ".gitignore", ".npmrc"],
   "CORE": [
     "package.json", "package-lock.json", "index.html", "tsconfig.json", "vitest.config.ts", "OWNERS.json",
     "src/main.ts", "src/core/**", "src/levels/schema.ts", "src/levels/obstacles.ts", "src/levels/chapters/index.ts",
