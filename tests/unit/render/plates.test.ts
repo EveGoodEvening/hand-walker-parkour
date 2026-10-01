@@ -15,7 +15,8 @@ import '../../../src/render/kits/placeholder';
 import { DATA_PLATE, DOOR_PLATE, SteadyStatGeo, dataPlates, makeEnv } from '../../../src/render/kits/school/shell';
 import { ATLAS, ATLAS_WHITE_UV, platePx } from '../../../src/render/textures/school';
 import { patchSteadyGlow } from '../../../src/render/lampField';
-import { World } from '../../../src/render/ChunkStreamer';
+import { ATLAS_MIN_SIZE, World } from '../../../src/render/ChunkStreamer';
+import { resolveQuality } from '../../../src/core/quality';
 import { registerAtmospheres } from '../../../src/render/atmosphere';
 import { fakeCtx } from './helpers';
 
@@ -88,7 +89,10 @@ describe('数据门牌（U6）', () => {
     expect(ones).toBe(12);
   });
 
-  it('贴图集：数据门牌的矩形宽 ≥ 256 px（中画质 512 px 的贴图集；高画质 512 px）；各矩形互不重叠、都在 0..1 里', () => {
+  it('贴图集：数据门牌的矩形宽 ≥ 256 px（贴图集最小 512 px，低画质也不减半）；各矩形互不重叠、都在 0..1 里', () => {
+    expect(ATLAS_MIN_SIZE).toBeGreaterThanOrEqual(512);
+    for (const tier of ['low', 'medium', 'high'] as const) expect(Math.max(ATLAS_MIN_SIZE, resolveQuality(tier, 1).texSize), tier).toBeGreaterThanOrEqual(512);
+    expect(platePx(ATLAS_MIN_SIZE, 0).w).toBeGreaterThanOrEqual(256);
     expect(platePx(512, 0).w).toBeGreaterThanOrEqual(256);
     expect(platePx(512, 1).w).toBeGreaterThanOrEqual(256);
     expect(platePx(1024, 0).w).toBeGreaterThanOrEqual(512);

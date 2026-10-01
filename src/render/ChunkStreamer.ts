@@ -32,6 +32,8 @@ import { makeCanvas } from './textures/common';
 import type { HwTextureBank } from './textureBank';
 
 const OPENING_KINDS = new Set<SurfaceDef['kind']>(['mirror', 'window', 'endMirror', 'carMirror']);
+/** 校园贴图集的最小边长（px）：数据门牌占图集宽度的一半（textures/school.ts ATLAS.plates[0]），低画质也 ≥ 256 px。 */
+export const ATLAS_MIN_SIZE = 512;
 const GENERIC_VARIANTS = 4;
 /** 预览段放在很远的地方，与章节内容互不相干。 */
 export const PREVIEW_S0 = 20000;
@@ -209,7 +211,8 @@ export class World implements ViewSystem {
       get lampGain() { return atmo().cur.lampGain; }, get chalkMin() { return atmo().cur.chalkMin; },
     };
     // 材质：地面按贴图缓存；static 分「有 uv（校园贴图集）」与「纯顶点色」；发光体跟灯走
-    const size = ctx.quality.texSize;
+    // 校园贴图集不按低画质减半（U6）：数据门牌在图集里要 ≥ 256 px 宽，5-11 翻转后的反字在低画质下也读得出（多 0.75 MB 显存）
+    const size = Math.max(ATLAS_MIN_SIZE, ctx.quality.texSize);
     if (typeof document !== 'undefined') {
       this.atlasCanvas = makeCanvas(size, size);
       paintSchoolAtlas(this.atlasCanvas, {});
