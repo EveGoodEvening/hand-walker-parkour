@@ -1,1 +1,768 @@
-[]
+[
+ {
+  "out": "shots/visual/WP4/kit-street-schoolGate-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','schoolGate')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-street-alley-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','alley')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-street-shopStreet-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','shopStreet')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-street-compound-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','compound')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-street-dawn-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','dawn')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-plaza-bright-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','plaza','bright')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-plaza-gray-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','plaza','gray')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-track-default-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','track','default')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-street-schoolGate-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','schoolGate')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-street-alley-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','alley')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-street-shopStreet-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','shopStreet')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-street-compound-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','compound')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-street-dawn-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','dawn')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-plaza-bright-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','plaza','bright')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-plaza-gray-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','plaza','gray')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/kit-track-default-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','track','default')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-bus-default-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','bus','default',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-home-default-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','home','default',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-bathroom-default-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','bathroom','default',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-palmEye-default-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','palmEye','default',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-water-default-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','water','default',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-bedroom-feet-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','bedroom','feet',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-bedroom-ceiling-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','bedroom','ceiling',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-infirmary-bed-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','infirmary','bed',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-infirmary-ceiling-low.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','infirmary','ceiling',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-bus-default-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','bus','default',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-home-default-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','home','default',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-bathroom-default-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','bathroom','default',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-palmEye-default-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','palmEye','default',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-water-default-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','water','default',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-bedroom-feet-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','bedroom','feet',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-bedroom-ceiling-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','bedroom','ceiling',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-infirmary-bed-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','infirmary','bed',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/set-infirmary-ceiling-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','infirmary','ceiling',{t:2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/inspect-street-schoolGate-lit.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','schoolGate',{lit:6})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/inspect-street-alley-lit.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','alley',{lit:6})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/inspect-street-shopStreet-lit.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','shopStreet',{lit:6})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/inspect-street-compound-lit.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','compound',{lit:6})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/rain-alley-high.png",
+  "q": "high",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','alley',{rain:1,lit:3})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/graffiti-hand.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','shopStreet',{beat:13,lane:1,lit:6})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/barrier-sweep.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','compound',{beat:10,t:0.55})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/shed-alley.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','alley',{beat:12,lane:-1,lit:6})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/lookback-dawn.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','dawn',{beat:30,lookBack:true})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/stand-plaza-bright.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','plaza','bright',{stand:true,beat:10})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/stand-track.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','track','default',{stand:true,beat:10})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/mirror-plaza-gray.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','plaza','gray',{beat:13,lane:1})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/water-edge-plaza-gray.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','plaza','gray',{beat:32})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/portrait-dawn.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('kit','street','dawn')"
+   }
+  ],
+  "size": "360x640"
+ },
+ {
+  "out": "shots/visual/WP4/bus-t6.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','bus','default',{t:6.8})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/bathroom-vapor.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','bathroom','default',{t:2.6})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/bathroom-clear.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','bathroom','default',{t:4.2})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/palmEye-blink.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','palmEye','default',{t:2.4})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/water-break.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','water','default',{t:7.4,breakAt:7.1})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/bedroom-feet-hold.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','bedroom','feet',{t:5,prompt:'hold',held:0.6})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/infirmary-dent.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "autopilot": false,
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('set','infirmary','bed',{t:1,pos:[-0.2,1.1,-0.9],look:[-0.62,0.55,-2.1]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-3-3-rain-starts.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch3','3-3',40,600,{\"kit\": [\"street\", \"schoolGate\", {\"beat\": 20, \"rain\": 0.4}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-3-4-shed.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch3','3-4',36,240,{\"kit\": [\"street\", \"alley\", {\"beat\": 10, \"rain\": 0.6}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-3-5-bus.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch3','3-5',0,480,{\"set\": [\"bus\", \"default\", {\"t\": 4}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-3-6-graffiti.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch3','3-6',58,240,{\"kit\": [\"street\", \"shopStreet\", {\"beat\": 10, \"rain\": 0.6}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-3-7-barrier.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch3','3-7',12,120,{\"kit\": [\"street\", \"compound\", {\"beat\": 10}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-3-9-home.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch3','3-9',0,240,{\"set\": [\"home\", \"default\", {\"t\": 2}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-3-10-bathroom.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch3','3-10',0,540,{\"set\": [\"bathroom\", \"default\", {\"t\": 4.5}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-4-1-plaza.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch4','4-1',20,240,{\"kit\": [\"plaza\", \"bright\", {}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-4-4-palm.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch4','4-4',0,180,{\"set\": [\"palmEye\", \"default\", {\"t\": 1.5}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-4-5-mirror.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch4','4-5',194,240,{\"kit\": [\"plaza\", \"gray\", {\"beat\": 13, \"lane\": 1}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-4-6-water.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch4','4-6',0,360,{\"set\": [\"water\", \"default\", {\"t\": 3}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-5-1-feet.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch5','5-1',0,240,{\"set\": [\"bedroom\", \"feet\", {\"t\": 2}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-5-3-dawn.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch5','5-3',40,360,{\"kit\": [\"street\", \"dawn\", {\"beat\": 20}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-5-7-track.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch5','5-7',10,240,{\"kit\": [\"track\", \"default\", {}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-5-9-infirmary.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch5','5-9',0,840,{\"set\": [\"infirmary\", \"bed\", {\"t\": 7}]})"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP4/game-5-10-ceiling.png",
+  "q": "low",
+  "query": "ch=test&nocards=1",
+  "ops": [
+   {
+    "eval": "__game.ext.wp4('scene','ch5','5-10',0,240,{\"set\": [\"infirmary\", \"ceiling\", {\"t\": 2}]})"
+   }
+  ]
+ }
+]
