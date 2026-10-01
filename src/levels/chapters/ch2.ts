@@ -10,9 +10,15 @@
 //   · 2-9 黑板上的问题（静场 6.0 s）→ 2-10 影子指向碎角镜 ≥ 20 s → 第三只手穿过玻璃 ≥ 20 s：2-10 从 40 拍加长到 140 拍，
 //     影子 @56，碎角镜里的替身 @114，停拍 @139（停在镜前 1 m；第三只手在停拍 2.6 s，表中 2.2 s；冷色渐变、替身消失随之后移
 //     0.4 s），镜子在 @140。纸条 n2-b 仍在 @16 左道。
-//   · 2-10 加长只是为了时间，它仍是减速的叙事收束（§2.8）：只有 @10 一个障碍（中道的地面管线），另外 5 行只占边道，
-//     待在中道不用动。密度 0.43 行 / 10 拍，去掉纸条后求解器只需要 1 次输入。本章最密的跑段是 2-8（1.63 行 / 10 拍）；
-//     2-7 是 1.25。tests/unit/content/chapters.test.ts 的「§2.8 难度曲线」检查最后一个跑段不比高潮密。
+//   · 2-10 加长只是为了时间，它仍是减速的叙事收束（§2.8），但不能 30 s 不用按键（评审修复 U1，推翻 §10.2「只有 @10 一个障碍」）：
+//     每 12–16 拍一个轻的强制动作（避开 @56 影子、@114 替身的 R6 休息窗），停拍前 @130 还有一个，相邻两次必需输入不超过 12 s。
+//     求解器最少输入 0.43 次 / 10 拍（≤ 0.5），低于本章技巧高潮 2-8（1.05）。注意「行密度」不是 §2.8 的「必需动作密度」：
+//     只占边道的行对中道的玩家是被动的，§2.8 的密度按求解器的最少输入次数算（tests/unit/content/chapters.test.ts）。
+//   · 2-7 前 46 拍和停拍前补了中道部件（0.74 次 / 10 拍）；2-8 隔一行封住右道（1.05 次 / 10 拍，本章最高）。
+//   · 2-9 按原文补「空白比字更吓人。」（空白之后 1.4 s）和擦字之后的「真正站不起来的，不是我的身体。」「是我不知道，站起来之后，
+//     我该去哪里。」；为了 R13（静场 ≤ 15 s），输入提前到 7.2 s，「我在撒谎。」提前到完成后 2.4 s，静场 14.7 s。
+//     全章合计因此到 200.9 s（§4.6 的 +14.8%），2-3 取餐从 8 s 缩到 7.3 s 腾出时间（「补偿」那句仍完整显示）。
+//   · 2-4 @50「油汁沿着盘沿流下来，滴在我的校服领口上，」「像一枚温热的印章。」（原文一句，两行显示）。
 //   · 为了让全章合计不超过 §4.6 的 +15%：2-2 从 150 拍缩到 136 拍（第三道人墙 @124 之后只留两行），2-8 从 96 拍缩到 86 拍。
 //   · 2-2 加了一个走动的腿（@46 右道，1.2 m/s，约 @62 被追上），对应表中的「走动的腿」。人墙 2 前面 @95 那一行只挡左道：
 //     @94 中道合上、右道打开时，中道的玩家往右换一次道就进了缝。
@@ -98,14 +104,14 @@ export default {
     },
     /* 2-3 取餐：扶着窗台站起来（静场） */
     {
-      id: '2-3', kind: 'still', set: 'counter', variant: 'default', atmosphere: 'noon', duration: 8,
+      id: '2-3', kind: 'still', set: 'counter', variant: 'default', atmosphere: 'noon', duration: 7.3,
       follower: { mode: 'absent' },
       events: [
         { at: 0.0, type: 'camera', shot: 'counter', seconds: 0 },
-        { at: 0.3, type: 'actor', clip: 'counterStand', seconds: 7.5 },
+        { at: 0.3, type: 'actor', clip: 'counterStand', seconds: 7.0 },                // 撑到静场结束（7.3 s）
         { at: 0.3, type: 'text', line: 'c2.counter', id: 'counterStand' },
         { at: 3.0, type: 'text', line: 'c2.eatMore', style: 'other', speaker: 'lunchLady' },
-        { at: 5.2, type: 'text', line: 'c2.compensate' },
+        { at: 5.0, type: 'text', line: 'c2.compensate' },                               // 显示到 7.24 s
       ],
     },
     /* 2-4 端盘：撑跃禁用，只有横档、挡道和走动的腿（R11：没有低矮） */
@@ -133,7 +139,7 @@ export default {
       events: [
         { at: 2, type: 'hint', hint: 'tray' },
         { at: 50, type: 'sfx', sfx: 'soupSpill' },
-        { at: 50, type: 'text', line: 'c2.collar', id: 'trayCollar' },
+        { at: 50, type: 'text', line: ['c2.drip', 'c2.collar'], id: 'trayCollar' },     // 原文一句，两行显示
       ],
     },
     /* 2-5 窗边：玻璃里的它坐在椅子上；第三只手贴玻璃，掌心发烫（静场） */
@@ -187,14 +193,16 @@ export default {
       follower: { mode: 'absent' },
       rows: [
         [10, ['.', 'pipe', '.']],                    // 地面管线
-        [16, ['cart', '.', '.']],                    // 器材推车
-        [22, ['.', '.', 'locker']],
-        [28, ['mopAcross', '.', '.']],               // 横放的拖把
-        [34, ['.', '.', 'books']],
+        [16, ['cart', 'pipe', '.']],                 // 器材推车
+        [22, ['.', 'locker', 'locker']],
+        [28, ['mopAcross', '.', 'mopAcross']],       // 横放的拖把（本章第一次出现，这一行只有它：R7）
+        [34, ['.', 'books', 'books']],
         [37, ['.', '.', 'cart']],
-        [41, ['books', '.', '.']],
-        [46, ['.', '.', 'locker']],
-        [74, ['pipe', '.', '.']],
+        [41, ['books', 'locker', '.']],
+        [46, ['locker', '.', 'locker']],
+        [68, ['.', 'cart', '.']],
+        [74, ['pipe', 'pipe', '.']],
+        [78, ['.', '.', 'cart']],                    // 停拍（@82）之前最后一个动作
         [108, ['mopAcross', 'locker', '.']],         // 检查点、两句文字之后才开始加密
         [111, ['mopAcross', '.', '.']],
         [115, ['mopAcross', 'mopAcross', '.']],
@@ -227,16 +235,16 @@ export default {
       follower: { mode: 'behind' },
       rows: [
         [11, ['.', 'pipe', '.']],
-        [17, ['cart', '.', '.']],
+        [17, ['cart', '.', 'pipe']],
         [20, ['pipe', 'pipe', '.']],
         [30, 'HHH', 0.8],                            // 实验台：伏低（台面进深 0.8 m）
-        [34, ['pipe', 'cart', '.']],
+        [34, ['.', 'cart', 'pipe']],
         [38, ['pipe', 'locker', '.']],
-        [42, ['locker', 'pipe', '.']],
+        [42, ['locker', '.', 'cart']],
         [52, 'HHH', 0.8],
         [56, ['pipe', '.', '.']],
-        [60, ['.', '.', 'pipe']],
-        [64, ['cart', '.', '.']],
+        [60, ['.', 'pipe', 'pipe']],
+        [64, ['cart', '.', 'locker']],
         [74, 'HHH', 0.8],
         [78, ['.', 'cart', '.']],
         [82, ['pipe', '.', '.']],
@@ -250,7 +258,7 @@ export default {
     },
     /* 2-9 你后面：纸条背面有字；影子多了一只手；黑板上的问题（静场） */
     {
-      id: '2-9', kind: 'still', set: 'labBoard', variant: 'default', atmosphere: 'labNorth', duration: 13,
+      id: '2-9', kind: 'still', set: 'labBoard', variant: 'default', atmosphere: 'labNorth', duration: 14.7,
       follower: { mode: 'absent' },
       events: [
         { at: 0.0, type: 'camera', shot: 'labBoard', seconds: 0 },
@@ -258,17 +266,20 @@ export default {
         { at: 0.2, type: 'noteOpen', note: 'n1-desk', id: 'noteBehind' },
         { at: 0.2, type: 'sfx', sfx: 'paper' },
         { at: 0.4, type: 'text', line: 'c2.blank' },
+        { at: 1.8, type: 'text', line: 'c2.blankWorse' },
         { at: 4.4, type: 'shadow', mode: 'pointBack', seconds: 8 },                     // 多了一只手，从胸口伸出来指向身后
         { at: 4.4, type: 'text', line: 'c2.extraHand', id: 'threeHands' },
         { at: 5.2, type: 'camera', shot: 'turnBack', seconds: 0.8 },
         { at: 6.0, type: 'board', surface: 'labBoard', op: 'write', line: 'c2.whyNotStand', tremble: true, id: 'boardQuestion' },
       ],
-      input: { at: 7.4, hint: 'wipe', mode: 'hold', holdSeconds: 1.2, timeout: 5, onDone: [
+      input: { at: 7.2, hint: 'wipe', mode: 'hold', holdSeconds: 1.2, timeout: 5, onDone: [
         { at: 0.0, type: 'board', surface: 'labBoard', op: 'wipe', byPlayer: true },
         { at: 0.2, type: 'actor', clip: 'writeBoard', seconds: 1.6 },
         { at: 0.4, type: 'sfx', sfx: 'chalk' },
         { at: 0.8, type: 'board', surface: 'labBoard', op: 'write', line: 'c2.cantStand', byPlayer: true, id: 'boardAnswer' },
-        { at: 3.0, type: 'text', line: 'c2.lying' },
+        { at: 2.4, type: 'text', line: 'c2.lying' },
+        { at: 3.7, type: 'text', line: 'c2.notBody' },
+        { at: 5.0, type: 'text', line: 'c2.whereTo' },                                  // 显示到完成后 7.42 s：输入 7.2 + 7.5 = 14.7 s（R13 ≤ 15 s）
       ] },
     },
     /* 2-10 碎角镜：影子指路；掌心贴掌心；第三只手穿过玻璃；脚步声从前方传来 */
@@ -277,14 +288,21 @@ export default {
       beats: 140, stride: 1.0, cadence: 4.6,
       follower: { mode: 'behind' },
       surfaces: [{ id: 'chipMirror', kind: 'endMirror', side: 'end', from: 140, to: 140, y: [0.1, 1.9], chipped: true, backdrop: 'darkRoom' }],
-      // 减速的叙事收束（§2.8）：只有 @10 一个障碍、@16 左道的纸条，其余都是只占边道的被动行，待在中道不用动
+      // 减速的叙事收束（§2.8）：每 12–16 拍一个轻的强制动作（避开 @56 影子、@114 替身的 R6 休息窗），
+      // 求解器最少输入 ≤ 0.5 次 / 10 拍，低于本章高潮 2-8；@16 左道的纸条
       rows: [
-        [10, ['.', 'pipe', '.']],                    // 「@10 一个障碍」：地面管线
+        [10, ['.', 'pipe', '.']],                    // 地面管线
+        [26, ['.', 'cart', '.']],
         [30, ['locker', '.', '.']],
+        [42, ['pipe', '.', 'pipe']],
         [46, ['.', '.', 'cart']],
+        [70, ['.', 'locker', '.']],
         [78, ['.', '.', 'locker']],
+        [88, ['pipe', '.', '.']],
         [96, ['cart', '.', '.']],
+        [104, ['.', 'pipe', '.']],
         [124, ['.', '.', 'locker']],
+        [130, ['pipe', 'pipe', '.']],                // 停拍前最后一个动作：之后到停拍结束不超过 12 s
       ],
       notes: [{ at: 16, lane: -1, note: 'n2-b' }],
       events: [

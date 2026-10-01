@@ -4,6 +4,7 @@
 //   · tests/unit/content/**：lintContent({ chapters, sources: SOURCE_CHAPTERS })，零 error。
 //   · WP8：lintStrings(STR) 等（附录 B.8 同时作用于 ui/strings.ts；键名 Q、E、Enter 例外）。
 //   · WP1 的 scripts/validate-levels.ts：同上调用 lintContent，与校验器一起报告（见 docs/contract-requests/WP2.md）。
+//   · 给了原文时，lintContent 另查附录 A-8 的拼接（lintSplices）：一个文字事件里的多行连起来必须是原文的连续片段。
 import { LIMITS, TEXT } from '../core/constants';
 import type { SetId } from '../core/types';
 import { compile } from './compile';
@@ -210,6 +211,32 @@ export function lintChapter(def: ChapterDef): LintIssue[] {
   return out;
 }
 
+/**
+ * 附录 A-8「节选必须是原文的连续片段」：一个文字事件里的多行（以及两行的开场卡）按顺序连起来，必须是某一章原文的连续子串。
+ * 每行各自是原文还不够——把不相邻的两句拼成一句（3-6 曾经的「它在所有能反光的地方，」+「在所有我本该站起来……」，
+ * 中间删掉了「在所有我看见自己的地方，」）同样是自创。原文由调用方传入（与 lintLines 相同，lint.ts 不 import 原文）。
+ * 分在两个文字事件里、在屏幕上滚动接续的两句不受此限（字幕队列最多两行，新行把旧行往上推）。
+ */
+export function lintSplices(def: ChapterDef, sources: SourceTexts, lines: Readonly<Record<string, LineEntry>> = LINES): LintIssue[] {
+  const out: LintIssue[] = [];
+  const check = (ids: readonly string[], where: string) => {
+    if (ids.length < 2) return;
+    const es = ids.map((id) => lines[id]);
+    if (es.some((e) => !e)) return;                       // 未知 id 由 lintChapter 报
+    const texts = es.map((e) => (e as LineEntry).t);
+    const joined = texts.join('');
+    const chs = ([1, 2, 3, 4, 5] as const).filter((c) => sources[c] !== undefined);
+    if (!chs.length) return;
+    if (chs.some((c) => (sources[c] as string).includes(joined))) return;
+    out.push({ level: 'error', rule: 'A-8-splice', where, msg: `「${texts.join('｜')}」 are shown as one sentence but are not contiguous in the source (A-8: excerpts must be continuous)` });
+  };
+  if (def.card.length > 1) check(def.card, `${def.id} card`);
+  for (const sd of def.segments) {
+    for (const e of segmentEvents(sd)) if (e.type === 'text' && Array.isArray(e.line)) check(e.line as readonly string[], `${def.id} ${sd.id}${e.at !== undefined ? ` @${e.at}` : ''}`);
+  }
+  return out;
+}
+
 /** 全部内容：lines.ts（含原文比对）+ 各章 + 跨章规则（纸条 id 唯一、noteOpen 引用存在、没有孤立的台词）。 */
 export function lintContent(o: { chapters: readonly ChapterDef[]; sources?: SourceTexts; lines?: Readonly<Record<string, LineEntry>> }): LintIssue[] {
   const lines = o.lines ?? (LINES as Readonly<Record<string, LineEntry>>);
@@ -219,6 +246,7 @@ export function lintContent(o: { chapters: readonly ChapterDef[]; sources?: Sour
   for (const id of Object.keys(lines)) if (id.startsWith('fail.')) used.add(id);
   for (const def of o.chapters) {
     out.push(...lintChapter(def));
+    if (o.sources) out.push(...lintSplices(def, o.sources, lines));
     for (const n of def.notes) {
       if (allNotes.has(n.id)) out.push({ level: 'error', rule: 'notes', where: `${def.id} ${n.id}`, msg: `note id also defined in ${allNotes.get(n.id)}` });
       allNotes.set(n.id, def.id);

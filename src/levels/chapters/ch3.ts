@@ -7,13 +7,28 @@
 //     组合 doubleMod 的播放顺序约定见 docs/contract-requests/WP2.md。
 //   · 3-4 静音段 hush 写 18 拍（表中 16 拍）。hush 按触发时的步频换成秒，而停拍之后要从 0 加速：写 16 拍在 Sim 里只静到
 //     @127.5，正好是 @127 那一行的接触时刻；18 拍静到 @129.5，盖住表中「停拍之后 16 拍」的范围，三个必需动作都在里面。
-//   · 3-2「我们之间隔着半层楼梯，像隔着一层很薄的玻璃。」在 @22（表中 @24）：22 个字要显示 2.78 s，从 @24 开始会超出段末 0.1 s。
+//   · 3-2「我们之间隔着半层楼梯，像隔着一层很薄的玻璃。」在 @21（表中 @24）：22 个字要显示 2.78 s，要在段末之前显示完。
+//   · 3-2 步频 3.0 → 3.6（评审修复 U1）：步幅 0.6 m、滞空上限 0.72 s 时，3.0 掌/s（1.8 m/s）下 @27 的拖把桶（0.35 m）任何起跳时刻
+//     都跳不过，@9 的书包单车道撑跃窗口只有约 ±40 ms（§2.4 承诺约 ±113 ms）。现在 @9 是一摞书（3.6 掌/s 下窗口约 0.18 s），
+//     @27 是横放在台阶上的拖把（mopAcross，横档，伏低）。仍是全作最慢的跑段（2.16 m/s），数数、三句文字的 R5 都成立。
+//   · 3-6 是本章技巧高潮（§2.8 / §4.3）：每个乐句都有一个中道部件，求解器最少输入 1.0 次 / 10 拍，高于 3-4 的 0.95。
+//     表中 3-6 @106「它不在我身后。」挪到 3-6 最后一排之后（@145），@112「它在所有能反光的地方，」「在所有我本该站起来……」挪到 3-7：
+//     原文这一段就在「我家小区的门卫室里亮着灯」之前，并且补上被删掉的中间一句「在所有我看见自己的地方，」（附录 A-8，lint 的
+//     A-8-splice 检查一个文字事件里的多行必须在原文里连续）。腾出来的 3-6 @104–@117 补了两个乐句。
+//     3-7 从 36 拍加长到 46 拍，栏杆 @18 → @22：@3 两行、@16「在所有我本该站起来却没有站起来的地方。」（各自显示完或接近显示完），
+//     R5 窗口之后才伏低钻栏杆，@29 再出「栏杆的红光在我身上扫了一下，」「像一道浅浅的伤口。」（原文一句，两行显示）。
+//     WP4 的 compound kit 在栏杆之前只画门卫室（栏杆前 1.6–5.2 m），住宅楼、灌木、路灯都从栏杆之后才开始，所以栏杆不能再往后挪：
+//     评审时挪到 @38，3-7 开头约 6 s 都是黑的。现在从段首（@2 截图）就能看见门卫室亮着的灯和栏杆，「它在所有能反光的地方」时它在画面里。
+//   · 3-4 @40「铁皮顶棚会在下雨时发出很响的声音，」「把我的脚步声盖住。」（原文一句，两行）→ @58「但今天它没有盖。」（表中 @44 只有后一句，
+//     没有前文，读不出「盖」指什么；@58 是前两行显示完之后，R5 窗口在 @55.4 的伏低之后）。
+//   · 结尾卡在「它们在练习。」之前加原文「然后我的右脚动了。」（代替 fidelity 提的 3-11 静场：那会让非跑动超出 R13 的 25%）。
+//   · 3-1 加一个 npc 组 'monitor'（班长同向走，和 @4 的脚步声 pan −0.4 同侧），WP6 的 specials 按组 id 认出来；她很快被超过，「渐远」只靠脚步声。
 import type { ChapterDef } from '../schema';
 
 export default {
   id: 'ch3', title: '第三章', name: '雨夜', seed: 1703,
   card: ['c3.card'],
-  outro: { lines: [{ line: 'c3.out1' }, { line: 'c3.out2' }, { line: 'c3.out3' }] },
+  outro: { lines: [{ line: 'c3.rightFootMoved' }, { line: 'c3.out1' }, { line: 'c3.out2' }, { line: 'c3.out3' }] },
   notes: [
     { id: 'n3-a', face: 'blank', front: null, back: null, folded: false, pickup: true },
     { id: 'n3-b', face: 'blank', front: null, back: null, folded: false, pickup: true },   // 被雨泡过，纸面发皱
@@ -28,6 +43,9 @@ export default {
       id: '3-1', kind: 'run', kit: 'corridor', variant: 'night', atmosphere: 'nightIndoor', surface: 'terrazzo',
       beats: 110, stride: 1.0, cadence: [4.8, 5.2],
       follower: { mode: 'absent', steady: 3 },
+      // 班长：一个人抱着作业本同向走（WP6 specials 按组 id 'monitor' 认出来）；和 @4 的脚步声 monitorSteps（pan −0.4）在同一侧。
+      // 她走 1.35 m/s、玩家 4.8 m/s，约 0.6 s 就被超过：「渐远」现在只靠脚步声，画面上要 WP6 改她的走法（见 U1 报告）
+      npcs: [{ id: 'monitor', kind: 'walkers', from: 2, to: 2, side: 'L', density: 1, gaze: 'none' }],
       rows: [
         [12, ['.', '.', 'bag']],                     // 书包
         [22, ['.', 'mopBucket', '.']],              // 拖把桶
@@ -74,17 +92,17 @@ export default {
     /* 3-2 数台阶：一、二、三、四；它的数字晚一个出现 */
     {
       id: '3-2', kind: 'run', kit: 'stairs', variant: 'nightDown', atmosphere: 'nightIndoor', surface: 'concrete',
-      beats: 32, stride: 0.6, cadence: 3.0, stairs: { dir: 'down', risePerBeat: 0.15 },
+      beats: 32, stride: 0.6, cadence: 3.6, stairs: { dir: 'down', risePerBeat: 0.15 },
       follower: { mode: 'behind', lagOverride: 1 },                    // 「但比我慢一拍」
       rows: [
-        [9, ['.', 'bag', '.']],                      // 书包
-        [27, ['.', '.', 'mopBucket']],               // 拖把
+        [9, ['.', 'books', '.']],                    // 一摞书（3.6 掌/s 下单车道撑跃窗口约 0.18 s；书包只有 0.15 s）
+        [27, ['.', '.', 'mopAcross']],               // 横放在台阶上的拖把（横档，伏低）：拖把桶 0.35 m 在楼梯的步速下撑跃根本跳不过
       ],
       events: [
         { at: 4, type: 'count', from: 1, to: 4, ghostLag: 1, id: 'stairsCount' },
         { at: 12, type: 'text', line: 'c3.countingToo' },
         { at: 16, type: 'text', line: 'c3.oneBeatLate', id: 'oneBeatLate' },
-        { at: 22, type: 'text', line: 'c3.halfFlight' },
+        { at: 21, type: 'text', line: 'c3.halfFlight' },
       ],
     },
     /* 3-3 校门：周主任和烟头；两道校门横档；下雨了 */
@@ -174,7 +192,8 @@ export default {
       events: [
         { at: 4, type: 'text', line: 'c3.goldPieces' },
         { at: 40, type: 'ambience', amb: 'shedRoof', level: 1, seconds: 1.5 },          // 车棚：铁皮顶雨声很响
-        { at: 44, type: 'text', line: 'c3.notCovered' },
+        { at: 40, type: 'text', line: ['c3.shedRoof', 'c3.coverSteps'] },             // 原文一句，两行显示
+        { at: 58, type: 'text', line: 'c3.notCovered' },                                // 前两行（26 字，3.14 s）显示完之后；R5 窗口在 @55.4 的伏低之后
         { at: 80, type: 'ambience', amb: 'rainStreet', level: 1, seconds: 1.5 },
         { at: 112, type: 'stop', seconds: 6, timeline: [
           { at: 0.0, type: 'camera', shot: 'puddleDown', seconds: 1.0 },
@@ -216,21 +235,23 @@ export default {
       id: '3-6', kind: 'run', kit: 'street', variant: 'shopStreet', atmosphere: 'rainNight', surface: 'asphaltWet',
       beats: 150, stride: 1.1, cadence: [5.4, 5.8], checkpoints: [76],
       follower: { mode: 'pressure', steady: 2 },
+      // 每个乐句都要有一个中道的部件（只占边道的行对中道的玩家是被动的）；后半段「它不在我身后。」那几句挪到 3-7 之后，
+      // @104 起再补几个乐句（见文件头）
       rows: [
         [13, ['.', '.', 'shutterHalf']],
         [16, ['scooter', '.', '.']],
-        [20, ['curb', 'bin', '.']],
+        [20, ['curb', 'bin', 'curb']],
         [23, ['shutterHalf', '.', 'bin']],
-        [27, ['.', '.', 'scooter']],
-        [33, ['.', '.', 'puddle']],
+        [27, ['.', 'bin', 'scooter']],
+        [33, ['.', 'curb', 'puddle']],
         [37, ['curb', '.', 'curb']],
         [41, ['curb', 'curb', '.']],
-        [44, ['.', '.', 'bin']],
+        [44, ['.', 'bin', 'bin']],
         [48, ['.', 'curb', 'curb']],
         [51, ['shutterHalf', 'curb', '.']],
         [55, ['scooter', '.', 'scooter']],
         [58, ['shutterHalf', '.', 'bin']],
-        [62, ['shutterHalf', '.', '.']],
+        [62, ['shutterHalf', 'curb', '.']],
         [67, ['.', 'puddle', '.']],
         [72, ['curb', 'bin', '.']],
         [84, ['.', '.', 'curb']],
@@ -238,17 +259,17 @@ export default {
         [92, ['shutterHalf', '.', '.']],
         [96, ['.', '.', 'shutterHalf']],
         [100, ['.', '.', 'shutterHalf']],
-        [104, ['.', '.', 'bin']],
-        [108, ['bin', '.', '.']],
-        [112, ['curb', '.', '.']],
+        [108, ['.', 'curb', 'bin']],
+        [112, ['bin', '.', 'shutterHalf']],
+        [115, ['curb', 'shutterHalf', '.']],
         [118, ['shutterHalf', 'curb', '.']],
         [121, ['curb', 'bin', '.']],
         [125, ['shutterHalf', '.', '.']],
-        [128, ['.', '.', 'bin']],
+        [128, ['.', 'curb', 'bin']],
         [132, ['shutterHalf', '.', 'curb']],
         [135, ['shutterHalf', 'curb', '.']],
         [139, ['shutterHalf', '.', 'bin']],
-        [142, ['curb', '.', '.']],
+        [142, ['curb', 'curb', 'bin']],
       ],
       windows: [{ id: 'lookUseless', from: 86, to: 94, type: 'lookBack', gain: 0 }],
       notes: [{ at: 40, lane: -1, note: 'n3-c' }],
@@ -257,20 +278,24 @@ export default {
         { at: 64, type: 'text', line: 'c3.fingersDown', id: 'graffitiHand' },
         { at: 84, type: 'hint', hint: 'look' },
         { at: 100, type: 'text', line: 'c3.useless', id: 'uselessLookBack' },
-        { at: 106, type: 'text', line: 'c3.notBehind' },
-        { at: 112, type: 'text', line: ['c3.reflective', 'c3.shouldStand'], id: 'reflectiveEverywhere' },
+        // 原文紧接「我已经知道回头没用。」：最后一排（@142）之后、卷帘门和水洼还在两边的时候出字
+        { at: 145, type: 'text', line: 'c3.notBehind' },
       ],
     },
-    /* 3-7 小区：电子栏杆的红光像一道浅浅的伤口 */
+    /* 3-7 小区：它在所有能反光的地方；门卫室亮着灯；电子栏杆的红光像一道浅浅的伤口 */
     {
       id: '3-7', kind: 'run', kit: 'street', variant: 'compound', atmosphere: 'rainNight', surface: 'asphaltWet',
-      beats: 36, stride: 1.0, cadence: 5.0,
+      beats: 46, stride: 1.0, cadence: 5.0,
       follower: { mode: 'behind' },                                                      // 上限回到 3
       rows: [
-        [18, 'HHH'],                                 // 电子栏杆横跨三道，红光扫过
+        [22, 'HHH'],                                 // 电子栏杆横跨三道，红光扫过（门卫室在栏杆前 1.6–5.2 m）
       ],
       events: [
-        { at: 24, type: 'text', line: 'c3.wound', id: 'barrierWound' },
+        // 原文（第三章）这一段在「我已经知道回头没用。它不在我身后。」（3-6 末尾）之后、「我家小区的门卫室里亮着灯」之前，按原文顺序。
+        // compound kit 在栏杆之前只画门卫室，所以栏杆尽量靠前：文字从 @3 起，「它不在我身后。」（3-6 @145，1.43 s）显示完再滚上来
+        { at: 3, type: 'text', line: ['c3.reflective', 'c3.seeSelf'], id: 'reflectiveEverywhere' },
+        { at: 16, type: 'text', line: 'c3.shouldStand' },                               // 接在「在所有我看见自己的地方，」下面滚上来（前两行显示 2.6 s）
+        { at: 29, type: 'text', line: ['c3.redLight', 'c3.wound'], id: 'barrierWound' },   // 钻过栏杆之后；上一句显示完
       ],
     },
     /* 3-8 楼道：全黑；声控灯（撑跃落地或 ↓ 拍地） */

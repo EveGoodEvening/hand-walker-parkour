@@ -2,6 +2,18 @@
 // 反转章：唯一「爽」的一段被放在梦里，然后马上翻转。本章没有纸条（梦里的手掌「太干净了」）。
 // 台词全部来自 lines.ts（原文逐字）；原文混入英文的两句（附录 B.8）不引用。只 import schema（§8.2 规则 2）。
 // 结尾卡可交互：卧室天花板的裂缝 → 「羡慕和歧视……」→ ↓ ↓ ↓（超时 6 s 自动）→「它不像鼓掌。」「像某种练习。」
+// 评审修复 U1（lead 裁定，偏离 §2.3 / §2.8 / §4.4 的地方，建议 lead 写进 §10.3）：
+//   · 4-5 照原文「我开始跑。很慢，很慢。但比站着好。」（lead 裁定，澄清版）：步幅 1.2 m（lead 批准：为了撑跃窗口 ≥ 0.16 s），
+//     步频 4.2 → 5.4 掌/s 在段内渐变（5.0 → 6.5 m/s，远低于 4-1 的 9.6 m/s）。步幅不取 1.1：跪着的人（0.35 m 高、0.6 m 进深）
+//     的单车道撑跃窗口约 0.94 拍，1.1 m 要跑到约 6.5 m/s 就得 5.9 掌/s，窗口只剩约 0.16 s；1.2 m 时约 1.02 拍，5.4 掌/s 仍有约 0.19 s。
+//     @210 的 cadence 事件把剩下的渐变在 30 拍里走完（5.1 → 5.4，斜率约为段内渐变的两倍，不是可感知的换挡；5-3 @140
+//     「我开始跑。」8 拍 5.0 → 5.8 仍是全作唯一一次换挡），@240 起稳定在 5.4 掌/s，@272「我们终于跑成了一样的速度。」时已经同拍约 6 s。
+//     段首补「很慢，很慢。」「但比站着好。」
+//     （两行一个事件），「身后的脚步声跟着我了。」「但它不是追上来的。」顺延到 @9、@18。技巧高潮靠必需动作的密度和同拍考试，
+//     不靠速度：@96、@103、@160、@167 补了中道部件，求解器最少输入 0.82 次 / 10 拍（4-1 是 0.68）。两个同向爬行的人
+//     按新的时间轴重新摆放（@54、@95.2），仍在约 @123、@207 被追上（都在 @210 的 cadence 事件之前，编译段的 timeAt 精确）。
+//   · 4-5 @210 那一行只占边道：第一个必需动作（@213 伏低）落在「我跑过那面镜子，没有看。」消失之后。
+//   · 4-1 @36–@116 每 8 拍左右一道人墙只留一条缝（§4.4「你在人群之间回旋」），求解器最少输入 0.68 次 / 10 拍（§2.8 的 1.0 是上限）。
 import type { ChapterDef } from '../schema';
 
 export default {
@@ -26,18 +38,18 @@ export default {
       beats: 190, stride: 1.5, cadence: [6.2, 6.4],
       follower: { mode: 'absent', steady: 3 },
       npcs: [{ id: 'onlookers', kind: 'onlookerRing', from: 0, to: 190, side: 'both', density: 0.8, gaze: 'turnShoes' }],
+      // 在人群之间回旋（§4.4）：@36–@116 每 8 拍左右一道人墙只留一条缝，缝在三条车道之间来回换（9.6 m/s 下 1.25 s 一次）
       rows: [
         [24, ['.', '.', 'legs']],                    // 围观的腿
-        [36, ['legs', '.', '.']],
-        [42, ['legs', '.', '.']],
-        [60, ['legs', '.', '.']],
-        [66, ['legs', '.', '.']],
-        [72, ['legs', '.', '.']],
-        [78, ['legs', '.', '.']],
-        [96, ['legs', '.', 'legs']],
-        [102, ['legs', '.', '.']],
+        [36, ['.', 'legs', 'legs']],
+        [44, ['legs', '.', 'legs']],
+        [58, ['legs', 'legs', '.']],
+        [66, ['legs', '.', 'legs']],
+        [74, ['.', 'legs', 'legs']],
+        [92, ['legs', '.', 'legs']],
+        [100, ['legs', 'legs', '.']],
         [108, ['legs', '.', 'legs']],
-        [114, ['.', '.', 'legs']],
+        [116, ['.', 'legs', '.']],
         [124, ['.', 'kneeler', '.']],               // 第一批跪着模仿的人
         [135, ['legs', '.', '.']],
         [140, ['.', 'legs', '.']],
@@ -147,7 +159,7 @@ export default {
     /* 4-5 同一个速度：本章技巧高潮，同拍考试；雾从 60 m 收到 28 m */
     {
       id: '4-5', kind: 'run', kit: 'plaza', variant: 'gray', atmosphere: 'dreamGray', surface: 'plaza',
-      beats: 280, stride: 1.3, cadence: [5.4, 6.0], checkpoints: [144],
+      beats: 280, stride: 1.2, cadence: [4.2, 5.4], checkpoints: [144],
       follower: { mode: 'synced', steady: 3 },
       npcs: [
         { id: 'ring5', kind: 'onlookerRing', from: 0, to: 250, side: 'both', density: 0.5, gaze: 'none' },
@@ -169,9 +181,9 @@ export default {
         [86, ['reach', '.', 'legs']],
         [89, ['reach', 'kneeler', '.']],
         [93, ['kneeler', '.', '.']],
-        [96, ['kneeler', '.', '.']],
+        [96, ['kneeler', 'reach', '.']],
         [100, ['kneeler', '.', '.']],
-        [103, ['.', '.', 'legs']],
+        [103, ['.', 'kneeler', 'legs']],
         [107, ['legs', '.', '.']],
         [110, ['legs', '.', '.']],
         [128, ['kneeler', 'kneeler', '.']],
@@ -179,10 +191,10 @@ export default {
         [135, ['kneeler', 'legs', '.']],
         [138, ['.', '.', 'legs']],
         [156, ['.', '.', 'legs']],
-        [160, ['legs', '.', '.']],
+        [160, ['legs', 'kneeler', '.']],
         [163, ['.', '.', 'kneeler']],
-        [167, ['.', '.', 'legs']],
-        [210, ['kneeler', 'legs', '.']],
+        [167, ['.', 'reach', 'legs']],
+        [210, ['kneeler', '.', '.']],                // 只占边道：第一个必需动作（@213 伏低）在「我跑过那面镜子，没有看。」消失之后
         [213, ['kneeler', 'reach', '.']],
         [217, ['.', 'legs', 'reach']],
         [220, ['legs', '.', 'kneeler']],
@@ -209,17 +221,21 @@ export default {
         { at: 37, lane: 1, kind: 'legs', len: 14 },
         { at: 173, lane: -1, kind: 'legs', len: 14 },
         { at: 173, lane: 1, kind: 'legs', len: 14 },
-        { at: 72, lane: 1, kind: 'crawler', behavior: { type: 'walk', speed: 3.0 } },                       // 爬行的人：约 @123 追上
-        { at: 122, lane: -1, kind: 'crawler', behavior: { type: 'walk', speed: 3.0 } },                     // 约 @207 追上（镜子在右侧）
+        { at: 54, lane: 1, kind: 'crawler', behavior: { type: 'walk', speed: 3.0 } },                       // 爬行的人：约 @123 追上
+        { at: 95.2, lane: -1, kind: 'crawler', behavior: { type: 'walk', speed: 3.0 } },                    // 约 @207 追上（镜子在右侧）
       ],
       events: [
         { at: 0, type: 'ambience', amb: 'dream', level: 1, seconds: 1.5 },
         { at: 0, type: 'fog', near: 20, far: 28, seconds: 45 },                         // 越来越深的灰
-        { at: 8, type: 'text', line: 'c4.follows' },
-        { at: 16, type: 'text', line: 'c4.notChasing' },
+        { at: 0, type: 'text', line: ['c4.slow', 'c4.better'] },                         // 「我开始跑。很慢，很慢。但比站着好。」
+        { at: 9, type: 'text', line: 'c4.follows' },
+        { at: 18, type: 'text', line: 'c4.notChasing' },
         { at: 120, type: 'text', line: 'c4.sameSpeed' },
         { at: 190, type: 'double', spec: { id: 'plazaMe', surface: 'plazaMirror', source: 'script', clip: 'standIdle', ttl: 5 } },   // 镜中站着的「我」一动不动
         { at: 200, type: 'text', line: 'c4.passMirror', id: 'passMirror' },
+        // 渐变提前走完：@240 起稳定同拍。只是把已有的渐变收尾（30 拍 5.1 → 5.4），不是可感知的换挡；
+        // 5-3 @140「我开始跑。」（8 拍 5.0 → 5.8）仍是全作唯一一次换挡（§4.5）
+        { at: 210, type: 'cadence', to: 5.4, beats: 30 },
         { at: 272, type: 'text', line: 'c4.inSync', id: 'inSync' },
       ],
     },

@@ -6,13 +6,25 @@
 //     none、上限 3，玩家在 @44 之前感觉不到任何差别；这样 @44、@52 不会被 R6 当作另外两次「跟随者登场」。
 //   · 5-6 站着的「我」是一个 double（从走廊尽头迎面走来、避开你的车道）加**一个** doubleMod（在 5 m 处停下、指镜子、
 //     第三只手摸脖子）；手势 hold 结束后它自己继续走过你身边（约定见 docs/contract-requests/WP2.md）。
-//   · 停拍、静场略短于表格（5-1 7.5 s、5-3 停拍 2.0 s、5-5 8 s），让非跑动占比 ≤ 25%。5-8 取 13 s（表中 ≤ 15 s）：
-//     起身后每 0.9 s 一步，第 7 步之后 +3.0 s 的「不是。是它们在练习。」也要显示完（等输入的时间不计入 duration）。
-//   · 5-11 门牌「高二（7）班」在 @215（表中 @200–212）。@208 翻转时它还在玩家前方 7.7 m，横屏时离镜头 10 m，竖屏 11.5 m，
-//     翻转之后以反字经过画面。玩家在最远的右道时，横屏约 1.2 s 后出画，竖屏约 0.85 s。如果放在 @206，翻转时它已经在镜头旁边，
-//     反字根本看不见。tests/unit/content/chapters.test.ts 的「5-11 门牌」检查。
-//   · 5-11 翻转之后是减速的收束：@208–@218 不放障碍，之后每 8–12 拍一行。全段 1.32 行 / 10 拍，低于高潮 5-3 的 1.36
-//     （§2.8 表中 5-11 是「2.0」、5-3 是「2.0 → 3.0」）。
+//   · 停拍、静场略短于表格（5-1 6.4 s、5-3 停拍 2.0 s、5-5 8 s），让非跑动占比 ≤ 25%。5-8 取 13 s（表中 ≤ 15 s）：
+//     起身后每 0.9 s 一步，第 7 步之后 +3.0 s 的「不是。是它们在练习。」、+4.4 s 的「我失败了。」也要显示完（等输入的时间不计入 duration）。
+//   · 5-11 门牌「高二（7）班」挂在 @214、y 1.3–1.6 m（表中 @200–212；评审修复 U1 之前是 @215、y 1.9–2.1）。@208 翻转时它在横屏镜头前
+//     约 9 m，翻转后约 1 s 内从 4–6 m 处以反字经过 0.92 m 机位的视线带；放在 @206 的话翻转时它已经在镜头旁边，反字根本看不见。
+//     tests/unit/content/chapters.test.ts 的「5-11 门牌」检查。门牌的尺寸和自发光由 WP3 的 shell.ts 负责。
+//   · 5-11 翻转之后是减速的收束：@208–@218 不放障碍，之后每 8–12 拍一行。§2.8 的「必需动作密度」按求解器的最少输入次数算
+//     （只占边道的行对中道的玩家是被动的，行密度只是上限）：5-11 0.46 次 / 10 拍，低于高潮 5-3 的 0.55。
+//   · 评审修复 U1：
+//     - 腿偏移有代价：5-4 两次偏移之后约 1 s，被迫换进的左道上有一只拖把桶（原来中道 @44 的拖把桶删掉），不掰正就得多跳一次；
+//       5-11 @90 偏移之后左道 @96 一个书包。R9 只禁止 block。
+//     - 5-6 两侧人墙只封边道，中道的玩家原来 24 s 不用按键：@30、@100 伸进中缝的脚（静止，「只是习惯」），@46 书包，@106 再一道人墙。
+//     - 5-3 @185 中道的垃圾桶换成路沿（不挡下一排），@192 的路桩挪到 @194，@206 的路桩挪到左道；@199 中道补一道路沿，
+//       求解器最少输入仍是 13 次（5-3 不削弱）。
+//     - 5-11 @150「我要找到那个还在爬行的影子，」「那个和我一模一样、在我前面、」→ @168「用掌根指节指腹敲出节奏的影子。」：以前两行之间
+//       删掉了中间一句（附录 A-8）。@168 是前两行（28 字，3.32 s）显示完的时刻，不再把它们提前挤掉。删掉 @8–@12 三个互相覆盖、此前都教过的提示。
+//     - 5-9 纸条显示 4.8 s，「像有人刚刚坐过。」挪到纸条收起之后；静场开头接 5-8 的「我失败了。」补原文下一句「或者说，我的身体成功了七步，
+//       然后把我摔在地上。」，5-9 因此 14.3 s。
+//     - 5-7 加 npc 组 'teacherMa'（跑道边站着的马老师，一个人，不是中道上的障碍），放在本段终点前方 2 m（@66），5-8 七步时在身边。
+//       WP6 的 specialOfGroup 目前只认 'monitor'：要 WP6 补上 'teacherMa'，他才会穿黑色运动裤、两侧白条。
 import type { ChapterDef } from '../schema';
 
 export default {
@@ -30,7 +42,7 @@ export default {
   segments: [
     /* 5-1 脚：被子里的脚自己弯起来；按住，过了几秒它终于放松（静场） */
     {
-      id: '5-1', kind: 'still', set: 'bedroom', variant: 'feet', atmosphere: 'homeDark', duration: 7.5,
+      id: '5-1', kind: 'still', set: 'bedroom', variant: 'feet', atmosphere: 'homeDark', duration: 6.4,   // 「过了几秒，它终于放松。」显示到 6.19 s
       follower: { mode: 'absent', steady: 3 },
       events: [
         { at: 0.0, type: 'camera', shot: 'bedFeet', seconds: 0 },
@@ -95,12 +107,13 @@ export default {
         [174, ['bin', '.', '.']],
         [177, ['.', 'car', '.'], 4],
         [181, ['curb', 'curb', '.']],
-        [185, ['curb', 'bin', '.']],
+        [185, ['curb', 'curb', '.']],                   // 中道换成矮的路沿：大垃圾桶会挡住下一排（评审 polish）
         [188, ['.', 'bollard', 'bin']],
-        [192, ['bollard', '.', '.']],
+        [194, ['bollard', '.', '.']],
         [195, ['.', '.', 'curb']],
+        [199, ['.', 'curb', '.']],                   // 补回 @206 中道路桩挪走后少的那一次输入（5-3 不削弱）
         [200, ['.', '.', 'car'], 4],
-        [206, ['.', 'bollard', 'curb']],
+        [206, ['bollard', '.', 'curb']],
       ],
       windows: [{ id: 'seeShadow', from: 96, to: 104, type: 'lookBack', gain: 1 }],   // 唯一一次回头能看见东西
       notes: [{ at: 170, lane: 1, note: 'n5-a' }],
@@ -132,9 +145,12 @@ export default {
       beats: 80, stride: 1.0, cadence: 4.8,
       follower: { mode: 'absent' },
       surfaces: [{ id: 'wcMirror5', kind: 'mirror', side: 'L', from: 38, to: 70, y: [0.25, 1.6], backdrop: 'darkRoom' }],
+      // 腿偏移要有代价：被迫换进的左道约 1 s 后有一只拖把桶（R9 只禁止 block），原来的中道是空的——
+      // 掰正就什么也不用做，不掰正就得多跳一次
       rows: [
         [8, ['.', '.', 'mopBucket']],
-        [44, ['.', 'mopBucket', '.']],
+        [25, ['mopBucket', '.', '.']],
+        [43, ['mopBucket', '.', '.']],
         [66, ['mopAcross', '.', '.']],
       ],
       items: [
@@ -187,11 +203,15 @@ export default {
       rows: [
         [10, ['legs', '.', '.'], 2],                 // 两侧车道的人墙，中间留着缝
         [16, ['.', '.', 'legs'], 2],
+        [30, ['.', 'footOut', '.']],                 // 伸进中缝的脚：不是成心的，只是习惯（静止）
         [36, ['legs', '.', '.'], 2],
         [42, ['.', '.', 'legs'], 2],
+        [46, ['.', 'bag', '.']],
         [82, ['legs', '.', '.'], 2],
         [88, ['.', '.', 'legs'], 2],
         [94, ['legs', '.', 'legs'], 2],
+        [100, ['.', 'footOut', '.']],
+        [106, ['legs', '.', 'legs'], 2],
         [112, ['.', 'bag', '.']],                    // 书包和长桌
         [118, ['longTable', '.', '.']],
         [136, ['.', 'longTable', '.']],
@@ -226,6 +246,10 @@ export default {
       npcs: [
         { id: 'class5', kind: 'classmates', from: 0, to: 64, side: 'L', density: 0.8, gaze: 'none' },
         { id: 'queue5', kind: 'queue', from: 20, to: 50, side: 'R', density: 0.6, gaze: 'none' },
+        // 马老师一个人站在跑道左边（不是中道上的障碍）。站立段沿用紧挨着的前一个跑段的组（§10.2），所以他站在 5-8 七步的起点
+        // （本段终点 @64）前方 2 m：起身时在画面左前方，第 7 步摔倒时就在身边，「你……在练习走路？」是他说的。
+        // 注意：WP6 的 specialOfGroup 目前只认 'monitor'，这个组现在画成一个普通的人；要 WP6 让它也认 'teacherMa'（见 U1 报告）
+        { id: 'teacherMa', kind: 'lineSides', from: 66, to: 66, side: 'L', density: 1, gaze: 'none' },
       ],
       rows: [
         [8, ['.', '.', 'cone']],                     // 标志桶
@@ -268,27 +292,30 @@ export default {
         { atStep: 7, type: 'text', line: 'c5.seventh', id: 'seventhFall' },
         { atStep: 7, delay: 1.6, type: 'text', line: 'c5.practiceQ', style: 'other', speaker: 'teacherMa' },
         { atStep: 7, delay: 3.0, type: 'text', line: 'c5.theyPractice', style: 'self', id: 'theyPractice' },
+        { atStep: 7, delay: 4.4, type: 'text', line: 'c5.failed' },                       // 原文紧接着的一段：11.7 s 出字，显示到 12.95 s（段长 13 s）
       ],
     },
     /* 5-9 医务室：走了七步；纸条背面「现在，你后面没有我了。」；枕边的凹陷；它在前面（静场） */
     {
-      id: '5-9', kind: 'still', set: 'infirmary', variant: 'bed', atmosphere: 'fluorescent', duration: 11,
+      id: '5-9', kind: 'still', set: 'infirmary', variant: 'bed', atmosphere: 'fluorescent', duration: 14.3,
       follower: { mode: 'absent' },
       events: [
         { at: 0.0, type: 'camera', shot: 'infirmaryBed', seconds: 0 },
         { at: 0.0, type: 'ambience', amb: 'infirmary', level: 1, seconds: 1 },
-        { at: 0.3, type: 'text', line: 'c5.walkingQ', style: 'other', speaker: 'chenMo' },
-        { at: 1.6, type: 'text', line: 'c5.sevenSteps', style: 'self', id: 'walkedSeven' },
-        { at: 2.8, type: 'noteGet', note: 'n5-note' },
-        { at: 3.0, type: 'noteOpen', note: 'n5-note', id: 'noteNoMe' },
-        { at: 3.0, type: 'sfx', sfx: 'paper' },
-        { at: 5.0, type: 'hud', op: 'followerFadeOutBehind' },                            // 身后的空心点永久淡出
-        { at: 6.2, type: 'actor', clip: 'touchPillowDent', seconds: 1.6 },
-        { at: 6.8, type: 'text', line: 'c5.sat', id: 'pillowDent' },
-        { at: 7.8, type: 'overlay', op: 'eyesClosed', seconds: 1.2 },                   // 闭上眼：画面压暗 60%
-        { at: 9.0, type: 'follower', def: { mode: 'ahead', steady: 3 } },               // 远处传来轻敲般的三段落地
-        { at: 9.0, type: 'hud', op: 'followerFadeInAhead' },
-        { at: 9.8, type: 'text', line: 'c5.ahead', id: 'aheadRhythm' },
+        { at: 0.3, type: 'text', line: 'c5.orRather' },                                  // 接 5-8 的「我失败了。」（原文下一句）
+        { at: 2.5, type: 'text', line: 'c5.walkingQ', style: 'other', speaker: 'chenMo' },
+        { at: 3.8, type: 'text', line: 'c5.sevenSteps', style: 'self', id: 'walkedSeven' },
+        { at: 5.0, type: 'noteGet', note: 'n5-note' },
+        { at: 5.2, type: 'noteOpen', note: 'n5-note', id: 'noteNoMe' },                // 纸条显示 4.8 s（到 10.0 s）
+        { at: 5.2, type: 'sfx', sfx: 'paper' },
+        { at: 7.2, type: 'hud', op: 'followerFadeOutBehind' },                            // 身后的空心点永久淡出
+        // 纸条收起之后才摸枕边的凹陷、出「像有人刚刚坐过。」（以前在纸条还盖在画面上的时候）
+        { at: 10.0, type: 'actor', clip: 'touchPillowDent', seconds: 1.6 },
+        { at: 10.4, type: 'text', line: 'c5.sat', id: 'pillowDent' },
+        { at: 11.2, type: 'overlay', op: 'eyesClosed', seconds: 1.2 },                  // 闭上眼：画面压暗 60%
+        { at: 12.2, type: 'follower', def: { mode: 'ahead', steady: 3 } },              // 远处传来轻敲般的三段落地
+        { at: 12.2, type: 'hud', op: 'followerFadeInAhead' },
+        { at: 12.9, type: 'text', line: 'c5.ahead', id: 'aheadRhythm' },                 // 显示到 14.15 s
       ],
     },
     /* 5-10 握紧：天花板上的裂缝像一只张开的手（静场） */
@@ -311,7 +338,7 @@ export default {
       beats: 280, stride: 1.1, cadence: [5.0, 5.4], checkpoints: [140],
       follower: { mode: 'ahead', steady: 3 },
       // 门牌在翻转那一拍还在玩家前方 7.7 m：翻转之后它以反字经过画面（见文件头）
-      surfaces: [{ id: 'plate7b', kind: 'doorPlate', side: 'L', from: 215, to: 215, y: [1.9, 2.1], text: '高二（7）班' }],
+      surfaces: [{ id: 'plate7b', kind: 'doorPlate', side: 'L', from: 214, to: 214, y: [1.3, 1.6], text: '高二（7）班' }],
       rows: [
         [16, ['.', '.', 'deskBar']],                 // 课桌（前四章的回声）
         [22, ['mopBucket', '.', '.']],               // 拖把桶
@@ -325,6 +352,7 @@ export default {
         [76, ['legs', 'bag', '.']],
         [80, ['.', 'legs', '.']],
         [84, ['.', '.', 'deskBar']],
+        [96, ['bag', '.', '.']],                     // @90 偏移进左道约 1 s 后：不掰正就得多跳一次
         [102, ['deskBar', 'legs', '.']],
         [106, ['.', 'cart', 'bag']],
         [110, ['longTable', 'legs', '.']],
@@ -357,14 +385,12 @@ export default {
         { at: 0, type: 'lights', op: 'palmRings', from: 0, to: 280 },                    // 每一掌在地上激起一圈淡光
         { at: 0, type: 'text', line: 'c5.findIt' },
         { at: 4, type: 'leader', op: 'appear', id: 'leaderAhead' },                      // 它出现在前方的雾里
-        { at: 8, type: 'hint', hint: 'jump' },
-        { at: 10, type: 'hint', hint: 'duck' },
-        { at: 12, type: 'hint', hint: 'lane' },
         { at: 60, type: 'text', line: 'c5.notStanding' },
         { at: 66, type: 'text', line: 'c5.alreadyAhead' },
         { at: 88, type: 'hint', hint: 'straighten' },
         { at: 90, type: 'drift', dir: -1 },                                               // 第四次腿偏移（向左）
-        { at: 150, type: 'text', line: ['c5.stillCrawling', 'c5.rhythm'] },
+        { at: 150, type: 'text', line: ['c5.stillCrawling', 'c5.likeMe'] },             // 原文一句，按原文顺序拆开（附录 A-8）
+        { at: 168, type: 'text', line: 'c5.rhythm' },                                     // 上面两行（28 字，3.32 s）显示完之后
         { at: 208, type: 'flip', on: true, id: 'mirrorFlip' },                             // 门牌成了反字，墙和影子换到另一侧
         { at: 260, type: 'leader', op: 'recede' },                                        // 它渐渐走远，光圈一个个淡进雾里
         { at: 270, type: 'slow', speed: 1.8, seconds: 6, ramp: 1.5 },                     // 你减速停下（段在减速里结束，不再加速）
