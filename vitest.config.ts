@@ -7,5 +7,7 @@ export default defineConfig({
     include: ['tests/unit/**/*.test.ts'],
     environment: 'node',
     testTimeout: 30_000,
+    // lead：多个 agent 并行跑测试时，默认每核一个 worker 会把内存吃满（曾导致 OOM 整体被杀）。限制为 2。
+    maxWorkers: 2,
   },
 });

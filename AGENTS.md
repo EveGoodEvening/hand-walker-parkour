@@ -33,3 +33,4 @@
 - `SkinnedMesh` 刚性蒙皮：先 `rootBone.updateMatrixWorld(true)`，再 `new Skeleton(bones)`（逆矩阵在构造时计算），然后 `mesh.add(rootBone)`，最后 `mesh.bind(skeleton)`。设 `frustumCulled = false`。
 - 浏览器锁：§8.8 的示例在 `withBrowserSlot` 的回调里启动浏览器后立即返回，浏览器还没关锁就释放了。现在用 `acquireBrowserSlot()`，由 `openGame().close()` 负责关浏览器并释放锁。触摸 e2e 用 CDP 的 `Input.dispatchTouchEvent` 滑动，距离取 32 px：超过 24 px 阈值，又不到 2 倍阈值，所以不会连换两道。
 - 标题背景在读章时也会发 `checkpoint`。存档里「继续」的位置只在 play 或 intro 屏幕下写，否则第一次打开就会冒出「继续」。
+- 资源上限（2026-10-01 曾因 OOM 整个会话被杀）：本机 8 核 15 GB，且与他人共用。并行 agent 同时最多 3 个；`vitest` 已在配置里限 `maxWorkers: 2`；不要在同一个 agent 里并发跑多个重命令（verify、e2e、build 依次跑）；无头浏览器一律经 browser-lock，用完立即关闭；结束前确认没有遗留的 chrome 进程（`pgrep -f chrome-linux64`）。
