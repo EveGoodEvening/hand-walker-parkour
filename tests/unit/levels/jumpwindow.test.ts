@@ -1,4 +1,4 @@
-// tests/unit/levels/jumpwindow.test.ts —— R15-jump 撑跃窗口（评审 U2，先报 warning）：小步幅、慢步频时滞空被夹在 0.72 s，
+// tests/unit/levels/jumpwindow.test.ts —— R15-jump 撑跃窗口（评审 U2；lead 合并数据修复后升为 error，DESIGN §10.3）：小步幅、慢步频时滞空被夹在 0.72 s，
 // 越过障碍要的时间却按速度变长，窗口会缩到 0（3-2 的拖把桶）。
 import { describe, expect, it } from 'vitest';
 import { TICK_DT } from '../../../src/core/constants';
@@ -16,11 +16,11 @@ const bucket = (stride: number, cadence: number): ChapterDef => chapter([runSeg(
 })]);
 const r15 = (def: ChapterDef) => validateChapter(def, solver).issues.filter((i) => i.rule === 'R15-jump');
 
-describe('R15-jump：撑跃窗口 < 0.16 s 报 warning', () => {
-  it('0.6 步幅、3.0 掌/s（1.8 m/s）的中道拖把桶：怎么跳都越不过，报 warning（不是 error）', () => {
+describe('R15-jump：撑跃窗口 < 0.16 s 报 error', () => {
+  it('0.6 步幅、3.0 掌/s（1.8 m/s）的中道拖把桶：怎么跳都越不过，报 error', () => {
     const is = r15(bucket(0.6, 3.0));
     expect(is.length).toBe(1);
-    expect(is[0]!.level).toBe('warn');
+    expect(is[0]!.level).toBe('error');
     expect(is[0]!.msg).toContain('mopBucket @20');
     expect(is[0]!.msg).toContain('no jump timing');
     expect(jumpWindows(compile(bucket(0.6, 3.0)).segments[0]!)[0]!.window).toBe(0);

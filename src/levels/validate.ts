@@ -29,7 +29,7 @@
 //     回头。非 auto 回头窗口的 id 与 then 只在玩家按 Q 时触发（可选行为），必备节拍挂在那里报 error。
 //   · 豁免：只认 lead 在 §10 书面批准的（WAIVERS.approval 逐字出现在 §10），工作包不得自行降级。
 //   · R13：站立段的实际时长 = max(duration, 第七步摔倒 + 最后一个按步事件)，不含起身前的等待。
-//   · R15-jump（评审 U2，先报 warning，lead 合并数据修复后升为 error）：每个 low 障碍，假设玩家待在它的车道上、按名义时间轴前进，
+//   · R15-jump（评审 U2；lead 合并 U1 的数据修复后升为 error，DESIGN §10.3）：每个 low 障碍，假设玩家待在它的车道上、按名义时间轴前进，
 //     逐 tick 枚举起跳时刻（与 Sim 同序：输入在 tick 开头、撑跃滞空按当时的名义步频），能越过它的起跳时刻连成的最长区间 < 0.16 s
 //     报出。慢速、小步幅时滞空被夹在 0.72 s，而越过障碍要的时间按速度变长，窗口会缩到 0（3-2 的拖把桶）。
 import { LANE_WIDTH, LIMITS, MIN_ACTION_GAP, TEXT, TICK_DT } from '../core/constants';
@@ -577,7 +577,7 @@ export function validateChapter(def: ChapterDef, solver: SolverAPI, opts: { seed
     // R11：端盘段没有 low
     if (def2.controls?.jump === false) for (const o of seg.obstacles) if (o.cls === 'low') err('R11', `tray segment has low obstacle ${o.kind} @${o.beat}`, sid);
 
-    // R15-jump：撑跃窗口（先报 warning；同一行同一种类合并成一条）
+    // R15-jump：撑跃窗口（error，DESIGN §10.3；同一行同一种类合并成一条）
     const narrow = new Map<string, { kind: string; beat: number; lanes: Lane[]; window: number }>();
     for (const r of jumpWindows(seg)) {
       if (r.window >= JUMP_WINDOW_MIN - 1e-9) continue;
@@ -590,7 +590,7 @@ export function validateChapter(def: ChapterDef, solver: SolverAPI, opts: { seed
     for (const r of narrow.values()) {
       const cad = seg.cadenceAt(r.beat);
       const what = r.window > 0 ? `jump window only ${r.window.toFixed(3)} s` : 'no jump timing clears it (window 0 s)';
-      warn('R15-jump', `${r.kind} @${r.beat} (lane ${r.lanes.join('/')}): ${what}, need ≥ ${JUMP_WINDOW_MIN} s (stride ${seg.stride} m, ${cad.toFixed(1)} palms/s = ${(seg.stride * cad).toFixed(2)} m/s)`, sid);
+      err('R15-jump', `${r.kind} @${r.beat} (lane ${r.lanes.join('/')}): ${what}, need ≥ ${JUMP_WINDOW_MIN} s (stride ${seg.stride} m, ${cad.toFixed(1)} palms/s = ${(seg.stride * cad).toFixed(2)} m/s)`, sid);
     }
 
     // R12：暗色氛围的描边。
