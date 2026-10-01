@@ -62,6 +62,7 @@
 @media (min-aspect-ratio: 1/1) {
   .hw-subs { margin-bottom: 28px; }
   .hw-hint { position: absolute; right: calc(3% + var(--sar)); bottom: 76px; margin: 0; padding: 0 10px; border-radius: 4px; background: rgba(13,18,22,.55); color: #c9d2d7; }
+  .hw-hud.hw-lift .hw-hint { transform: translateY(calc(56vh - var(--gut) - var(--sab) - 26px)); }
 }
 /* 数数（3-2、3-9）：栈外，约 34–38% 高度（数字中心 34%，下沿约 41%）、中线偏左，不压在主角背上和头上；
    残影在右上方，晚一个数、淡入慢 0.15 s */
@@ -80,9 +81,10 @@
 .hw-balance .dot { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--chalk); transition: transform .12s linear; }
 .hw-metro { position: relative; width: 168px; height: 52px; opacity: 0; transition: opacity .4s; }
 .hw-metro.on { opacity: 1; }
-/* 4-4 掌心（修复轮 B3，hud/Hud.ts 的 METRO_LIFT_*）：节拍点从栈底（掌心那只眼睛下面）挪到指尖上方，点的中心在 44% 高度；
-   只挪节拍器自己（transform），栈里照样占位，字幕不往下掉。点的中心原来在 100vh − 栈底 − 26px */
-.hw-hud.hw-lift .hw-metro { transform: translateY(calc(var(--gut) + var(--sab) + 26px - 56vh)); }
+/* 4-4 掌心（修复轮 B3，hud/Hud.ts 的 METRO_LIFT_*）：整个底部栈（字幕 → 提示 → 节拍点，顺序不变）挪到指尖上方，节拍点的中心在 44% 高度。
+   节拍器是栈里最后一个，点的中心原来在 100vh − 栈底 − 26px。第三轮：以前只挪节拍器，点到了字幕上面（§7.2 的顺序反了），
+   低语字幕还压在掌心的眼睛上方。横屏的操作提示不在栈里（右下的空地，让开了手），抵消这次平移、留在原处 */
+.hw-hud.hw-lift .hw-bottom { transform: translateY(calc(var(--gut) + var(--sab) + 26px - 56vh)); }
 .hw-dots { position: absolute; left: 50%; top: 26px; display: flex; gap: 10px; transform: translate(-50%, -50%); transition: transform .3s ease-out, opacity .8s; }
 .hw-self { transition: transform .06s linear, opacity .3s; }
 .hw-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--chalk); opacity: .18; box-sizing: border-box; }

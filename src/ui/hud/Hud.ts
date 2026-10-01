@@ -28,9 +28,10 @@ export const NOTE_OPEN = { flipAt: 1.0, fadeAt: 4.4, endAt: 4.8 } as const;
 export const BALANCE_RANGE = 0.35;
 export const BALANCE_HALF_PX = 56;
 /**
- * 节拍点挪到画面上方的静场（修复轮 B3）：4-4 掌心（palmEye）镜头在他眼睛里，举起的右手占满画面下半部（指尖约在 53–55% 高度），
- * 节拍点原来在栈底、正压在掌心那只眼睛下面。这里把节拍点（只是它，栈里照样占位，字幕和提示不动）挪到指尖上方的空地，
- * 点的中心在 METRO_LIFT_Y 高度（styles.css 的 .hw-hud.hw-lift .hw-metro：translateY = 栈底到 (1 − METRO_LIFT_Y) × 100vh）。
+ * 底部栈挪到画面上方的静场（修复轮 B3）：4-4 掌心（palmEye）镜头在他眼睛里，举起的右手占满画面下半部（指尖约在 53–55% 高度），
+ * 节拍点原来在栈底、正压在掌心那只眼睛下面，字幕压在掌心上。整个底部栈（字幕 → 提示 → 节拍点，§7.2 的顺序不变）挪到指尖上方的空地，
+ * 节拍点的中心在 METRO_LIFT_Y 高度（styles.css 的 .hw-hud.hw-lift .hw-bottom：translateY = 栈底到 (1 − METRO_LIFT_Y) × 100vh；
+ * 横屏的操作提示在右下、不在栈里，抵消这次平移）。第三轮：以前只挪节拍器，点到了字幕上面，低语字幕还压在掌心上。
  */
 export const METRO_LIFT_SETS: ReadonlySet<string> = new Set(['palmEye']);
 export const METRO_LIFT_Y = 0.44;

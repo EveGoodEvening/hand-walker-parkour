@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // tests/unit/ui/lift.test.ts —— 修复轮 B3：4-4 掌心（palmEye）里节拍点不压在掌心那只眼睛上。
 // 镜头在他眼睛里，举起的右手占满画面下半部；节拍点原来在栈底，正好落在掌心的眼睛下面（集成截图 hq-4-4-palm-2.4s：点在 (640, 669)，
-// 眼睛约在 (605, 650)）。现在 palmEye 静场里 HUD 根挂 hw-lift，节拍点挪到指尖上方（中心 44% 高度）；别的段不挪。
+// 眼睛约在 (605, 650)）。现在 palmEye 静场里 HUD 根挂 hw-lift，整个底部栈挪到指尖上方（节拍点中心 44% 高度，字幕在它上面）；别的段不挪。
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as THREE from 'three';
@@ -21,7 +21,7 @@ beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
 const still = (set: string, t = 2.4) => snap({ t: 100 + t, chapter: 'ch4', segment: '4-4', segKind: 'still',
   still: { set: set as never, variant: 'default', t, duration: 10, prompt: null, held: 0 } });
 
-describe('4-4 palmEye: the beat dots move above the raised hand (B3)', () => {
+describe('4-4 palmEye: the bottom stack (subtitles, hint, beat dots) moves above the raised hand (B3)', () => {
   it('the HUD root gets hw-lift only in the palmEye still', async () => {
     const { ui } = await mountUI();
     ui.show('play');
@@ -36,15 +36,25 @@ describe('4-4 palmEye: the beat dots move above the raised hand (B3)', () => {
     expect([...METRO_LIFT_SETS]).toEqual(['palmEye']);
   });
 
-  it('styles.css moves only the metronome, to METRO_LIFT_Y of the screen height', () => {
+  // 第三轮：以前只挪节拍器（点到了字幕上面，§7.2 的顺序反了；低语字幕还压在掌心的眼睛上方）。现在挪整个底部栈
+  it('styles.css moves the whole bottom stack (subtitles → hint → dots, order unchanged) so the dots sit at METRO_LIFT_Y; the landscape hint stays put', async () => {
     const css = readFileSync(resolve(process.cwd(), 'src/ui/styles.css'), 'utf8');
-    const m = /\.hw-hud\.hw-lift \.hw-metro \{ transform: translateY\(calc\(var\(--gut\) \+ var\(--sab\) \+ 26px - (\d+(?:\.\d+)?)vh\)\); \}/.exec(css);
-    expect(m, 'rule .hw-hud.hw-lift .hw-metro').not.toBeNull();
+    const m = /\.hw-hud\.hw-lift \.hw-bottom \{ transform: translateY\(calc\(var\(--gut\) \+ var\(--sab\) \+ 26px - (\d+(?:\.\d+)?)vh\)\); \}/.exec(css);
+    expect(m, 'rule .hw-hud.hw-lift .hw-bottom').not.toBeNull();
     expect(Number(m![1]) / 100).toBeCloseTo(1 - METRO_LIFT_Y, 9);
-    // 栈底的节拍器：高 52 px，点的中心在 26 px（translateY 里的 26px 就是它）
+    expect(/\.hw-hud\.hw-lift \.hw-(metro|subs|dots)\b/.test(css)).toBe(false);          // 栈里的东西不再各自挪
+    // 横屏：提示不在栈里（右下的空地），抵消同一个平移
+    const land = css.slice(css.indexOf('@media (min-aspect-ratio: 1/1) {'));
+    const h = /\.hw-hud\.hw-lift \.hw-hint \{ transform: translateY\(calc\((\d+(?:\.\d+)?)vh - var\(--gut\) - var\(--sab\) - 26px\)\); \}/.exec(land.slice(0, land.indexOf('\n}')));
+    expect(h, 'landscape rule .hw-hud.hw-lift .hw-hint').not.toBeNull();
+    expect(Number(h![1])).toBe(Number(m![1]));
+    // 栈底的节拍器：高 52 px，点的中心在 26 px（translateY 里的 26px 就是它），而且它是栈里最后一个
     expect(css).toContain('.hw-metro { position: relative; width: 168px; height: 52px;');
     expect(css).toContain('.hw-dots { position: absolute; left: 50%; top: 26px;');
-    expect(/\.hw-hud\.hw-lift \.hw-(bottom|subs|hint)\b/.test(css)).toBe(false);
+    await mountUI();
+    const bottom = document.querySelector('.hw-bottom') as HTMLElement;
+    const order = [...bottom.children].map((e) => e.className.split(' ')[0]);
+    expect(order).toEqual(['hw-noteopen', 'hw-subs', 'hw-hint', 'hw-balance', 'hw-metro']);
   });
 
   // 按 WP4 的 palmEye set 的手和 WP5 的 palmEye 机位投影：横屏、竖屏里指尖的最高点都在点的下面，留出 ≥ 5% 屏高（点半径 4.5 px 之外）
