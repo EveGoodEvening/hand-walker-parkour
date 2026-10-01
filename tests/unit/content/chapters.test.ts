@@ -18,6 +18,7 @@ import { advancePace, createPaceState, nominalCadence, paceEvents } from '../../
 import { expandSegment, type Decor, type GroupInfo } from '../../../src/render/npc/crowds';
 import { specialById, specialOfGroup } from '../../../src/render/npc/specials';
 import { NOTE_OPEN } from '../../../src/ui/hud/Hud';
+import { FOLLOW } from '../../../src/render/camera/shots';
 
 const IDS = ['ch1', 'ch2', 'ch3', 'ch4', 'ch5'] as const;
 const ch = (id: ChapterId) => getChapter(id) as ChapterDef;
@@ -471,9 +472,15 @@ describe('评审修复 U1 的数据形状', () => {
     }
   });
   // 修复单元 A（第 3 轮）：说话的人在画面里。马老师（5-7）与班长（3-1）是 npc 组里的一个人：他们的台词出字时，人在追尾镜头前方、
-  // 低画质雾的可读距离（R4 同一口径）以内，三条车道的横屏机位都在水平视角里。走动的人按「组的起点 + 速度 × 段内时间」算。
-  it('马老师、班长说话时人在画面里（镜头前方、可读距离以内、水平视角里）', () => {
-    const CAM_BACK = 2.35, HALF = (76 / 2) * (Math.PI / 180);
+  // 低画质雾的可读距离（R4 同一口径）以内，三条车道的机位都在水平视角里。横屏、竖屏两种追尾机位都查（render/camera/shots.ts 的
+  // FOLLOW：横屏在身后 2.8 m、水平视角 76°；竖屏在身后 3.8 m、竖直视角 80°，按 9:16 换成水平视角约 50.6°）。
+  // 走动的人按「组的起点 + 速度 × 段内时间」算。
+  it('马老师、班长说话时人在画面里（横屏、竖屏镜头前方、可读距离以内、水平视角里）', () => {
+    const rad = Math.PI / 180;
+    const cams = [
+      { name: 'landscape', back: FOLLOW.landscape.back, k: FOLLOW.landscape.k, half: (FOLLOW.landscape.hfov / 2) * rad },
+      { name: 'portrait', back: FOLLOW.portrait.back, k: FOLLOW.portrait.k, half: Math.atan(Math.tan((FOLLOW.portrait.vMax / 2) * rad) * (9 / 16)) },
+    ];
     const cases: Array<[ChapterId, string, string]> = [['ch5', '5-7', 'teacherMa'], ['ch3', '3-1', 'monitor']];
     for (const [id, sid, speaker] of cases) {
       const c = compile(ch(id));
@@ -491,10 +498,13 @@ describe('评审修复 U1 的数据形状', () => {
       for (const e of lines) {
         const sp = seg.s0 + e.at * seg.stride;
         const sN = p.s + p.speed * timeAtS(tl, sp);
-        const ahead = sN - (sp - CAM_BACK);
-        expect(ahead, `${sid} @${e.at}: ${speaker} ahead of the camera`).toBeGreaterThan(CAM_BACK + 0.5);
-        expect(ahead, `${sid} @${e.at}: ${speaker} within the readable distance ${rd.toFixed(1)} m`).toBeLessThanOrEqual(rd);
-        for (const lane of [-1, 0, 1]) expect(Math.atan2(Math.abs(p.x - 0.7 * lane * LANE_WIDTH), ahead), `${sid} @${e.at} lane ${lane}`).toBeLessThanOrEqual(HALF);
+        for (const cam of cams) {
+          const ahead = sN - (sp - cam.back);
+          const at = `${sid} @${e.at} ${cam.name}`;
+          expect(ahead, `${at}: ${speaker} ahead of the player`).toBeGreaterThan(cam.back + 0.5);
+          expect(ahead, `${at}: ${speaker} within the readable distance ${rd.toFixed(1)} m`).toBeLessThanOrEqual(rd);
+          for (const lane of [-1, 0, 1]) expect(Math.atan2(Math.abs(p.x - cam.k * lane * LANE_WIDTH), ahead), `${at} lane ${lane}`).toBeLessThanOrEqual(cam.half);
+        }
       }
     }
   });

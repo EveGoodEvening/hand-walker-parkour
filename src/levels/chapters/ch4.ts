@@ -14,10 +14,11 @@
 //     按新的时间轴重新摆放（@54、@95.2），仍在约 @123、@207 被追上（都在 @210 的 cadence 事件之前，编译段的 timeAt 精确）。
 //   · 4-5 @210 那一行只占边道：第一个必需动作（@213 伏低）落在「我跑过那面镜子，没有看。」消失之后。
 //   · 4-1 @36–@116 每 8 拍左右一道人墙只留一条缝（§4.4「你在人群之间回旋」），求解器最少输入 0.68 次 / 10 拍（§2.8 的 1.0 是上限）。
-//   · 第二轮加密（修复单元 A，第 3 轮；取代上面 4-5「0.82 次 / 10 拍」）：4-5 一道只留一条缝的人腿、一排跪着的人（撑跃）、
-//     伸出的手臂（伏低）轮流来，约每 4 拍一个动作，求解器按 0.6 s 最小间隔 0.82 → 1.68 次 / 10 拍（§2.8 的 2.2 是区间下沿）。
-//     @210 那一行仍只占边道；两个同向爬行的人的位置不变。@73、@77 两道伸出的手臂相邻（同拍考试里一次失误会连着出事）。
-//     human 机器人（--trials 60）8.3% / 10.0%，200 次约 6–7% / 10%（§2.8 第四章 ≤ 12%）。
+//   · 第二轮加密（修复单元 A，第 3 轮，第二次重排；取代上面 4-5「0.82 次 / 10 拍」）：4-5 跪着的人连成三连撑、四连撑（间隔 3.5 拍），
+//     中间夹着只留一条缝的围观的腿、人墙「挤一下」（墙挡住你那条车道 3 拍，墙尾之后 1.5 拍只有那条车道有缝）和伸出的手臂
+//     （伏低，全段 5 处；上一次约 13 处，human 机器人遇到细横档一律撑跃，摔倒大多出在那里）。求解器按 0.6 s 最小间隔
+//     0.82 → 1.86 次 / 10 拍（§2.8 的 2.2 是区间下沿）。@210 那一行仍只占边道；两个同向爬行的人的位置不变，被追上之前的路径上
+//     不放同车道的障碍。human 机器人 200 次 10.5% / 9.0%（§2.8 第四章 ≤ 12%）。
 import type { ChapterDef } from '../schema';
 
 export default {
@@ -171,50 +172,54 @@ export default {
       ],
       surfaces: [{ id: 'plazaMirror', kind: 'mirror', side: 'R', from: 196, to: 206, y: [0.1, 2.6], backdrop: 'darkRoom' }],
       rows: [
-        // 第二轮加密：一道只留一条缝的人腿、一排跪着的人（撑跃）、伸出的手臂（伏低）轮流来，约每 4 拍一个动作
-        [24, ['kneeler', 'kneeler', 'kneeler']],
-        [28, ['.', 'legs', 'legs']],
-        [32, ['reach', 'legs', 'legs']],
-        [53, ['.', 'legs', '.']],
-        [57, ['reach', 'kneeler', 'reach']],
-        [61, ['legs', '.', 'legs']],
-        [65, ['kneeler', 'kneeler', 'kneeler']],
-        [69, ['.', 'legs', 'legs']],
-        [73, ['reach', 'legs', 'kneeler']],
-        [77, ['reach', 'reach', 'reach']],
-        [81, ['legs', '.', 'legs']],
-        [85, ['kneeler', 'kneeler', 'kneeler']],
-        [89, ['legs', 'legs', '.']],
-        [93, ['legs', 'reach', 'reach']],
-        [97, ['legs', '.', 'legs']],
-        [101, ['.', 'legs', '.']],
-        [105, ['reach', '.', '.']],
-        [109, ['legs', '.', '.']],
-        [113, ['kneeler', 'kneeler', '.']],
-        [126, ['legs', 'kneeler', 'legs']],
-        [130, ['.', 'legs', 'legs']],
-        [134, ['reach', 'legs', 'legs']],
-        [138, ['legs', '.', 'legs']],
-        [153, ['kneeler', 'kneeler', 'kneeler']],
-        [157, ['.', 'legs', 'legs']],
-        [161, ['reach', 'legs', 'kneeler']],
-        [165, ['legs', '.', 'legs']],
-        [169, ['.', 'reach', '.']],
-        [210, ['kneeler', '.', '.']],                // 只占边道：第一个必需动作（@213）在「我跑过那面镜子，没有看。」消失之后
-        [213, ['kneeler', 'reach', '.']],
-        [217, ['.', 'legs', 'reach']],
-        [221, ['legs', '.', 'legs']],
-        [225, ['kneeler', 'kneeler', 'kneeler']],
-        [229, ['legs', 'legs', '.']],
-        [233, ['legs', 'reach', 'reach']],
-        [237, ['legs', '.', 'legs']],
-        [241, ['kneeler', 'kneeler', 'kneeler']],
-        [245, ['.', 'legs', 'legs']],
-        [249, ['reach', 'legs', 'kneeler']],
-        [253, ['legs', '.', 'legs']],
-        [257, ['kneeler', 'kneeler', 'kneeler']],
-        [261, ['legs', 'legs', '.']],
-        [265, ['legs', 'reach', 'kneeler']],
+        // 第二轮加密（第 3 轮重排）：跪着的人连成三连撑、四连撑（间隔 3.5 拍，§4.4「三连撑」的延伸），中间夹着只留一条缝的围观的腿、
+        // 人墙「挤一下」（墙挡住你那条车道 3 拍，墙尾之后 1.5 拍只有那条车道有缝）和伸出的手臂（伏低，全段 5 处）。
+        [24, ['kneeler', 'kneeler', 'kneeler']],        // 一排跪着的人（撑跃）
+        [28, ['.', 'legs', 'legs']],                    // 围观的腿只留一条缝
+        [32, ['reach', 'legs', 'legs']],                // 伸出的手臂（伏低）
+        [52, ['kneeler', 'kneeler', 'kneeler']],        // 接在 @40 的三连撑后面：第四个
+        [56, ['.', 'legs', 'kneeler']],
+        [60, ['kneeler', 'kneeler', 'kneeler']],        // 三连撑（间隔 3.5 拍）
+        [63.5, ['kneeler', 'kneeler', 'kneeler']],
+        [67, ['kneeler', 'kneeler', 'kneeler']],
+        [71, ['legs', '.', 'legs']],
+        [75, ['reach', 'reach', 'reach']],
+        [79, ['kneeler', 'kneeler', 'kneeler']],        // 三连撑
+        [82.5, ['kneeler', 'kneeler', 'kneeler']],
+        [86, ['kneeler', 'kneeler', 'kneeler']],
+        [90, ['.', 'legs', '.'], 3],                    // 一道人墙挡住中道 3 拍……
+        [94.5, ['legs', '.', 'legs']],                  // ……墙尾之后 1.5 拍只有中道有缝（挤一下）
+        [98.5, ['kneeler', 'kneeler', 'kneeler']],      // 四连撑
+        [102, ['kneeler', 'kneeler', 'kneeler']],
+        [105.5, ['kneeler', 'kneeler', 'kneeler']],
+        [109, ['kneeler', 'kneeler', '.']],   // 右道是 @54 那个同向爬行的人（约 @123 被追上）
+        [112.5, ['kneeler', 'kneeler', '.']],
+        [127, ['legs', 'kneeler', 'legs']],             // 「我快，它快；我慢，它慢。」之后
+        [131, ['.', 'legs', 'legs']],
+        [135, ['reach', 'legs', 'legs']],
+        [139, ['legs', '.', 'legs']],                   // 检查点（@144）之前最后一个动作
+        [154.5, ['kneeler', 'kneeler', 'kneeler']],     // 检查点之后 1.6 s 的喘息之后
+        [158, ['kneeler', 'kneeler', 'kneeler']],
+        [161.5, ['kneeler', 'kneeler', 'kneeler']],     // 三连撑
+        [165, ['.', 'legs', '.'], 3],                   // 挤一下：人墙挡住中道 3 拍……
+        [169.5, ['legs', '.', 'legs']],                 // ……墙尾之后 1.5 拍回到中道（@173 起两侧是围观的腿）
+        [172.5, ['kneeler', 'kneeler', 'kneeler']],     // 和 @176 的三连撑连成四连撑
+        [210, ['kneeler', '.', '.']],                   // 只占边道：第一个必需动作（@213）在「我跑过那面镜子，没有看。」消失之后
+        [213, ['kneeler', 'kneeler', 'kneeler']],
+        [216.5, ['kneeler', 'kneeler', 'kneeler']],
+        [220, ['kneeler', 'kneeler', 'kneeler']],
+        [224, ['.', 'legs', '.'], 3],                   // 挤一下
+        [228.5, ['legs', '.', 'legs']],
+        [232.5, ['reach', 'reach', 'reach']],
+        [236, ['kneeler', 'kneeler', 'kneeler']],       // 四连撑（同拍考试的最后一段）
+        [239.5, ['kneeler', 'kneeler', 'kneeler']],
+        [243, ['kneeler', 'kneeler', 'kneeler']],
+        [246.5, ['kneeler', 'kneeler', 'kneeler']],
+        [250, ['.', 'legs', '.'], 3],                   // 挤一下
+        [254.5, ['legs', '.', 'legs']],
+        [258.5, ['legs', 'reach', 'legs']],
+        [262.5, ['kneeler', 'kneeler', 'kneeler']],
+        [266, ['kneeler', 'kneeler', 'kneeler']],       // 「我们终于跑成了一样的速度。」（@272）之前最后一个动作
       ],
       patterns: [
         { at: 40, pattern: 'tripleVault', lane: 0, gap: 4 },                            // 三连撑（间隔 4 拍）
