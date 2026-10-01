@@ -164,7 +164,8 @@ export interface StillSet {
   id: SetId; owner: WpId; variants: readonly string[];
   build(ctx: ViewContext, variant: string): THREE.Object3D;          // 开场卡期间预建
   playerAnchor(variant: string): THREE.Matrix4;                      // 主角在这个场景里的位置
-  surfaces?(variant: string): Array<{ id: string; plane: THREE.Plane; rect: [number, number, number, number] }>;
+  /** at（可选，lead 集成）：静场替身站的位置（set 局部坐标，反射之前）；缺省 = 主角锚点的倒影。 */
+  surfaces?(variant: string): Array<{ id: string; plane: THREE.Plane; rect: [number, number, number, number]; at?: [number, number, number] }>;
   update?(t: number, snap: SimSnapshot): void;
 }
 export type ArchetypeId = 'footOut' | 'lowBox' | 'bucket' | 'curb' | 'bikeDown' | 'kneeler' | 'tableBar' | 'chairBar' | 'armBar'

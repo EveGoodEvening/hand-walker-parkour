@@ -57,6 +57,7 @@ interface Slot { rig: Rig; box: THREE.Group; body: THREE.MeshLambertMaterial; mi
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _pl = new THREE.Plane();
 const _tgt: ThirdHandTarget = {};
 const _tp = new THREE.Vector3(), _td = new THREE.Vector3(), _m3 = new THREE.Matrix4();
+const _mAt = new THREE.Matrix4(), _mYaw = new THREE.Matrix4().makeRotationY(Math.PI);
 
 /** 给 Lambert 加去饱和 + 色调（与 WP3 的 onBeforeCompile 串联，不覆盖）。 */
 export function tintLambert(mat: THREE.MeshLambertMaterial, desat: number, tint: [number, number, number]): THREE.MeshLambertMaterial {
@@ -382,7 +383,11 @@ export class DoubleSystem implements ViewSystem {
         const sf = set?.surfaces?.(next.still.variant)?.find((q) => q.id === r.spec.surface);
         if (!sf) return false;
         _pl.copy(sf.plane).translate(_v.set(STILL_ORIGIN.x, STILL_ORIGIN.y, STILL_ORIGIN.z));
-        reflectPlane(_pl, box.matrix).multiply(WP5.stillAnchor);
+        if (sf.at) {
+          // lead 集成：set 指定了替身站的位置（4-6 水里站着的「我」在爬行的人中间），面朝镜头
+          _mAt.makeTranslation(STILL_ORIGIN.x + sf.at[0], STILL_ORIGIN.y + sf.at[1], STILL_ORIGIN.z + sf.at[2]).multiply(_mYaw);
+          reflectPlane(_pl, box.matrix).multiply(_mAt);
+        } else reflectPlane(_pl, box.matrix).multiply(WP5.stillAnchor);
         if (!scripted) { root[0] = 0; root[1] = 0; root[2] = 0; root[3] = 0; }
         break;
       }

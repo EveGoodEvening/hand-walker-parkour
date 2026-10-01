@@ -123,7 +123,8 @@ export class CameraRig implements ViewSystem {
       const key = st ? `${st.set}.${st.variant}` : 'placeholder';
       const id = this.stillShot ?? SET_DEFAULT_SHOT[key] ?? (st ? SET_DEFAULT_SHOT[st.set] : undefined) ?? 'deskFeet';
       const sh = SET_SHOTS[id] ?? DEFAULT_SET_SHOT;
-      const M = WP5.playerVisible ? WP5.stillAnchor : _m.makeTranslation(STILL_ORIGIN.x, STILL_ORIGIN.y, STILL_ORIGIN.z);
+      // 静场里 Actor 总会更新锚点（主角不显示时也一样，lead 集成）
+      const M = WP5.stillAnchor;
       o.pos.set(sh.pos[0], sh.pos[1], sh.pos[2]).applyMatrix4(M);
       o.look.set(sh.look[0], sh.look[1], sh.look[2]).applyMatrix4(M);
       o.roll = 0;

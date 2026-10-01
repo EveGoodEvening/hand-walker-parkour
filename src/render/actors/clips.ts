@@ -23,7 +23,8 @@ export const ALL_CLIPS: readonly PoseClipId[] = ['sit', 'sitEat', 'busSeat', 'bu
 /** 静场的缺省主角姿势：键 = `${set}.${variant}` 或 `${set}`；null = 不显示主角（镜头在他眼睛里）。 */
 export const SET_DEFAULT_CLIP: Partial<Record<string, AnyClip | null>> = {
   deskFeet: 'sitDesk', counter: 'counterStand', canteenWindow: 'sitEat', labBoard: 'sitFloor', bus: 'busSeat', home: 'crawlToward',
-  bathroom: 'sinkLean', palmEye: 'palmEyeHold', water: 'handsInWater', 'bedroom.feet': 'lieBack', 'bedroom.ceiling': 'lieBack',
+  // lead 集成：palmEye、water 的镜头在他眼睛里（4-4 的手由 WP4 的 set 画），画出身体会挡住整个画面
+  bathroom: 'sinkLean', palmEye: null, water: null, 'bedroom.feet': 'lieBack', 'bedroom.ceiling': 'lieBack',
   bedroom: 'lieBack', 'infirmary.bed': 'lieBack', 'infirmary.ceiling': 'lieBack', infirmary: 'lieBack', placeholder: 'sitDesk',
 } satisfies Partial<Record<SetId | string, AnyClip | null>>;
 

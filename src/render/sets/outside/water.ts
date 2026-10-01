@@ -238,7 +238,8 @@ export const waterSet: StillSet = {
   surfaces: () => {
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const rect = [-6, -8, 6, WATER_EDGE_Z] as [number, number, number, number];
-    return ['water', 'puddle', 'waterSurface'].map((id) => ({ id, plane: plane.clone(), rect }));
+    // at：水里站着的「我」在爬行的人群中间（与上面 crowd 的中心 cz = −1.9 一致；lead 集成）
+    return ['water', 'puddle', 'waterSurface'].map((id) => ({ id, plane: plane.clone(), rect, at: [0, 0, -1.9] as [number, number, number] }));
   },
   update: (t, snap) => liveList('water').update(snap.still?.t ?? t, snap),
 };

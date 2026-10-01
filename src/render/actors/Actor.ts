@@ -128,7 +128,11 @@ export class PlayerActor implements ViewSystem {
     const anchor = set ? set.playerAnchor(variant) : _m.identity();
     const base = SET_DEFAULT_CLIP[`${setId}.${variant}`] ?? SET_DEFAULT_CLIP[setId] ?? null;
     const clipId = this.clip && this.clipWeight > 0 ? this.clip.id : base;
-    if (!clipId) { rig.root.visible = false; WP5.playerVisible = false; this.lastTick = -1; return; }
+    if (!clipId) {
+      // 镜头在他眼睛里（缺省姿势为 null）：不画主角，但锚点照样更新，镜头和静场替身都相对它摆（lead 集成）
+      WP5.stillAnchor.makeTranslation(STILL_ORIGIN.x, STILL_ORIGIN.y, STILL_ORIGIN.z).multiply(anchor);
+      rig.root.visible = false; WP5.playerVisible = false; this.lastTick = -1; return;
+    }
     const tc = this.clip ? t - this.clip.t0 : (st?.t ?? 0);
     const pose = clipPose(clipId, tc, this.b, this.clipOut, { x: 0, y: 0, s: 0, yaw: 0 });
     if (this.clip && base && this.clipWeight < 1) {
