@@ -24,7 +24,7 @@ import type { CompiledChapter, CompiledSegment, DoubleMod, DoubleSpec } from '..
 import { clipPose } from './clips';
 import { crawlPose, jumpDur, PoseBuilder, type CrawlInput } from './handCycle';
 import { blendPoses } from './poses';
-import { REST, RIG_COLORS, type ActorRigFactory, type Rig } from './rigBuild';
+import { EYE_BOX, REST, RIG_COLORS, type ActorRigFactory, type Rig } from './rigBuild';
 import { WP5 } from './shared';
 import { FOLLOW } from '../camera/shots';
 import { vFromH } from '../camera/CameraRig';
@@ -43,10 +43,12 @@ export const MEMORY_FADE_IN = 0.12, MEMORY_FADE_OUT = 0.18;
 export const STILL_DOUBLE_YAW: Readonly<Record<string, number>> = { canteenWindow: Math.PI / 2, bus: 0 };
 /**
  * 第三只手各手势伸出的用时（秒）：缺省 1.2 s「慢慢伸出来」；掌心贴玻璃要和 5.0 s 的那一声「贴」对上，快一些。
+ * 穿过玻璃碰额头（2-10，修复轮 U5 第三轮）按 DESIGN 2-10 行的「慢慢穿过玻璃（2 s，像穿过一层水）」：2.6 s 开始伸，
+ * 4.6 s 指尖碰到额头，正好是冷色渐变「我闭上眼」开始的时刻。
  * 搭肩（修复轮 U5 第二轮）0.3 s：3-10 关门前的最后一眼只有 0.8 s（10.8–11.6 s），手要在替身淡入的同时就搭上去，
  * 否则 11.6 s 黑场时它还在半路、藏在宿主身后（附录 A-12：搭肩是 3-10 的标志画面）。
  */
-export const GESTURE_EXTEND: Readonly<Partial<Record<ThirdHandGesture, number>>> = { palmGlass: 0.6, shoulder: 0.3 };
+export const GESTURE_EXTEND: Readonly<Partial<Record<ThirdHandGesture, number>>> = { palmGlass: 0.6, shoulder: 0.3, forehead: 2.0 };
 /**
  * 搭肩的手放在哪里（修复轮 U5 第二轮）：宿主靠镜头那一侧的肩头。以上臂关节为原点、在宿主胸口的坐标系里：
  * 往上 up、往前 fwd（宿主的前方 = 朝镜子外、朝镜头）、往脖子收 inward 米。手腕停在肩头，手指沿肩的前面垂下来（ThirdHand 'shoulder'）。
@@ -87,9 +89,14 @@ interface Rec {
   head: THREE.Vector3;
   /** 静场反光面（世界坐标，第三只手贴玻璃用）。 */
   stillPlane?: THREE.Plane;
+  /** 端墙镜里的普通倒影（doubleEnd 之后，见 end()）：不再是异常，不当镜头焦点。 */
+  plain: boolean;
 }
 
-interface Slot { rig: Rig; box: THREE.Group; body: THREE.MeshLambertMaterial; mirror: THREE.MeshLambertMaterial; puddle: THREE.MeshLambertMaterial; memory: THREE.MeshLambertMaterial; pose: Pose; tmp: Pose; rec: Rec | null; glow: { value: number } }
+interface Slot { rig: Rig; box: THREE.Group; body: THREE.MeshLambertMaterial; mirror: THREE.MeshLambertMaterial; puddle: THREE.MeshLambertMaterial; memory: THREE.MeshLambertMaterial; pose: Pose; tmp: Pose; rec: Rec | null; eyes: EyeUniforms }
+
+/** 替身眼睛的 uniform：glow 自发光（线性，0 = 不发光）、scale 眼睛方块的放大倍数（1 = 原样）。 */
+export interface EyeUniforms { glow: { value: number }; scale: { value: number } }
 
 /**
  * 站立段里的世界替身站在一面立着的大镜子里（修复轮 U5）：4-3「我走到广场边缘。那里立着一面很大的镜子，和家里的卫生间镜子一样大，
@@ -97,9 +104,10 @@ interface Slot { rig: Rig; box: THREE.Group; body: THREE.MeshLambertMaterial; mi
  * 修复轮 U5 第二轮：没有边框（以前是深色框条和两条支脚）——浅色镜底比身后的天和地暗一点，上沿和两侧一道很细的亮边，
  * 前面一层很淡的玻璃；镜子整段都立着（段开始 fadeIn 秒淡入，镜头这时正从爬行升到站立视线），替身按 cue 在里面淡入淡出。
  * 位置：替身 cue 的 sAhead 处，车道再往广场边上挪 edge 米（不在你走的路上），镜面转向你。
- * 镜面（玻璃）宽 w、高 h；镜底在玻璃后 back 米，替身站在玻璃后 inset 米。跑段（5-6 迎面走来的「我」）不加。
+ * 镜面（玻璃）宽 w、高 h；镜底在玻璃后 back 米，替身（骨盆）站在玻璃后 inset 米，整个人（前后约 0.34 m）在玻璃和镜底之间，
+ * 脚踩在两者之间的底板上（第三轮：以前脚尖穿出玻璃 2 cm）。跑段（5-6 迎面走来的「我」）不加。
  */
-export const STAND_MIRROR = { w: 1.0, h: 2.0, back: 0.34, inset: 0.17, edge: 0.85, rim: 0.012, fadeIn: 1.0, base: 0xaeb9be, rimColor: 0xd3dadd, glass: 0xd7e0e4 } as const;
+export const STAND_MIRROR = { w: 1.0, h: 2.0, back: 0.42, inset: 0.21, edge: 0.85, rim: 0.012, fadeIn: 1.0, base: 0xaeb9be, rimColor: 0xd3dadd, glass: 0xd7e0e4 } as const;
 
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _pl = new THREE.Plane();
 const _tgt: ThirdHandTarget = {};
@@ -111,18 +119,32 @@ const _mAt = new THREE.Matrix4(), _mYaw = new THREE.Matrix4().makeRotationY(Math
 const EYE_LIN = new THREE.Color().setHex(RIG_COLORS.eye);
 
 /**
- * 给 Lambert 加去饱和 + 色调（与 WP3 的 onBeforeCompile 串联，不覆盖）。glow：眼睛自发光的 uniform（缺省 0 = 不发光；
- * 修复轮 U5：4-6 水里站着的「我」眼睛微微发亮 0.35）。
+ * 给 Lambert 加去饱和 + 色调（与 WP3 的 onBeforeCompile 串联，不覆盖）。eyes：眼睛的自发光与放大（缺省不发光、不放大）。
+ * 修复轮 U5 第三轮：4-6「眼睛很亮」——以前自发光 0.35 只是一块中灰，比浅色的脸还暗一点，2 px 大的眼睛反而被抹掉了；
+ * 现在接近白色（STILL_EYE_GLOW），眼睛方块在顶点着色器里按 EYE_BOX 的中心放大（STILL_EYE_SCALE，蒙皮之前，静止姿势坐标）。
  */
-export function tintLambert(mat: THREE.MeshLambertMaterial, desat: number, tint: [number, number, number], glow: { value: number } = { value: 0 }): THREE.MeshLambertMaterial {
+export function tintLambert(mat: THREE.MeshLambertMaterial, desat: number, tint: [number, number, number], eyes: EyeUniforms = { glow: { value: 0 }, scale: { value: 1 } }): THREE.MeshLambertMaterial {
   const prev = mat.onBeforeCompile;
   const prevKey = mat.customProgramCacheKey.bind(mat);
+  const hd = REST.head;
+  const eyeC = `vec3(${(hd[0] as number).toFixed(4)}, ${((hd[1] as number) + EYE_BOX.dy).toFixed(4)}, ${((hd[2] as number) + EYE_BOX.dz).toFixed(4)})`;
   mat.onBeforeCompile = (sh, r) => {
     prev.call(mat, sh, r);
     sh.uniforms.uWp5Desat = { value: desat };
     sh.uniforms.uWp5Tint = { value: new THREE.Vector3(...tint) };
-    sh.uniforms.uWp5EyeGlow = glow;
+    sh.uniforms.uWp5EyeGlow = eyes.glow;
+    sh.uniforms.uWp5EyeScale = eyes.scale;
     sh.uniforms.uWp5EyeCol = { value: new THREE.Vector3(EYE_LIN.r, EYE_LIN.g, EYE_LIN.b) };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uWp5EyeScale; uniform vec3 uWp5EyeCol;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+  #ifdef USE_COLOR
+    if (uWp5EyeScale != 1.0 && distance(color.rgb, uWp5EyeCol) < 0.003) {
+      vec3 wp5C = ${eyeC};
+      wp5C.x += sign(transformed.x - wp5C.x) * ${EYE_BOX.x.toFixed(4)};
+      transformed = wp5C + (transformed - wp5C) * uWp5EyeScale;
+    }
+  #endif`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform float uWp5Desat; uniform vec3 uWp5Tint; uniform float uWp5EyeGlow; uniform vec3 uWp5EyeCol;')
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -138,8 +160,31 @@ export function tintLambert(mat: THREE.MeshLambertMaterial, desat: number, tint:
   return mat;
 }
 
-/** 静场替身眼睛自发光（按 set）：4-6 水里站着的「我」。 */
-export const STILL_EYE_GLOW: Readonly<Record<string, number>> = { water: 0.35 };
+/**
+ * 眼睛方块在静止姿势里的中心（相对模型原点；sx = −1 左、+1 右）。tintLambert 的顶点着色器按它放大眼睛（测试也用它）。
+ */
+export function eyeCenter(sx: -1 | 1, out = new THREE.Vector3()): THREE.Vector3 {
+  const hd = REST.head;
+  return out.set((hd[0] as number) + sx * EYE_BOX.x, (hd[1] as number) + EYE_BOX.dy, (hd[2] as number) + EYE_BOX.dz);
+}
+
+/** 放大眼睛（与 tintLambert 顶点着色器同一个公式，Node 测试用）：静止姿势里的眼睛顶点 p 按所在那只眼睛的中心放大 k 倍。 */
+export function scaleEyeVertex(p: THREE.Vector3, k: number): THREE.Vector3 {
+  const c = eyeCenter(p.x - (REST.head[0] as number) >= 0 ? 1 : -1, _ec);
+  return p.sub(c).multiplyScalar(k).add(c);
+}
+const _ec = new THREE.Vector3();
+
+/**
+ * 静场替身眼睛自发光（线性，按 set）：4-6 水里站着的「我」，「他的眼睛里有一种…很亮的…东西」。
+ * 修复轮 U5 第三轮：0.35 → 0.9（画面上约 #ebebeb，脸是 #a89f93 左右：亮度差约 0.3）。
+ */
+export const STILL_EYE_GLOW: Readonly<Record<string, number>> = { water: 0.9 };
+/**
+ * 静场替身眼睛方块的放大倍数（按 set；修复轮 U5 第三轮）：4-6 的头在 1280×720 下只有约 43 px，0.012 m 的眼睛不到 3 px，
+ * 放大 2.2 倍（0.026 m）后每只约 5 px。只对这个替身，其余替身、主角的眼睛不变。
+ */
+export const STILL_EYE_SCALE: Readonly<Record<string, number>> = { water: 2.2 };
 /**
  * 静场替身低头看你的角度（弧度，颈 40 %、头 60 %；修复轮 U5 第二轮）。4-6「他看着我」：水里倒立的「我」站在离你 2.65 m 的地方，
  * 镜头从岸上斜着往下约 36° 看。他不低头时，倒影的脸是从下巴那一侧看过去的，只剩一块肤色的圆，眼睛看不见。
@@ -186,8 +231,8 @@ export class DoubleSystem implements ViewSystem {
       puddle.stencilFunc = THREE.EqualStencilFunc; puddle.stencilZPass = THREE.KeepStencilOp;
       const memory = tintLambert(ctx.mat.lambert({ vertexColors: true, flat: true, transparent: true, opacity: 1 }), 0.85, [0.8, 0.8, 0.82]);
       // 镜中替身：镜中房间很暗，深蓝校服贴在暗背景上看不清（1-3）。反照率提亮约 35%、略去饱和，像隔着一层旧玻璃
-      const glow = { value: 0 };
-      const mirror = tintLambert(ctx.mat.lambert({ vertexColors: true, flat: true, transparent: true, opacity: 1 }), 0.15, [1.34, 1.36, 1.4], glow);
+      const eyes: EyeUniforms = { glow: { value: 0 }, scale: { value: 1 } };
+      const mirror = tintLambert(ctx.mat.lambert({ vertexColors: true, flat: true, transparent: true, opacity: 1 }), 0.15, [1.34, 1.36, 1.4], eyes);
       for (const m of [body, mirror, puddle, memory]) { m.depthWrite = true; m.name = `wp5.double${i}`; }
       const rig = this.factory.make('double', body);
       const box = new THREE.Group();
@@ -196,7 +241,7 @@ export class DoubleSystem implements ViewSystem {
       box.add(rig.root);
       box.visible = false;
       ctx.scene.add(box);
-      this.slots.push({ rig, box, body, mirror, puddle, memory, pose: createPose(), tmp: createPose(), rec: null, glow });
+      this.slots.push({ rig, box, body, mirror, puddle, memory, pose: createPose(), tmp: createPose(), rec: null, eyes });
     }
     this.buildStandMirror(ctx);
     // 涟漪：两圈细环（加法混合，不写深度），面朝 +z；按玻璃的朝向转
@@ -249,6 +294,13 @@ export class DoubleSystem implements ViewSystem {
     base.position.set(0, M.h / 2, -M.back);
     base.name = 'wp5.standMirror.base';
     g.add(base);
+    // 镜中的地面（修复轮 U5 第三轮）：玻璃下沿到镜底之间一块同色的底板，替身的脚站在它上面。以前镜底在玻璃后 0.34 m、
+    // 替身在 0.17 m，从站立机位看替身的脚比镜面的下沿还低几个像素，像一个人站在一块浅色板子前面
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(M.w, M.back), baseMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(0, 0.005, -M.back / 2);
+    floor.name = 'wp5.standMirror.floor';
+    g.add(floor);
     // 一道很细的亮边（上沿和两侧，贴在镜底前面）：没有框，只有亮度差
     for (const [x, y, w, h] of [[0, M.h - M.rim / 2, M.w, M.rim], [-(M.w - M.rim) / 2, M.h / 2, M.rim, M.h], [(M.w - M.rim) / 2, M.h / 2, M.rim, M.h]] as const) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), rimMat);
@@ -296,16 +348,24 @@ export class DoubleSystem implements ViewSystem {
   }
   onReset(): void { this.clear(); }
 
-  clear(): void { for (const sl of this.slots) this.free(sl); WP5.focus = null; this.standMirror.visible = false; this.mirrorAt = null; if (this.ripple) this.ripple.visible = false; }
-  private free(sl: Slot): void { sl.rec = null; sl.box.visible = false; }
+  clear(): void { for (const sl of this.slots) this.free(sl); WP5.focus = null; WP5.foreheadReach = false; this.standMirror.visible = false; this.mirrorAt = null; if (this.ripple) this.ripple.visible = false; }
+  private free(sl: Slot): void {
+    if (sl.rec?.third?.g === 'forehead') WP5.foreheadReach = false;
+    sl.rec = null; sl.box.visible = false;
+  }
 
   /** 替身所在的槽位下标（没有返回 −1）。 */
   slotIndexOf(id: string): number { return this.slots.findIndex((s) => s.rec?.id === id); }
+  /** 替身本帧眼睛的自发光与放大倍数（像素检查用）。 */
+  eyesOf(id: string): { glow: number; scale: number } | null {
+    const sl = this.slots.find((s) => s.rec?.id === id);
+    return sl ? { glow: sl.eyes.glow.value, scale: sl.eyes.scale.value } : null;
+  }
 
   /** 活动替身（调试 / 测试用）。 */
-  active(): Array<{ id: string; kind: Kind; alpha: number; visible: boolean; head: number[]; yaw: number; mirror: boolean; slot: number }> {
+  active(): Array<{ id: string; kind: Kind; alpha: number; visible: boolean; head: number[]; yaw: number; mirror: boolean; slot: number; plain: boolean; third: string | null }> {
     return this.slots.map((s, i) => ({ s, i })).filter(({ s }) => s.rec).map(({ s, i }) => ({ id: (s.rec as Rec).id, kind: (s.rec as Rec).kind, alpha: (s.rec as Rec).alpha, visible: s.box.visible,
-      head: (s.rec as Rec).head.toArray(), yaw: s.pose.root[3] as number, mirror: this.inMirror((s.rec as Rec).id), slot: i }));
+      head: (s.rec as Rec).head.toArray(), yaw: s.pose.root[3] as number, mirror: this.inMirror((s.rec as Rec).id), slot: i, plain: (s.rec as Rec).plain, third: (s.rec as Rec).third?.g ?? null }));
   }
 
   // ———————————————————— cue ————————————————————
@@ -335,10 +395,11 @@ export class DoubleSystem implements ViewSystem {
       offS: 0, worldS: snap.player.s + (spec.anchor?.sAhead ?? 8), worldX: (spec.anchor?.lane ?? 0) * 1.1, worldXv: 0, lane: spec.anchor?.lane ?? 0, walk: 0,
       sAhead: 0, sAheadInit: false,
       alpha: 0, fadeIn: kind === 'memory' ? MEMORY_FADE_IN : kind === 'world' ? WORLD_FADE_IN : SURFACE_FADE_IN, fadeOut: null, until: spec.ttl && spec.ttl > 0 ? t + spec.ttl : Infinity,
-      memorySec: 0, head: new THREE.Vector3(),
+      memorySec: 0, head: new THREE.Vector3(), plain: false,
     };
     if (rec.spec.avoidPlayerLane && rec.lane === snap.player.laneTarget) rec.lane = snap.player.laneTarget === 0 ? -1 : 0;
     rec.worldX = rec.lane * 1.1;
+    if (sl.rec?.third?.g === 'forehead') WP5.foreheadReach = false;
     sl.rec = rec;
     return rec;
   }
@@ -350,16 +411,31 @@ export class DoubleSystem implements ViewSystem {
     if (mod.delay !== undefined) r.delay = mod.delay;
     if (mod.headLag !== undefined) r.headLag = mod.headLag;
     if (mod.headDownHold !== undefined) r.headDown = { t0: t, hold: mod.headDownHold };
-    if (mod.thirdHand) r.third = { g: mod.thirdHand.gesture, t0: t + mod.thirdHand.at, hold: mod.thirdHand.hold, side: 0 };
+    if (mod.thirdHand) {
+      r.third = { g: mod.thirdHand.gesture, t0: t + mod.thirdHand.at, hold: mod.thirdHand.hold, side: 0 };
+      // 穿过镜面碰你的额头（2-10）：主角的掌心一直贴着玻璃，直到这只手不见（Actor 读 WP5.foreheadReach）
+      if (r.third.g === 'forehead' && (r.kind === 'end' || r.kind === 'side')) WP5.foreheadReach = true;
+    }
     if (mod.clip) { r.clip = mod.clip; r.clipT0 = t; }
     if (mod.speedFactor !== undefined) { r.speedFactor = mod.speedFactor; if (r.stopped) { r.stopped = false; r.stopAt = null; } }
     if (mod.stopAtDistance !== undefined) r.stopAt = mod.stopAtDistance;
   }
 
-  /** doubleEnd cue。 */
+  /**
+   * doubleEnd cue。
+   * 端墙镜里照着你的倒影（history）不淡出，变回普通的倒影（修复轮 U5 第三轮）：2-10「我闭上眼。再睁开时，镜子里只有我自己。
+   * 额头干干净净」——第三只手、延迟、低头都立即撤掉（这一刻镜头正好从穿玻璃的侧面机位切回追尾），镜子里还照着爬着的你，
+   * 不再是一面空的黑镜子。普通倒影不当镜头焦点，跟着反光面离开视野才结束。侧墙镜、窗、水洼、静场照旧淡出。
+   */
   end(target: string, fade: number | undefined, t: number): void {
     const r = this.slots.find((s) => s.rec?.id === target)?.rec;
-    if (r && !r.fadeOut) r.fadeOut = { t0: t, dur: Math.max(0.001, fade ?? 0.5) };
+    if (!r || r.fadeOut || r.plain) return;
+    if (r.third?.g === 'forehead') WP5.foreheadReach = false;
+    if (r.kind === 'end' && r.spec.source === 'history') {
+      r.plain = true; r.third = null; r.headDown = null; r.headLag = 0; r.delay = 0; r.clip = null; r.until = Infinity;
+      return;
+    }
+    r.fadeOut = { t0: t, dur: Math.max(0.001, fade ?? 0.5) };
   }
 
   /** memory cue：1-2 窗玻璃里倒立的人（what = handstandWindow）。 */
@@ -400,11 +476,12 @@ export class DoubleSystem implements ViewSystem {
       const ok = this.place(sl, r, prev, next, a, t, step, dt);
       sl.box.visible = ok && al > 0.002;
       const mat = r.kind === 'floor' ? sl.puddle : r.kind === 'memory' ? sl.memory : r.kind === 'world' ? sl.body : sl.mirror;
-      sl.glow.value = r.kind === 'still' && next.still ? (STILL_EYE_GLOW[next.still.set] ?? 0) : 0;
+      sl.eyes.glow.value = r.kind === 'still' && next.still ? (STILL_EYE_GLOW[next.still.set] ?? 0) : 0;
+      sl.eyes.scale.value = r.kind === 'still' && next.still ? (STILL_EYE_SCALE[next.still.set] ?? 1) : 1;
       if (sl.rig.mesh.material !== mat) sl.rig.mesh.material = mat;
       mat.opacity = al;
       sl.rig.mesh.renderOrder = r.kind === 'floor' ? -18 : 0;
-      if (sl.box.visible && r.kind !== 'memory' && r.kind !== 'world' && al > 0.5) focus = !focus || r.t0 > focus.t0 ? r : focus;
+      if (sl.box.visible && r.kind !== 'memory' && r.kind !== 'world' && !r.plain && al > 0.5) focus = !focus || r.t0 > focus.t0 ? r : focus;
       if (r.surf) this.surfaces.want(r.surf.id);
     }
     this.ripple.visible = this.rippleOn;
@@ -624,7 +701,10 @@ export class DoubleSystem implements ViewSystem {
         applyThirdHand(b, r.third.g, e, u, _tgt);
         b.fkAll(BONE_INDEX.arm3Upper);
         if (r.third.g === 'forehead' && this.placeRipple(r, sl, e, u)) this.rippleOn = true;
-      } else if (u > 0) r.third = null;
+      } else if (u > 0) {
+        if (r.third.g === 'forehead') WP5.foreheadReach = false;
+        r.third = null;
+      }
     }
     // attachBehind：站在另一个替身身后，第三只手搭在它的肩上（3-10 / 5-4）
     const out = b.finish();

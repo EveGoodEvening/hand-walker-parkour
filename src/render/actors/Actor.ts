@@ -30,8 +30,11 @@ export const EYE_GROUPS: Readonly<Record<string, readonly [number, number, numbe
 
 /**
  * 2-10「我抬起右手，贴在镜面上」（修复轮 U5 第二轮）：停拍停在端墙镜前约 1 m，palmToGlass 的手够不到玻璃（差 0.66 m），
- * 第三只手也够不到额头。渲染端让主角在 advanceSec 秒内朝镜子爬近，掌心停在玻璃前 gap 米，横向收进镜子的开口（|x| ≤ maxX）；
- * 停拍没结束就一直贴着（cue 的 4 s 之后不松手，不往回滑）。只在前方 look 米内有端墙镜时这样做。
+ * 第三只手也够不到额头。渲染端让主角在 advanceSec 秒内朝镜子爬近，掌心停在玻璃前 gap 米，横向收进镜子的开口（|x| ≤ maxX）。
+ * 只在前方 look 米内有端墙镜时这样做。
+ * 修复轮 U5 第三轮：cue 的 4 s 到了（4.3 s）而第三只手还在伸向额头（WP5.foreheadReach）时继续贴着；手不见的那一刻
+ * （5.2 s doubleEnd，「我闭上眼。再睁开时」）直接放下、回到停拍的爬姿和真实的里程，不淡出、不往回滑：镜头在同一帧从侧面机位
+ * 切回追尾。以前一直贴到停拍结束（8.0 s），追尾镜头从背后看跪直的他像站在镜子前（第二章不能站）。
  */
 export const PALM_GLASS = { gap: 0.03, maxX: 0.4, advanceSec: 0.9, look: 3.0 } as const;
 /** 上半身淡出只在这些动作里用（停拍、摔倒、回头时镜头不在他身后，淡出没有用处）。 */
@@ -71,6 +74,10 @@ export class PlayerActor implements ViewSystem {
   /** palmToGlass 爬近镜子的距离（米，clip 开始时按端墙镜算一次；null = 还没算或前方没有镜子）。 */
   private palmAdv: { ds: number; x: number } | null = null;
   private palmAdvClip: { id: PoseClipId; t0: number; until: number } | null = null;
+  /** palmToGlass 是否因为第三只手还在伸而贴过了 cue 的时长（这时放手就直接切，不淡出）。 */
+  private palmHeld = false;
+  /** 这一次停拍里掌心贴过镜子（段号；−1 = 没有）：放手之后停拍没结束时，WP5.palmGlass 保持 1。 */
+  private palmStopSeg = -1;
   private clipWeight = 0;
   private lastFrameT = 0;
   /** 站立段摔倒的时刻（模拟时钟；−1 = 没有摔倒）。 */
@@ -105,10 +112,10 @@ export class PlayerActor implements ViewSystem {
   onEvent(e: GameEvent): void {
     if (e.type === 'cue' && e.data.body.type === 'atmosphere') this.factory?.setAtmosphere(e.data.body.id);
     if (e.type === 'land') this.anim.onLand();
-    if (e.type === 'segment' || e.type === 'retry') { this.clip = null; this.clipWeight = 0; this.fallT0 = -1; }
+    if (e.type === 'segment' || e.type === 'retry') { this.clip = null; this.clipWeight = 0; this.fallT0 = -1; this.palmHeld = false; this.palmStopSeg = -1; }
   }
 
-  onReset(): void { this.anim.reset(); this.lastTick = -1; this.clip = null; this.clipWeight = 0; this.fadeW = 0; this.groupU.value.set(1, 1, 1, 1); }
+  onReset(): void { this.anim.reset(); this.lastTick = -1; this.clip = null; this.clipWeight = 0; this.palmHeld = false; this.palmStopSeg = -1; this.fadeW = 0; this.groupU.value.set(1, 1, 1, 1); }
 
   async loadChapter(ch: CompiledChapter): Promise<void> { this.chapter = ch; this.fadeW = 0; this.groupU.value.set(1, 1, 1, 1); }
 
@@ -120,11 +127,15 @@ export class PlayerActor implements ViewSystem {
     const t = lerp(prev.t, next.t, a);
     const rig = this.rig;
     const hist = this.factory.history;
-    // 脚本姿势的权重（0.3 s 淡入淡出）。palmToGlass 在停拍没结束时一直贴着玻璃（PALM_GLASS）
-    const clipOn = !!this.clip && (t < this.clip.until || (this.clip.id === 'palmToGlass' && next.segKind === 'run' && next.player.mode === 'stop'));
+    // 脚本姿势的权重（0.3 s 淡入淡出）。palmToGlass：第三只手还在穿过镜面伸向额头时，过了 cue 的时长也贴着（PALM_GLASS）；
+    // 手不见的那一刻直接放下（镜头同一帧切走），不淡出
+    const held = !!this.clip && this.clip.id === 'palmToGlass' && t >= this.clip.until && next.segKind === 'run' && next.player.mode === 'stop' && WP5.foreheadReach;
+    const clipOn = !!this.clip && (t < this.clip.until || held);
     let sdt = t - this.lastFrameT;
     if (!(sdt >= 0) || sdt > 60) sdt = 0;
     this.lastFrameT = t;
+    if (!clipOn && this.palmHeld) this.clipWeight = 0;
+    this.palmHeld = held;
     this.clipWeight = clamp(this.clipWeight + (clipOn ? 1 : -1) * sdt / 0.3, 0, 1);
     if (!clipOn && this.clipWeight <= 0) this.clip = null;
     rig.root.matrixAutoUpdate = true;
@@ -147,11 +158,14 @@ export class PlayerActor implements ViewSystem {
         this.groupU.value.set(1, 1, ua, ua);
       }
       let pose = WP5.poseTest ? this.testPose(WP5.poseTest, t) : this.anim.update(this.inp, dt, this.b);
+      if (this.palmStopSeg >= 0 && (this.palmStopSeg !== next.segIndex || next.player.mode !== 'stop')) this.palmStopSeg = -1;
+      if (this.palmStopSeg >= 0) WP5.palmGlass = 1;
       if (this.clip && this.clipWeight > 0) {
         const at = { x: this.inp.x, y: this.inp.floorY, s: this.inp.s, yaw: pose.root[3] ?? 0 };
         if (this.clip.id === 'palmToGlass') {
           const k = this.palmToward(at, t, this.chapter?.segments[next.segIndex]);
-          WP5.palmGlass = k * smoothstep(0, 1, this.clipWeight);
+          WP5.palmGlass = Math.max(WP5.palmGlass, k * smoothstep(0, 1, this.clipWeight));
+          if (k > 0 && next.player.mode === 'stop') this.palmStopSeg = next.segIndex;
         }
         clipPose(this.clip.id, t - this.clip.t0, this.b2, this.clipOut, at);
         pose = blendPoses(pose, this.clipOut, smoothstep(0, 1, this.clipWeight), this.mix);

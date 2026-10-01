@@ -152,6 +152,12 @@ function hashJitter(amount: number): (p: THREE.Vector3) => void {
 }
 
 /**
+ * 眼睛（§5.5 的两个小方块）：中心在头骨关节的 (±x, +dy, +dz) 处（静止姿势），边长 size。
+ * Doubles 的 tintLambert 按它在顶点着色器里把某个替身的眼睛放大（4-6 水里站着的「我」，修复轮 U5 第三轮）。
+ */
+export const EYE_BOX = { x: 0.036, dy: 0.1, dz: -0.11, size: 0.012 } as const;
+
+/**
  * 生成主角几何体（静止姿势，绝对坐标）。d 为细分级别。
  * 返回的几何体含 position / normal / color / aChalk / skinIndex / skinWeight。
  */
@@ -177,7 +183,7 @@ export function buildRigGeometry(d: RigDetail): THREE.BufferGeometry {
     addPrim(g, new THREE.IcosahedronGeometry(0.105, d.ico), m, C.skin);
     const mh = new THREE.Matrix4().compose(new THREE.Vector3(hd[0], hd[1] + 0.125, hd[2] + 0.028), new THREE.Quaternion(), new THREE.Vector3(1.02, 0.98, 1.0));
     addPrim(g, new THREE.IcosahedronGeometry(0.112, d.ico), mh, C.hair, hashJitter(0.01));
-    for (const sx of [-1, 1]) g.box([sx * 0.036, hd[1] + 0.1, hd[2] - 0.11], [0.012, 0.012, 0.012], C.eye);   // §5.5：2 个 0.012 小方块
+    for (const sx of [-1, 1]) g.box([hd[0] + sx * EYE_BOX.x, hd[1] + EYE_BOX.dy, hd[2] + EYE_BOX.dz], [EYE_BOX.size, EYE_BOX.size, EYE_BOX.size], C.eye);   // §5.5：2 个 0.012 小方块
   }
   // —— 手臂 ——
   for (const side of ['L', 'R'] as const) {

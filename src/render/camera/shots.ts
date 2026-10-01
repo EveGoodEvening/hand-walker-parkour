@@ -110,11 +110,12 @@ export const SEGMENT_SHOTS: Readonly<Record<string, SegmentShot>> = {
 
 /**
  * 停拍里第三只手穿过玻璃碰你的额头（2-10「掌心贴掌心」之后，forehead 手势开始起到替身消失）：切到侧面机位（修复轮 U5）。
+ * 第三轮：手势开始后 0–4.0 s（2 s 伸出、碰到额头之后的停留）；实际结束在 doubleEnd 撤掉第三只手的那一帧（5.2 s），镜头直接切回追尾。
  * 追尾机位从你身后看，镜中替身正好在你后脑勺后面。修复轮 U5 第二轮：pos / look 相对「接触点」——你的头心与镜中它的头心的中点
  * （世界坐标轴，−z 是前方，接触点差不多就在玻璃上）：镜头在你右前方的走廊里斜着看玻璃，你的头、它的头、穿过玻璃的手都在画面里。
  * 以前相对你的根，镜头在你头的前面，你的头一直在画面外，指尖停在半空。
  */
-export const THROUGH_GLASS_SHOT = { pos: [1.3, 0.15, 0.9] as const, look: [0, -0.05, 0] as const, fov: 55, from: 0, to: 2.6 };
+export const THROUGH_GLASS_SHOT = { pos: [1.3, 0.15, 0.9] as const, look: [0, -0.05, 0] as const, fov: 55, from: 0, to: 4.0 };
 
 /** 停拍里看水洼里的倒影（3-4）：镜头在主角前方 far 米、离地 h 米，回头看主角前方 lookAhead 米处的水面（lookY 低于地面一点）。 */
 export const PUDDLE_GAZE = { far: 2.4, h: 0.8, lookAhead: 0.9, lookY: -0.2 } as const;

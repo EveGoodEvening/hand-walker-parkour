@@ -29,6 +29,8 @@ export const WATER_EDGE_Z = 0.2;
  * 修复轮 U5 第二轮：−0.6 → −2.1（§10.2 是 −1.9）。替身离镜头太近时只能从正上方看，倒影先露出两只鞋底，头藏在肩膀后面。
  */
 export const WATER_DOUBLE_Z = -2.1;
+/** 人群在替身前方（靠岸、靠镜头的一侧）让开的半宽（米）：镜头看它的脸的视线从这条走廊里穿过。 */
+export const CROWD_CLEAR_X = 1.0;
 /** 双手按进水里的位置（相对 STILL_ORIGIN，与 WP5 handsInWater 的手一致）：开场的涟漪从这两点扩散。 */
 export const WATER_HAND_X = 0.3, WATER_HAND_Z = -0.07;
 /** 水面范围 [x0, z0, x1, z1]（y = 0 平面，z0 < z1）。 */
@@ -107,6 +109,8 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
         const a = (i / n) * Math.PI * 2 + rng.next() * 0.3, r = 1.3 + rng.next() * 3.0;
         const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r * 0.8;
         if (z > WATER_EDGE_Z - 0.4) continue;
+        // 镜头（岸上，斜着往下看）和它的脸之间不放人（修复轮 U5 第三轮：中画质 26 个人时，有一个正好挡住半张脸和一只眼睛）
+        if (z > cz - 0.2 && Math.abs(x - cx) < CROWD_CLEAR_X) continue;
         const yaw = Math.atan2(-(cx - x), -(cz - z));
         const tone = rng.next();
         crawlerFigure(cg, x, z, yaw, mix(0x5c656c, 0x4c555c, tone), mix(C.skin, 0x7a8286, 0.75), 0.57, 0x454c52);

@@ -21,6 +21,10 @@ import { boneGroup, upperFadeWanted } from '../../../src/render/actors/readabili
 import { WP5 } from '../../../src/render/actors/shared';
 import { doubleEyes, doubleVerts, frame, headNdc, inBox, ndc, occluderDepth, playerBox, playRun, playStill, playStop, pointsVisible, scene, stillSnap, visibleAgainst, visibleFraction } from './scene';
 import { snap } from './helpers';
+import { scaleEyeVertex, STILL_EYE_GLOW, STILL_EYE_SCALE } from '../../../src/render/actors/Doubles';
+import { RIG_COLORS, rigColor } from '../../../src/render/actors/rigBuild';
+import { presetOf, screenColor, screenColorBasic } from '../../../src/render/kits/outside/lib/tone';
+import '../../../src/render/atmosphere';
 
 const O = new THREE.Vector3(STILL_ORIGIN.x, STILL_ORIGIN.y, STILL_ORIGIN.z);
 
@@ -47,43 +51,101 @@ describe('anomaly doubles are not hidden behind the protagonist (U5)', () => {
     expect(Math.abs(-rip.position.z - mirrorS)).toBeLessThan(0.02);
   });
 
-  // 「它的指尖碰到我的额头」（第 2 章）：+3.4–4.4 s 之间指尖离你的头（网格）< 0.1 m，这时你的头和镜中它的头都在画面里（±0.9）；
-  // 你的右手掌心贴在玻璃上（「我抬起右手，贴在镜面上」），停拍里一直贴着
+  // 「它的指尖碰到我的额头」（第 2 章）：第三只手 2.6 s 开始「慢慢」伸（DESIGN 2-10：2 s，像穿过一层水）——+3.6 s 时指尖还离你的头
+  // > 0.15 m，+4.4 s 起 < 0.1 m；这时你的头和镜中它的头都在侧面机位的画面里（±0.9）。你的右手掌心贴在玻璃上
+  // （「我抬起右手，贴在镜面上」），cue 的 4 s（4.3 s）过了、第三只手还在时也贴着，直到 5.2 s 它不见
+  function headVerts(w: Awaited<ReturnType<typeof scene>>): THREE.Vector3[] {
+    const head: THREE.Vector3[] = [];
+    w.actor.rig.root.updateMatrixWorld(true);
+    w.actor.rig.root.traverse((o) => {
+      const m = o as THREE.SkinnedMesh;
+      if (!m.isSkinnedMesh) return;
+      const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute, sk = m.geometry.getAttribute('skinIndex') as THREE.BufferAttribute;
+      for (let i = 0; i < pos.count; i++) {
+        if (sk.getX(i) !== BONE_INDEX.head) continue;
+        const v = new THREE.Vector3().fromBufferAttribute(pos, i); m.applyBoneTransform(i, v); v.applyMatrix4(m.matrixWorld); head.push(v);
+      }
+    });
+    return head;
+  }
+  const mirrorOf = (w: Awaited<ReturnType<typeof scene>>) => w.ch.segments.find((s) => s.def.id === '2-10')!.surfaces.find((q) => q.id === 'chipMirror')!.s0;
   for (const lane of [-1, 0, 1] as const) {
-    it(`2-10 lane ${lane}: palm on the glass, the fingertip touches your forehead, both heads in the side shot`, async () => {
+    it(`2-10 lane ${lane}: palm on the glass, the fingertip slowly reaches your forehead, both heads in the side shot`, async () => {
       let touched = 0;
-      for (const tA of [3.4, 3.8, 4.4, 5.0]) {
+      for (const tA of [3.6, 4.4, 4.8, 5.1]) {
         const w = await scene(ch2 as ChapterDef);
         playStop(w, '2-10', 139, tA, lane);
-        const mirrorS = w.ch.segments.find((s) => s.def.id === '2-10')!.surfaces.find((q) => q.id === 'chipMirror')!.s0;
+        const mirrorS = mirrorOf(w);
         w.actor.rig.root.updateMatrixWorld(true);
         const palm = new THREE.Vector3(); w.actor.rig.root.getObjectByName('palmR')!.getWorldPosition(palm);
         expect(Math.abs(-palm.z - mirrorS)).toBeLessThan(0.06);
         expect(Math.abs(palm.x)).toBeLessThan(0.9);                                    // 在镜子的开口里（半宽 0.95）
+        expect(WP5.chaseCam).toBe(false);                                               // 侧面机位
         const box = w.ctx.scene.getObjectByName(`double${w.dbl.slotIndexOf('chip')}`)!; box.updateMatrixWorld(true);
         const up = new THREE.Vector3(); box.getObjectByName('arm3Upper')!.getWorldPosition(up);
         let tip: THREE.Vector3 | null = null, far = -1;
         doubleVerts(w, 'chip', (v, bi) => { if (bi === BONE_INDEX.arm3Hand && v.distanceTo(up) > far) { far = v.distanceTo(up); tip = v.clone(); } });
         let near = Infinity;
-        const head: THREE.Vector3[] = [];
-        w.actor.rig.root.traverse((o) => {
-          const m = o as THREE.SkinnedMesh;
-          if (!m.isSkinnedMesh) return;
-          const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute, sk = m.geometry.getAttribute('skinIndex') as THREE.BufferAttribute;
-          for (let i = 0; i < pos.count; i++) {
-            if (sk.getX(i) !== BONE_INDEX.head) continue;
-            const v = new THREE.Vector3().fromBufferAttribute(pos, i); m.applyBoneTransform(i, v); v.applyMatrix4(m.matrixWorld); head.push(v);
-          }
-        });
+        const head = headVerts(w);
         for (const v of head) if (tip) near = Math.min(near, v.distanceTo(tip));
         const hc = head.reduce((a, v) => a.add(v), new THREE.Vector3()).multiplyScalar(1 / head.length);
         const hn = ndc(w, hc), dn = headNdc(w, 'chip')!;
-        if (tA <= 4.4 && near < 0.1 && Math.abs(hn.x) < 0.9 && Math.abs(hn.y) < 0.9 && Math.abs(dn.x) < 0.9 && Math.abs(dn.y) < 0.9) touched++;
-        if (tA >= 3.8) { expect(near).toBeLessThan(0.1); expect(near).toBeGreaterThan(0.005); }   // 碰到，不戳进头里
+        if (tA < 4) { expect(near).toBeGreaterThan(0.15); continue; }               // 慢：伸了 1 s，还在半路
+        expect(near).toBeLessThan(0.1); expect(near).toBeGreaterThan(0.005);           // 碰到，不戳进头里
+        if (Math.abs(hn.x) < 0.9 && Math.abs(hn.y) < 0.9 && Math.abs(dn.x) < 0.9 && Math.abs(dn.y) < 0.9) touched++;
       }
       expect(touched).toBeGreaterThanOrEqual(2);
     });
   }
+
+  // 「我闭上眼。再睁开时，镜子里只有我自己。额头干干净净」「我只是继续往前爬」（修复轮 U5 第三轮）：5.2 s 第三只手不见的那一帧，
+  // 镜头从侧面机位切回追尾，他同一帧放下手、回到停拍的爬姿（不是跪直的「站在镜子前」），镜子里是普通的倒影——真正的镜像、
+  // 没有第三只手，在画面里、没被他挡住
+  for (const lane of [-1, 0, 1] as const) {
+    it(`2-10 lane ${lane}: after the hand is gone he is crawling again, under the chase camera, and the mirror shows only him`, async () => {
+      for (const tA of [5.22, 6.0, 7.5]) {
+        const w = await scene(ch2 as ChapterDef);
+        const last = playStop(w, '2-10', 139, tA, lane);
+        const fy = last.player.floorY, mirrorS = mirrorOf(w);
+        w.actor.rig.root.updateMatrixWorld(true);
+        const at = (n: string) => { const p = new THREE.Vector3(); w.actor.rig.root.getObjectByName(n)!.getWorldPosition(p); return p; };
+        const pel = at('pelvis'), hd = at('head'), palm = at('palmR');
+        expect(pel.y - fy).toBeLessThan(0.45);                                          // 跪直时 0.62
+        expect(hd.y - fy).toBeLessThan(0.6);                                            // 跪直时 1.19
+        expect(palm.y - fy).toBeLessThan(0.1);                                          // 手撑在地上，不贴在镜子上
+        expect(mirrorS - -palm.z).toBeGreaterThan(0.1);
+        expect(WP5.chaseCam).toBe(true);
+        expect(w.camera.position.z).toBeGreaterThan(pel.z + 2);                        // 在他身后
+        const d = w.dbl.active().find((q) => q.id === 'chip')!;
+        expect(d.visible).toBe(true); expect(d.plain).toBe(true); expect(d.third).toBeNull(); expect(d.alpha).toBe(1);
+        // 真正的镜像：倒影的骨盆在镜后的深度 = 他的骨盆在镜前的距离
+        const box = w.ctx.scene.getObjectByName(`double${d.slot}`)!; box.updateMatrixWorld(true);
+        const dp = new THREE.Vector3(); box.getObjectByName('pelvis')!.getWorldPosition(dp);
+        expect(Math.abs((-dp.z - mirrorS) - (mirrorS - -pel.z))).toBeLessThan(0.05);
+        expect(Math.abs(dp.x - pel.x)).toBeLessThan(0.05);
+        const h = headNdc(w, 'chip')!;
+        expect(Math.abs(h.x)).toBeLessThan(0.9); expect(Math.abs(h.y)).toBeLessThan(0.9);
+        expect(visibleFraction(w, 'chip', [BONE_INDEX.head], 640, 360).visible).toBeGreaterThan(0.9);
+        // 第三只手的骨骼缩成 0（不画）
+        expect(box.getObjectByName('arm3Upper')!.scale.x).toBeLessThan(0.01);
+      }
+    });
+  }
+
+  it('2-10: the drop from the glass is a cut, not a slide — the camera jumps from the side shot to the chase view in the same frame', async () => {
+    const w = await scene(ch2 as ChapterDef);
+    playStop(w, '2-10', 139, 5.19, 0);
+    const before = w.camera.position.clone();
+    w.actor.rig.root.updateMatrixWorld(true);
+    const p0 = new THREE.Vector3(); w.actor.rig.root.getObjectByName('pelvis')!.getWorldPosition(p0);
+    const w2 = await scene(ch2 as ChapterDef);
+    const last = playStop(w2, '2-10', 139, 5.21, 0);
+    w2.actor.rig.root.updateMatrixWorld(true);
+    const p1 = new THREE.Vector3(); w2.actor.rig.root.getObjectByName('pelvis')!.getWorldPosition(p1);
+    expect(p0.y - last.player.floorY).toBeGreaterThan(0.55);                           // 5.19 s 还跪着、掌心贴着玻璃
+    expect(p1.y - last.player.floorY).toBeLessThan(0.45);                              // 下一帧已经趴下
+    expect(w2.camera.position.distanceTo(before)).toBeGreaterThan(1);                  // 同一帧切镜头
+  });
 
   it('3-10 at 2.0 s and 10.8 s (doorway glance): the reflection is beside the protagonist, not behind his head', async () => {
     for (const [t, id] of [[2.0, 'bath'], [10.85, 'bath2']] as const) {
@@ -290,6 +352,81 @@ describe('other still compositions (U5)', () => {
     // 只画手臂和手（镜头在他眼睛里）
     expect(w.actor.groupAlpha.toArray()).toEqual([0, 1, 1, 0]);
   });
+
+  // 「他的眼睛里有一种…很亮的…东西」（修复轮 U5 第三轮）：以前自发光 0.35 在画面上是 #979797，比 #a89f93 的脸还暗，2–3 px 的眼睛
+  // 被抹掉了，整张脸是一块空白的米色圆盘（验收员 verify-U5-r2 的取色）。现在眼睛在画面上比脸亮 ≥ 0.15（HSL 亮度），每只 ≥ 4 px
+  it('4-6 at 3.0 s: its eyes are clearly brighter than its face and ≥ 4 px each at 1280×720', async () => {
+    const w = await scene(ch4 as ChapterDef);
+    playStill(w, '4-6', 3.0);
+    const box = w.ctx.scene.getObjectByName(`double${w.dbl.slotIndexOf('waterMe')}`)!;
+    box.updateMatrixWorld(true);
+    let mesh: THREE.SkinnedMesh | null = null;
+    box.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh && !mesh) mesh = o as THREE.SkinnedMesh; });
+    const m = mesh as unknown as THREE.SkinnedMesh;
+    // 着色器补丁真的进了 three r186 的 lambert（顶点里放大眼睛、片元里替换成自发光），uniform 是这个 set 的值
+    const sh = { uniforms: {} as Record<string, { value: unknown }>, vertexShader: THREE.ShaderLib.lambert.vertexShader, fragmentShader: THREE.ShaderLib.lambert.fragmentShader };
+    (m.material as THREE.MeshLambertMaterial).onBeforeCompile(sh as never, null as never);
+    expect(sh.vertexShader).toContain('transformed = wp5C + (transformed - wp5C) * uWp5EyeScale;');
+    expect(sh.fragmentShader).toContain('outgoingLight = mix(outgoingLight, vec3(uWp5EyeGlow)');
+    expect(sh.uniforms.uWp5EyeGlow!.value).toBe(STILL_EYE_GLOW.water);
+    expect(sh.uniforms.uWp5EyeScale!.value).toBe(STILL_EYE_SCALE.water);
+    // 眼睛的大小：静止姿势里按着色器同一个公式放大，再蒙皮、投影到 1280×720
+    const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute, col = m.geometry.getAttribute('color') as THREE.BufferAttribute;
+    const eye = new THREE.Color().setHex(RIG_COLORS.eye);
+    const bb: Record<string, number[]> = { L: [1e9, 1e9, -1e9, -1e9], R: [1e9, 1e9, -1e9, -1e9] };
+    const c = new THREE.Vector3();
+    let n = 0;
+    for (let v = 0; v < pos.count; v++) {
+      if (Math.abs(col.getX(v) - eye.r) > 0.004 || Math.abs(col.getY(v) - eye.g) > 0.004 || Math.abs(col.getZ(v) - eye.b) > 0.004) continue;
+      const p = new THREE.Vector3().fromBufferAttribute(pos, v);
+      const b = bb[p.x < 0 ? 'L' : 'R']!;
+      scaleEyeVertex(p, STILL_EYE_SCALE.water!);
+      m.applyBoneTransform(v, p); p.applyMatrix4(m.matrixWorld);
+      c.add(p); n++;
+      const q = p.clone().project(w.camera), x = (q.x + 1) / 2 * 1280, y = (1 - q.y) / 2 * 720;
+      b[0] = Math.min(b[0]!, x); b[1] = Math.min(b[1]!, y); b[2] = Math.max(b[2]!, x); b[3] = Math.max(b[3]!, y);
+    }
+    for (const b of Object.values(bb)) { expect(b[2]! - b[0]!).toBeGreaterThanOrEqual(4); expect(b[3]! - b[1]!).toBeGreaterThanOrEqual(4); }
+    // 画面上的颜色（Lambert ÷ π、Neutral、sRGB；替身材质的去饱和 0.15 与色调 ×1.34–1.4），脸朝镜头
+    c.multiplyScalar(1 / n);
+    const nrm = w.camera.position.clone().sub(c).normalize();
+    const sk = new THREE.Color().setHex(rigColor('skin'));
+    const lum = 0.299 * sk.r + 0.587 * sk.g + 0.114 * sk.b, tint = [1.34, 1.36, 1.4];
+    const alb = [sk.r, sk.g, sk.b].map((x, j) => (x + (lum - x) * 0.15) * tint[j]!) as [number, number, number];
+    const L = (q: readonly number[]) => (Math.max(...q) + Math.min(...q)) / 2;
+    const face = L(screenColor(alb, presetOf('dreamGray'), [nrm.x, nrm.y, nrm.z]));
+    const g = STILL_EYE_GLOW.water!;
+    expect(L(screenColorBasic([g, g, g])) - face).toBeGreaterThanOrEqual(0.15);
+    expect(L(screenColorBasic([0.35, 0.35, 0.35])) - face).toBeLessThan(0);              // 以前：比脸还暗
+    expect(Math.abs(face - 0.62)).toBeLessThan(0.04);                                    // 与截图上取的脸色（#a89f93）一致
+  });
+
+  // 中、高画质的人群更密（26 个）：以前有一个爬着的人正好落在镜头和它的脸之间，挡住半张脸和一只眼睛（修复轮 U5 第三轮的截图）
+  for (const tier of ['low', 'medium'] as const) {
+    it(`4-6 at 3.0 s (${tier}): no one in the crawling crowd stands between the camera and its face`, async () => {
+      const w = await scene(ch4 as ChapterDef);
+      playStill(w, '4-6', 3.0);
+      const ctx = viewContext(tier, true);
+      const root = getSet('water')!.build(ctx, 'default');
+      root.position.copy(O); root.updateMatrixWorld(true);
+      let crowd: THREE.Mesh | null = null;
+      root.traverse((o) => { if ((o as THREE.Mesh).isMesh && o.name.includes('waterCrowd') && !crowd) crowd = o as THREE.Mesh; });
+      expect(crowd).toBeTruthy();
+      const cm = crowd as unknown as THREE.Mesh;
+      (cm.material as THREE.Material).side = THREE.DoubleSide;                         // 人群是镜像几何体（绕向翻转）
+      const pts = doubleEyes(w, 'waterMe');
+      doubleVerts(w, 'waterMe', (v, bi) => { if (bi === BONE_INDEX.head) pts.push(v); });
+      const rc = new THREE.Raycaster(), cam = w.camera.position.clone();
+      let hidden = 0;
+      for (const p of pts) {
+        const d = p.clone().sub(cam), L = d.length();
+        rc.set(cam, d.normalize()); rc.far = L - 0.02;
+        if (rc.intersectObject(cm, false).length) hidden++;
+      }
+      expect(pts.length).toBeGreaterThan(50);
+      expect(hidden).toBe(0);
+    });
+  }
 
   it('4-6 at 3–6 s: small ripples keep spreading around both hands pressed into the water, bright enough to show on the pale water', () => {
     const ctx = viewContext('low', true);

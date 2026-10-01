@@ -162,6 +162,30 @@ describe('4-3: the standing "me" is inside a standing mirror on the plaza (U5, D
     expect(Math.abs(h.x)).toBeLessThan(STAND_MIRROR.w / 2 - 0.1);
     expect(h.y).toBeGreaterThan(1.2); expect(h.y).toBeLessThan(STAND_MIRROR.h);
     expect(h.z).toBeLessThan(0); expect(h.z).toBeGreaterThan(-STAND_MIRROR.back);
+    // 脚站在镜中的地面（玻璃下沿到镜底的底板）上：从站立机位看，脚在镜面的下沿以内，不是吊在镜子下面（修复轮 U5 第三轮）
+    const fl = g.getObjectByName('wp5.standMirror.floor') as THREE.Mesh;
+    expect(fl).toBeTruthy();
+    const box = ctx.scene.getObjectByName(`double${d.slot}`)!;
+    box.updateMatrixWorld(true);
+    let mesh: THREE.SkinnedMesh | null = null;
+    box.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh && !mesh) mesh = o as THREE.SkinnedMesh; });
+    const m = mesh as unknown as THREE.SkinnedMesh;
+    const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute, sk = m.geometry.getAttribute('skinIndex') as THREE.BufferAttribute;
+    const cam = new THREE.PerspectiveCamera(55, 16 / 9, 0.05, 300);
+    cam.position.set(last.player.x, last.player.floorY + 1.62, -last.player.s + 1.9); cam.lookAt(last.player.x, last.player.floorY + 1.5, -last.player.s - 8); cam.updateMatrixWorld(true);
+    let below = 0, n = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const bi = sk.getX(i);
+      if (bi !== BONE_INDEX.footL && bi !== BONE_INDEX.footR) continue;
+      const v = new THREE.Vector3().fromBufferAttribute(pos, i); m.applyBoneTransform(i, v); v.applyMatrix4(m.matrixWorld);
+      const lv = g.worldToLocal(v.clone());
+      expect(Math.abs(lv.x)).toBeLessThan(STAND_MIRROR.w / 2); expect(lv.z).toBeLessThan(0); expect(lv.z).toBeGreaterThan(-STAND_MIRROR.back);
+      // 同一个横向位置上镜面的下沿（玻璃与底板的交线）在画面上的高度：脚的每个顶点都不低于它（容差 0.5 px @ 720）
+      const edge = g.localToWorld(new THREE.Vector3(lv.x, 0, 0)).project(cam).y;
+      n++; if (v.project(cam).y < edge - 1 / 720) below++;
+    }
+    expect(n).toBeGreaterThan(0);
+    expect(below).toBe(0);
     // 没有边框：镜子的每个材质都是浅色（画面亮度 ≥ 0.6），没有深色框条、支脚
     g.traverse((o) => {
       const m = (o as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;

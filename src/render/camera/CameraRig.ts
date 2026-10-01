@@ -52,6 +52,8 @@ export class CameraRig implements ViewSystem {
   private gazeBlend = 0;
   /** 段内专门追尾机位（SEGMENT_SHOTS）的权重。 */
   private segBlend = 0;
+  /** 上一帧是不是 2-10 穿玻璃的侧面机位（它结束、又没有别的替身可看时，直接切回追尾）。 */
+  private wasThrough = false;
   private standBlend = 0;
   private roll = 0;
   private fovExtra = 0;
@@ -79,8 +81,8 @@ export class CameraRig implements ViewSystem {
     const rm = this.ctx?.settings.reducedMotion;
     if (e.type === 'hit' && !rm) this.shake = 0.12;
     if (e.type === 'land') this.landT = 0;
-    if (e.type === 'segment') { this.shot = null; this.stillShot = null; this.standShot = null; this.stillCuts.clear(); }
-    if (e.type === 'retry') { this.fallBlend = 0; this.shot = null; this.gazeBlend = 0; this.segBlend = 0; }
+    if (e.type === 'segment') { this.shot = null; this.stillShot = null; this.standShot = null; this.stillCuts.clear(); this.wasThrough = false; }
+    if (e.type === 'retry') { this.fallBlend = 0; this.shot = null; this.gazeBlend = 0; this.segBlend = 0; this.wasThrough = false; }
   }
 
   onReset(snap: SimSnapshot): void {
@@ -241,6 +243,12 @@ export class CameraRig implements ViewSystem {
     // —— 停拍 / mirrorClose：看向镜中的替身 ——
     const f = WP5.focus;
     const wantGaze = !!f && f.weight > 0.05 && (N.mode === 'stop' || mirrorClose);
+    const TG = THROUGH_GLASS_SHOT;
+    const through = !!f && f.weight > 0.05 && N.mode === 'stop' && f.through >= TG.from && f.through <= TG.to;
+    // 穿玻璃的侧面机位结束、镜子里只剩普通的倒影（2-10「再睁开时，镜子里只有我自己」，修复轮 U5 第三轮）：直接切回追尾，
+    // 不先切到看镜子的机位再慢慢拉回来
+    if (this.wasThrough && !through && !wantGaze) this.gazeBlend = 0;
+    this.wasThrough = through;
     this.gazeBlend = rm ? (wantGaze ? 1 : 0) : clamp(this.gazeBlend + (wantGaze ? bdt / 1.6 : -bdt / 0.8), 0, 1);
     if (this.gazeBlend > 0 && f) {
       const F = f.point;
@@ -267,8 +275,6 @@ export class CameraRig implements ViewSystem {
       o.pos.lerp(_g, k); o.look.lerp(_gl, k);
     }
     // —— 第三只手穿过玻璃（2-10）：切到侧面机位，你和镜中的它都在画面里 ——
-    const TG = THROUGH_GLASS_SHOT;
-    const through = !!f && f.weight > 0.05 && N.mode === 'stop' && f.through >= TG.from && f.through <= TG.to;
     if (through && f) {
       _a.copy(WP5.playerHead).add(f.point).multiplyScalar(0.5);
       // 镜头放在走廊中线那一侧（接触点偏右时从左边看），不贴着侧墙，视线从镜子开口的中间穿过去
