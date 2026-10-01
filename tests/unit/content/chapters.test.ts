@@ -1,6 +1,6 @@
 // tests/unit/content/chapters.test.ts —— 五章数据（DESIGN.md §4、§8.10 WP2 验收 1–4、6，附录 B.1、B.3、附录 C）。归 WP2。
 import { describe, expect, it } from 'vitest';
-import { CORRIDOR_WIDTH, LANE_WIDTH, LIMITS, TEXT, TICK_DT } from '../../../src/core/constants';
+import { CORRIDOR_WIDTH, LANE_WIDTH, LIMITS, MIN_ACTION_GAP, TEXT, TICK_DT } from '../../../src/core/constants';
 import { FALLBACK_ATMOSPHERES } from '../../../src/core/fallbacks';
 import { QUALITY } from '../../../src/core/quality';
 import type { ChapterId, ObstacleClass } from '../../../src/core/types';
@@ -11,7 +11,7 @@ import { lineText } from '../../../src/levels/lines';
 import { segmentEvents } from '../../../src/levels/lint';
 import { OBSTACLES } from '../../../src/levels/obstacles';
 import type { ChapterDef, CompiledSegment, RunSegmentDef, SegmentDef, StillSegmentDef } from '../../../src/levels/schema';
-import { nominalTimeline, readDistance, timeAtS, validateChapter } from '../../../src/levels/validate';
+import { nominalTimeline, readDistance, segmentDensity, timeAtS, validateChapter } from '../../../src/levels/validate';
 import { solver } from '../../../src/sim/Solver';
 import { Sim } from '../../../src/sim/Sim';
 import { advancePace, createPaceState, nominalCadence, paceEvents } from '../../../src/sim/Pace';
@@ -336,6 +336,25 @@ describe('§2.8 难度曲线：最后一个跑段是减速的叙事收束，不�
     const inputs = (id: ChapterId, sid: string) => density(compile(ch(id)).segments.find((s) => s.def.id === sid)!).inputs;
     expect(inputs('ch3', '3-6')).toBeGreaterThanOrEqual(inputs('ch3', '3-4'));
     expect(inputs('ch4', '4-5')).toBeGreaterThanOrEqual(inputs('ch4', '4-1'));
+  });
+  // 修复单元 A（第 3 轮复验）：行的 20 拍峰值只数行，看不出「最密的一小段要按几次」。按 bot:difficulty 的口径
+  // （segmentDensity：去掉纸条、本章最小间隔下求解器的最少输入）数任意 20 拍里的必需输入，最后一个跑段必须**严格**低于高潮。
+  // 第五章：5-3 的步频 5.8 时 0.6 s 最小间隔约 3.5 拍，20 拍最多 6 次（3.0），5-11 也排到 6 次就和高潮打平（§4.5「不是 boss 关」）。
+  it.each(IDS)('%s：最后一个跑段最密的 20 拍（必需输入）低于技巧高潮', (id) => {
+    const runs = compile(ch(id)).segments.filter((s) => s.kind === 'run');
+    const last = runs[runs.length - 1]!;
+    const climaxIds = id === 'ch4' ? [] : id === 'ch5' ? ['5-3'] : runs.slice(-3, -1).map((s) => s.def.id);
+    if (!climaxIds.length) return;   // 第四章的高潮就是最后的 4-5
+    const peak = (seg: CompiledSegment) => {
+      const d = segmentDensity(seg, MIN_ACTION_GAP[id], solver)!;
+      expect(d, seg.def.id).not.toBeNull();
+      const at = d.route.split(' ').filter(Boolean).map((x) => Number(x.slice(1)));
+      let best = 0;
+      for (let a = 0; a + 20 <= (seg.def as RunSegmentDef).beats; a += 0.5) best = Math.max(best, at.filter((x) => x >= a && x < a + 20).length);
+      return best;
+    };
+    const top = Math.max(...runs.filter((s) => climaxIds.includes(s.def.id)).map(peak));
+    expect(peak(last), `${last.def.id} vs ${climaxIds.join('/')}`).toBeLessThan(top);
   });
 });
 
