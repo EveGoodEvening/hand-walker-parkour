@@ -604,7 +604,8 @@ export class ObstacleView implements ViewSystem {
       // 障碍里的人只转鞋尖和腿（上身扭过去会让垂着的手伸出碰撞盒）
       this.applyGaze(p, o.id * 8 + i, (o.s0 + o.s1) / 2 + st.ds, f, 'turnShoes', -1, b.type === 'walk', OBSTACLE_GAZE_MAX, 0);
       p.upper = look.upper || f.stand;
-      p.near = nearUpper(p.x, -p.z, f);
+      // 障碍里的人一律画上身（低画质也画）：画面不随玩家远近变化（不是冲着你来的）；路边的人才按距离（nearUpper）
+      p.near = 1;
       p.outdoor = OUTDOOR_KITS.has(kit);
       if (p.upper && this.globalOp.applaud >= 0) p.clap = clapClosed(f.tAnim, hash01(o.id + i)) ? 2 : 1;
       if (sp === 'directorZhou') p.glow = emberGlow(f.t, this.reducedFlicker);

@@ -114,12 +114,18 @@ describe('站立段与梦里：躯干和头（§5.7「只在站立段、梦里�
       // 跑段：躯干只在近处（NEAR_UPPER.r + grow）；远处的人仍只到腰带
       const sn = vd.d.snap, m = new THREE.Matrix4(), v = new THREE.Vector3();
       const dist = (pool: ReturnType<typeof view.forest.pool>, i: number) => { pool.matrixAt(i, m); v.setFromMatrixPosition(m); return Math.hypot(-v.z - sn.player.s, v.x - sn.player.x); };
+      // 远处路边的人没有躯干（障碍里的人一律有，见 legsObstacle）
       const torso = view.forest.pool('torso'), hips = view.forest.pool('hips');
-      for (let i = 0; i < torso.n; i++) expect(dist(torso, i)).toBeLessThan(NEAR_UPPER.r + NEAR_UPPER.grow + 0.5);
-      let far = 0;
-      for (let i = 0; i < hips.n; i++) if (dist(hips, i) > NEAR_UPPER.r + NEAR_UPPER.grow + 0.5) far++;
-      expect(far).toBeGreaterThan(5);
-      expect(view.forest.counts().torso).toBeLessThan(hips.n - far + 1);
+      const at = new Set<string>();
+      for (let i = 0; i < torso.n; i++) { torso.matrixAt(i, m); v.setFromMatrixPosition(m); at.add(`${v.x.toFixed(4)},${v.z.toFixed(4)}`); }
+      let farBare = 0, farUpper = 0;
+      for (let i = 0; i < hips.n; i++) {
+        if (dist(hips, i) <= NEAR_UPPER.r + NEAR_UPPER.grow + 0.5) continue;
+        hips.matrixAt(i, m); v.setFromMatrixPosition(m);
+        if (at.has(`${v.x.toFixed(4)},${v.z.toFixed(4)}`)) farUpper++; else farBare++;
+      }
+      expect(farBare).toBeGreaterThan(5);
+      expect(farUpper).toBeLessThanOrEqual(farBare);
     }
     const snap = vd.d.snap;
     const stand = { ...snap, segKind: 'stand' as const };

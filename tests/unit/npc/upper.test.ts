@@ -46,6 +46,15 @@ describe('腰带的顶面（U6）', () => {
         expect(up.some(isHair), `${tier} ${name}`).toBe(false);
       }
     }
+    // 伸脚的人（footOut 原型）同样：坐着的人腰带顶面不是黑的；上身变体一直在，头顶是头发
+    const { view } = makeView('high');
+    const fo = view.pools.get('footOut');
+    expect(fo).toBeDefined();
+    if (fo) {
+      const seated = upFaceColors(fo.geo, fo.variantIndex('seated'));
+      expect(seated.some(isHair)).toBe(false);
+      expect(fo.variantIndex('upper')).toBeGreaterThanOrEqual(0);
+    }
   });
 
   it('衬衫下摆比腰带高 10–15 cm，着衣服色（instanceColor）', () => {

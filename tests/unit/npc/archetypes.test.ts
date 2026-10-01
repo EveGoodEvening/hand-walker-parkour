@@ -316,7 +316,7 @@ describe('人腿 / 陈默 / 爬行者：世界包围盒与碰撞盒偏差 ≤ 5 
     for (const id of [0, 1]) {
       const { view, obstacles } = stageView('high', [{ kind: 'footOut', lane: 0, at: 7 }], { idBase: 7000 + id });
       const pool = view.pools.get('footOut');
-      expect(pool?.pool.n).toBe(2);                    // 人 + 椅子
+      expect(pool?.pool.n).toBe(3);                    // 人 + 椅子 + 上身（U6）
       const b = instancedBounds(pool ? [pool.pool.mesh] : []);
       expect(Math.max(-b.min.x, b.max.x)).toBeLessThan(1.1 - 0.22);
       expect(Math.max(-b.min.x, b.max.x)).toBeGreaterThan(FOOT_CHAIR_X);
