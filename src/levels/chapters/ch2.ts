@@ -22,6 +22,8 @@
 //   · 为了让全章合计不超过 §4.6 的 +15%：2-2 从 150 拍缩到 136 拍（第三道人墙 @124 之后只留两行），2-8 从 96 拍缩到 86 拍。
 //   · 2-2 加了一个走动的腿（@46 右道，1.2 m/s，约 @62 被追上），对应表中的「走动的腿」。人墙 2 前面 @95 那一行只挡左道：
 //     @94 中道合上、右道打开时，中道的玩家往右换一次道就进了缝。
+//   · 第二轮加密（修复单元 A，第 3 轮；取代上一条里 2-7 / 2-8 的密度）：2-7 每 5–6 拍一个动作（0.74 → 1.10 次 / 10 拍），
+//     2-8 仍是本章最密（1.05 → 1.28）。横放的拖把第一次出现（2-7 @22）那一行只有它（R7）。
 import type { ChapterDef } from '../schema';
 
 export default {
@@ -192,25 +194,23 @@ export default {
       beats: 136, stride: 1.0, cadence: [4.8, 5.2], checkpoints: [92],
       follower: { mode: 'absent' },
       rows: [
+        // 第二轮加密：地面管线和书（撑跃）、横放的拖把（伏低）、只留一条缝的推车和储物柜轮流来，约每 5–6 拍一个动作
         [10, ['.', 'pipe', '.']],                    // 地面管线
-        [16, ['cart', 'pipe', '.']],                 // 器材推车
-        [22, ['.', 'locker', 'locker']],
-        [28, ['mopAcross', '.', 'mopAcross']],       // 横放的拖把（本章第一次出现，这一行只有它：R7）
-        [34, ['.', 'books', 'books']],
-        [37, ['.', '.', 'cart']],
-        [41, ['books', 'locker', '.']],
+        [16, ['.', 'locker', 'locker']],
+        [22, ['mopAcross', 'mopAcross', 'mopAcross']],   // 横放的拖把（本章第一次出现，这一行只有它：R7）
+        [28, ['locker', '.', 'cart']],               // 器材推车
+        [34, ['books', 'pipe', 'books']],
+        [40, ['cart', 'cart', '.']],
         [46, ['locker', '.', 'locker']],
-        [68, ['.', 'cart', '.']],
-        [74, ['pipe', 'pipe', '.']],
-        [78, ['.', '.', 'cart']],                    // 停拍（@82）之前最后一个动作
+        [60, ['pipe', 'pipe', 'pipe']],
+        [65, ['.', 'cart', 'locker']],
+        [70, ['mopAcross', 'locker', 'locker']],
+        [75, ['cart', '.', 'locker']],               // 停拍（@82）之前最后一个动作
         [108, ['mopAcross', 'locker', '.']],         // 检查点、两句文字之后才开始加密
-        [111, ['mopAcross', '.', '.']],
-        [115, ['mopAcross', 'mopAcross', '.']],
-        [118, ['cart', 'locker', '.']],
-        [122, ['.', 'cart', 'pipe']],
-        [125, ['locker', '.', '.']],
-        [129, ['pipe', 'pipe', '.']],
-        [132, ['cart', '.', '.']],
+        [113, ['locker', 'locker', 'pipe']],
+        [118, ['cart', '.', 'locker']],
+        [123, ['mopAcross', 'mopAcross', 'mopAcross']],
+        [128, ['.', 'cart', 'locker']],
       ],
       events: [
         { at: 0, type: 'ambience', amb: 'labWind', level: 1, seconds: 2 },
@@ -235,19 +235,18 @@ export default {
       follower: { mode: 'behind' },
       rows: [
         [11, ['.', 'pipe', '.']],
-        [17, ['cart', '.', 'pipe']],
-        [20, ['pipe', 'pipe', '.']],
+        [15, ['.', 'cart', 'locker']],
+        [19.5, ['pipe', 'pipe', 'pipe']],
         [30, 'HHH', 0.8],                            // 实验台：伏低（台面进深 0.8 m）
         [34, ['.', 'cart', 'pipe']],
         [38, ['pipe', 'locker', '.']],
         [42, ['locker', '.', 'cart']],
         [52, 'HHH', 0.8],
-        [56, ['pipe', '.', '.']],
-        [60, ['.', 'pipe', 'pipe']],
+        [56, ['.', 'cart', 'cart']],
+        [60, ['pipe', 'locker', 'locker']],
         [64, ['cart', '.', 'locker']],
         [74, 'HHH', 0.8],
         [78, ['.', 'cart', '.']],
-        [82, ['pipe', '.', '.']],
       ],
       events: [
         { at: 20, type: 'hint', hint: 'hold' },
