@@ -80,4 +80,5 @@
 - **工具与测试**：
   - `.mjs` 脚本用 `tsx` 跑时可以直接 import 带扩展名的 `.ts`；scratchpad 里带顶层 await 的 tsx 脚本要用 `.mts`。`import.meta.glob` 在 tsx 里不存在（各包 `index.ts` 用它），Node 探针直接 import 具体模块，或写成临时 vitest 文件。vitest 5 对通过的用例不打印 `console.log`。
   - 先在 Node 里把能算的都算完（kit 逐变体 build、姿势用软件光栅器、人群路径间距、声音离线渲染），浏览器只用来确认「看上去对」。截图清单里的数值验收要在同一页里自带断言（条件不满足就 `throw`）。
+  - 等重命令（verify、e2e、截图）：经 heavy-gate 用 `run_in_background` 启动、把输出写进日志并在末尾追加 `EXIT $?`，再用 Monitor 的 `until grep -q '^EXIT' log; do sleep 3; done` 等（前台长 sleep 会被拦截）。截图一律写成 `shot.mjs --plan` 清单，一个浏览器拍完一批，再用 PIL 拼成网格图一次查看。
   - 量「修复前」的数字不必切分支：`git archive HEAD src tests tsconfig.json package.json | tar -x -C <scratch>/old`，再软链 `node_modules`。
