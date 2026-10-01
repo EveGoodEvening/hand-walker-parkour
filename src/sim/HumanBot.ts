@@ -130,10 +130,13 @@ export class HumanBot {
   private noteTake = new Map<number, boolean>();
   private readonly ost: ObstacleState = { active: true, ds: 0, x0: 0, x1: 0, amount: 1 };
   /**
-   * 统计（测试与难度报告用）：执行过的输入数与失误数；laneLeadSum / laneLeadN：躲障碍的换道从按键到接触的提前量（秒）之和与次数；
-   * notesSeen / notesSkipped：决定过的纸条数与决定不捡的数。
+   * 统计（测试与难度报告用）：执行过的输入数与失误数；laneLeadSum / laneLeadN：躲障碍的换道从按键到接触的提前量（秒）之和与次数，
+   * laneLeads：每一次的提前量（按发生顺序；难度报告用它算中位数和「< 0.25 s」的比例——回中道时原车道远处还有障碍也算躲避，
+   * 这类样本动辄 1–3 s，会把均值拉高）；notesSeen / notesSkipped：决定过的纸条数与决定不捡的数。
    */
-  readonly stats = { inputs: 0, errors: 0, wrongDir: 0, late: 0, replans: 0, laneLeadSum: 0, laneLeadN: 0, notesSeen: 0, notesSkipped: 0 };
+  readonly stats = {
+    inputs: 0, errors: 0, wrongDir: 0, late: 0, replans: 0, laneLeadSum: 0, laneLeadN: 0, laneLeads: [] as number[], notesSeen: 0, notesSkipped: 0,
+  };
 
   constructor(private solver: SolverAPI) {}
 
@@ -239,6 +242,7 @@ export class HumanBot {
     if (best === Infinity || bestCoversTo) return;
     this.stats.laneLeadSum += best / speed;
     this.stats.laneLeadN++;
+    this.stats.laneLeads.push(best / speed);
   }
 
   /** 这次规划要不要捡视野里的纸条（每张决定一次）；不捡的从规划用的段里拿掉。 */

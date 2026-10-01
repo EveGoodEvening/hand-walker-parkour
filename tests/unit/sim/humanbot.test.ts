@@ -57,12 +57,22 @@ describe('human 机器人（验收 6 的工具）', () => {
   });
   it('躲障碍的换道：从按键到接触平均提前 ≥ 0.25 s（laneLead 统计；以前是求解器的「最后一刻」）', () => {
     let sum = 0, n = 0;
+    const leads: number[] = [];
     for (const seed of SEEDS) {
       const { stats } = runBot(MECH_RUN, seed);
       sum += stats.laneLeadSum; n += stats.laneLeadN;
+      // 逐次样本与和、次数一致（难度报告用样本算中位数和「< 0.25 s」的比例）
+      expect(stats.laneLeads.length).toBe(stats.laneLeadN);
+      expect(stats.laneLeads.reduce((a, b) => a + b, 0)).toBeCloseTo(stats.laneLeadSum, 9);
+      leads.push(...stats.laneLeads);
     }
     expect(n).toBeGreaterThan(30);
     expect(sum / n).toBeGreaterThanOrEqual(0.25);
+    // 均值会被「回中道时原车道远处还有障碍」的长样本拉高：中位数也要 ≥ 0.25 s；真正贴着接触（< 0.15 s）的不到两成
+    // （laneLead ~ N(0.3, 0.1) 再叠 ±60 ms 抖动，本来就有约三成落在 0.25 s 以下，所以不拿 0.25 s 卡比例）
+    leads.sort((a, b) => a - b);
+    expect(leads[Math.floor(0.5 * (leads.length - 1))]).toBeGreaterThanOrEqual(0.25);
+    expect(leads.filter((x) => x < 0.15).length / leads.length).toBeLessThan(0.2);
   });
   it('横档：提前按下 ↓、按住到过了横档（相邻横档合并成一次按住），不撞', () => {
     const BARS = chapter([runSeg({ id: 'bars', beats: 70, cadence: 5.0, rows: [[16, 'HHH'], [30, 'HHH'], [33, 'HHH'], [50, 'HHH']], events: [{ at: 2, type: 'hint', hint: 'duck' }] })]);
