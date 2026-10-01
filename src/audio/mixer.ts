@@ -1,16 +1,19 @@
 // src/audio/mixer.ts —— 总线、门、混响交叉淡变与主输出链（DESIGN.md §6.1）。WP7。
 //
 //   self / npc / sfx / ui ──(各自音量 → 门)──────────────────────────┐
+//          └→ 混响发送（音量 → 同一个门）→ 混响 A / B                  │
 //   follower ── 音量 → 低通 → 回头静音 → 电平 → 门 ─────────────────────┤
 //                              └→ 混响量 → 混响 B                       ├→ master → 压缩(−14 dB, 4:1, 3 ms, 250 ms)
 //   ambience / floor ──(环境音量 → 门)──────────────────────────────────┤        → 限幅(−9 dB, 20:1, 1 ms)
-//   floor 上的一次性声音（膝盖闷响、失败时合一的节拍）──(音效音量)─→ floor 的门
+//   floorSfx：膝盖闷响、失败时合一的节拍 ──(音效音量 → 自己的门)─────────┤
 //                                                                             → 软削波保险（WaveShaper，≤ −8.1 dBFS）→ destination
 //   混响 A（self / sfx / ui 的发送）、混响 B（follower / npc 的发送）──门──┘
 //
 // 门（Gate）：每条总线一个 GainNode，按「若干个带起止时间的门」的乘积排程（静音段、安静的一秒、失败、回头、玻璃触碰、界面）。
+// 有混响发送的总线（self / npc / sfx / ui），同一个门也排在发送上：门掉一条总线时，它的混响尾巴一起掉。
 // 只用 setTargetAtTime 排程，取消之后重排也是连续的（不会咔哒）。
-// 混响分两组：静音段要连同追随者和 NPC 的混响尾巴一起掐掉（§8.10 WP7 验收 4），自己的掌声和音效的混响不受影响。
+// 混响分两组：静音段要连同追随者和 NPC 的混响尾巴一起掐掉（§8.10 WP7 验收 4），自己掌声的混响不受影响（混响 A；
+// 音效进混响 A 的发送跟着音效总线的门走，静音段里不再送进新的，已经在房间里的尾巴按衰减时间自然消失）。
 // DynamicsCompressorNode 按规范会自动加「补偿增益」（makeup gain，Chromium 里约 +5–6 dB），会把峰值推过 −8 dBFS；
 // 所以解锁时用一次极短的离线渲染量出补偿增益，再在压缩器后面乘它的倒数。
 import type { ReverbId } from '../core/types';
@@ -21,15 +24,21 @@ import { renderOffline, type MakeOffline } from './library';
 import { REVERB_RT60 } from './places';
 import type { BusId } from './recipes/common';
 
-export type GateBus = BusId | 'revA' | 'revB';
-export const ALL_GATE_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'sfx', 'ambience', 'floor', 'ui', 'revA', 'revB'];
+/**
+ * floorSfx：摔倒的一次性声音（膝盖闷响、两串节拍合一）。和房间底噪一样失败时不淡出，但有自己的门——
+ * 静音段、静默 cue 门掉房间底噪时，摔倒照样听得见（§2.7 失败演出第一步「膝盖着地的闷响」）。
+ */
+export type GateBus = BusId | 'floorSfx' | 'revA' | 'revB';
+export const ALL_GATE_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'sfx', 'ambience', 'floor', 'floorSfx', 'ui', 'revA', 'revB'];
 
 interface GateItem { gain: number; from: number; until: number; att: number; rel: number }
 
-/** 一个增益参数上的若干个门；目标值 = 当前生效的门的增益之积。 */
+/** 一个（或几个同步的）增益参数上的若干个门；目标值 = 当前生效的门的增益之积。 */
 export class Gate {
   private items = new Map<string, GateItem>();
-  constructor(readonly param: AudioParam) {}
+  private readonly params: AudioParam[];
+  /** param：总线输出；also：跟着同一个门走的其他参数（这条总线的混响发送）。 */
+  constructor(readonly param: AudioParam, also: readonly AudioParam[] = []) { this.params = [param, ...also]; }
 
   /** 从 from 起把增益压到 gain（时间常数 att），直到 until（之后以时间常数 rel 恢复）。 */
   set(id: string, g: number, from: number, until: number, att: number, rel: number, now: number): void {
@@ -52,22 +61,25 @@ export class Gate {
     return g;
   }
 
+  /** 已经排上参数的点（按时间升序）；早于 now 的只留最后一个。 */
   private sched: Array<{ t: number; v: number }> = [];
 
   private reschedule(now: number): void {
     for (const [id, it] of this.items) if (it.until < now - 5) this.items.delete(id);
-    // 此刻真正生效的目标：上一次排程里 t ≤ now 的最后一个点
-    let cur = 1;
-    for (const s of this.sched) if (s.t <= now) cur = s.v;
+    // 此刻真正生效的目标：取消之后还留在参数上的最后一个点。cancelScheduledValues(now) 连「恰好在 now」的事件也一起取消，
+    // 所以只看 t < now 的点——同一时刻连着改两次（例如重来时先清「失败」再清早已结束的「安静的一秒」），
+    // 第二次如果把第一次排在 now 的恢复当成「已经生效」而跳过，参数就会停在失败时的 0。
+    let last: { t: number; v: number } | null = null;
+    for (const s of this.sched) if (s.t < now) last = s;
+    const cur = last ? last.v : 1;
+    this.sched = last ? [last] : [];
     const pts = new Set<number>([now]);
     for (const it of this.items.values()) {
       if (it.from > now) pts.add(it.from);
       if (Number.isFinite(it.until) && it.until > now) pts.add(it.until);
     }
     const times = Array.from(pts).sort((a, b) => a - b);
-    const p = this.param;
-    p.cancelScheduledValues(now);
-    this.sched = this.sched.filter((s) => s.t < now);
+    for (const p of this.params) p.cancelScheduledValues(now);
     let prev = cur;
     for (const t of times) {
       const v = this.target(t);
@@ -82,7 +94,7 @@ export class Gate {
         for (const it of this.items.values()) if (it.until <= t + 1e-9 && it.until >= t - 0.5) tau = Math.max(tau, it.rel);
         if (tau <= 0) tau = 0.05;
       }
-      p.setTargetAtTime(v, t, Math.max(1e-4, tau));
+      for (const p of this.params) p.setTargetAtTime(v, t, Math.max(1e-4, tau));
       this.sched.push({ t, v });
       prev = v;
     }
@@ -212,8 +224,8 @@ export class Mixer {
   readonly rainLp: BiquadFilterNode;
   readonly rainLevel: GainNode;
   /**
-   * floor 总线上的一次性声音（膝盖闷响、失败时「两串节拍合一」）：和房间底噪走同一个门（失败时不淡出），
-   * 但音量跟「音效」滑块——环境音量调到 0 时摔倒照样听得见。
+   * floor 上的一次性声音（膝盖闷响、失败时「两串节拍合一」）的入口：floorSfx 总线（见 GateBus）。
+   * 音量跟「音效」滑块——环境音量调到 0 时摔倒照样听得见。
    */
   readonly floorSfx: GainNode;
   private readonly buses = new Map<GateBus, Bus>();
@@ -245,16 +257,16 @@ export class Mixer {
     this.revB = new ReverbGroup(ctx);
     for (const b of ALL_GATE_BUSES) {
       const g = gain(ctx, 1);
-      const gate = new Gate(g.gain);
       g.connect(this.master);
       if (b === 'revA' || b === 'revB') {
         const grp = b === 'revA' ? this.revA : this.revB;
         grp.out.connect(g);
-        this.buses.set(b, { in: grp.in, sendIn: null, gate, out: g });
+        this.buses.set(b, { in: grp.in, sendIn: null, gate: new Gate(g.gain), out: g });
         continue;
       }
       const input = gain(ctx, 1);
       if (b === 'follower') {
+        const gate = new Gate(g.gain);
         this.folLp = ctx.createBiquadFilter();
         this.folLp.type = 'lowpass'; this.folLp.frequency.value = 2000; this.folLp.Q.value = -3.01;
         const mute = gain(ctx, 1);
@@ -267,12 +279,14 @@ export class Mixer {
         continue;
       }
       input.connect(g);
-      let sendIn: GainNode | null = null;
       if (b === 'self' || b === 'sfx' || b === 'ui' || b === 'npc') {
-        sendIn = gain(ctx, 1);
-        sendIn.connect(b === 'npc' ? this.revB.in : this.revA.in);
-      }
-      this.buses.set(b, { in: input, sendIn, gate, out: g });
+        // 发送：音量 → 同一个门 → 混响组（门掉这条总线时，它的混响尾巴一起掉）
+        const sendIn = gain(ctx, 1);
+        const sendGate = gain(ctx, 1);
+        sendIn.connect(sendGate);
+        sendGate.connect(b === 'npc' ? this.revB.in : this.revA.in);
+        this.buses.set(b, { in: input, sendIn, gate: new Gate(g.gain, [sendGate.gain]), out: g });
+      } else this.buses.set(b, { in: input, sendIn: null, gate: new Gate(g.gain), out: g });
     }
     // 雨：自己的一条小链（露天 / 车里 / 室内），接进环境总线
     this.rainIn = gain(ctx, 1);
@@ -280,8 +294,7 @@ export class Mixer {
     this.rainLp.type = 'lowpass'; this.rainLp.frequency.value = 16000; this.rainLp.Q.value = -3.01;
     this.rainLevel = gain(ctx, 1);
     this.rainIn.connect(this.rainLp); this.rainLp.connect(this.rainLevel); this.rainLevel.connect(this.dry('ambience'));
-    this.floorSfx = gain(ctx, 1);
-    this.floorSfx.connect((this.buses.get('floor') as Bus).out);
+    this.floorSfx = (this.buses.get('floorSfx') as Bus).in;
   }
 
   dry(b: BusId): AudioNode { return (this.buses.get(b) as Bus).in; }
@@ -296,11 +309,10 @@ export class Mixer {
     this.master.gain.setTargetAtTime(m, at, 0.03);
     for (const [b, bus] of this.buses) {
       if (b === 'revA' || b === 'revB') continue;
-      const g = b === 'ambience' || b === 'floor' ? a : s;
+      const g = b === 'ambience' || b === 'floor' ? a : s;          // floorSfx 跟音效音量
       bus.in.gain.setTargetAtTime(g, at, 0.03);
       bus.sendIn?.gain.setTargetAtTime(g, at, 0.03);
     }
-    this.floorSfx.gain.setTargetAtTime(s, at, 0.03);
   }
 
   /** 追随者的四个声音通道：增益、低通、混响（声像由每个声部自己设），档位之间 300 ms 滑变（§2.6）。 */

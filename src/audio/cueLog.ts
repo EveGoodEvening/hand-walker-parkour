@@ -44,7 +44,8 @@ export function cueNames(e: GameEvent): string[] {
     case 'lookBack': return e.data.phase === 'start' ? ['followerSilence'] : [];
     case 'twitch': return e.data.phase === 'warn' ? ['muscle'] : [];
     case 'drift': return e.data.phase === 'warn' ? ['muscle'] : [];
-    case 'stand': return e.data.phase === 'step' ? ['step'] : e.data.phase === 'fall' ? ['kneeThud'] : [];
+    // 站立段摔倒（5-8 第七步）的膝盖闷响来自关卡的 sfx cue（记作 sfx:kneeThud），这里不另记
+    case 'stand': return e.data.phase === 'step' ? ['step'] : [];
     case 'nearMiss': return ['cloth'];
     case 'ask': return ['whisper', 'laughShort'];
     case 'note': return ['paper'];

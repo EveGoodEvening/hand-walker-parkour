@@ -7,7 +7,7 @@ import { biquadCoefs, biquadMagnitude, dbToGain, impulseResponse, qDb } from '..
 import { followerMix, mixKey } from '../../../src/audio/follower';
 import { LightModel } from '../../../src/audio/lights';
 import { CEIL_DB, Gate, KNEE_DB, safetyCurve, volumeGain } from '../../../src/audio/mixer';
-import { KIT_PLACES, SET_PLACES, REVERB_RT60, placeKnown, placeOf, soundStateAt } from '../../../src/audio/places';
+import { APPLAUSE_DEFAULT, KIT_PLACES, SET_PLACES, REVERB_RT60, applauseAfter, placeKnown, placeOf, soundStateAt } from '../../../src/audio/places';
 import { FOLLOWER_BASE_DB } from '../../../src/audio/recipes/palm';
 import { MAX_VOICES, VoicePool, type Voice } from '../../../src/audio/voices';
 import { AHEAD_DISTANCE, FOLLOWER_MIX, LAG_BEATS } from '../../../src/core/constants';
@@ -17,7 +17,7 @@ import { getChapter } from '../../../src/levels/chapters/index';
 import { KIT_VARIANTS } from '../../../src/levels/kitSymbols';
 import type { ChapterDef } from '../../../src/levels/schema';
 import { MiniContext } from './offline/mini';
-import { snap } from './scenarios';
+import { DREAM_CHAPTER, snap } from './scenarios';
 
 const fol = (mode: FollowerMode, o: Partial<FollowerSnap> = {}): FollowerSnap => ({
   mode, voice: mode === 'hidden' || mode === 'absent' ? 'none' : 'echo', hud: 'dots', from: 'behind', lagBeats: 0, distance: 0,
@@ -136,6 +136,30 @@ describe('Gate（门：若干个带起止时间的增益之积，只用 setTarge
     expect(p.valueAt(1.6)).toBeGreaterThan(0.99);
     expect(g.has('h')).toBe(true);
   });
+  it('同一时刻连着改两次，第二次什么也没变：第一次排在 now 的恢复不会被取消掉（重来时先清「失败」、再清已经结束的「安静的一秒」）', () => {
+    const p = mk();
+    const g = new Gate(p);
+    g.set('quiet', 0, 1, 2.06, 0.008, 0.12, 0.9);                 // 安静的一秒（早已结束）
+    g.set('fail', 0, 2.5, Infinity, 0.04, 0.1, 2.4);              // 摔倒
+    expect(p.valueAt(3.5)).toBeLessThan(1e-4);
+    g.clear('fail', 3.6, 0.1, 3.6);                               // 重来：在 now 恢复
+    g.clear('quiet', 3.6, 0.1, 3.6);                              // 同一时刻：这个门早就结束了，什么也不变
+    expect(p.valueAt(4.4)).toBeGreaterThan(0.99);
+  });
+  it('同步的参数（混响发送）跟着同一个门走；排程记录不随会话增长', () => {
+    const p = mk(), q = mk();
+    const g = new Gate(p, [q]);
+    for (let i = 0; i < 200; i++) {
+      g.set(`x${i % 3}`, 0.5, i, i + 0.5, 0.01, 0.05, i);
+      g.clear(`x${i % 3}`, i + 0.3, 0.05, i + 0.1);
+    }
+    g.set('h', 0, 300, Infinity, 0.035, 0.3, 300);
+    expect(p.valueAt(301)).toBeLessThan(1e-4);
+    expect(q.valueAt(301)).toBeLessThan(1e-4);
+    expect(q.valueAt(250.2)).toBeCloseTo(p.valueAt(250.2), 6);
+    const sched = (g as unknown as { sched: unknown[] }).sched;
+    expect(sched.length).toBeLessThanOrEqual(3);
+  });
 });
 
 describe('VoicePool（§6.1：同时发声上限 32，抢占最老、最轻的声部）', () => {
@@ -191,6 +215,18 @@ describe('地点表（§6.1 混响表、§8.10「各 kit 和 set 的环境音」
     expect(soundStateAt(def, idx('1-6'), 10)?.ambience.amb).toBe('room');
     expect(soundStateAt(def, idx('1-6'), 10)?.rain).toBe(0);
   });
+  it('梦中掌声：crowd 的 applaud / crawlOvertake → 整齐、稠密，normal → 散开；章内跨段保持（读档 / 重来按章节数据重建）', () => {
+    expect(applauseAfter(APPLAUSE_DEFAULT, 'applaud')).toEqual({ density: 1, align: 1 });
+    expect(applauseAfter(APPLAUSE_DEFAULT, 'crawlOvertake')).toEqual({ density: 1, align: 1 });
+    expect(applauseAfter({ density: 1, align: 1 }, 'normal')).toEqual({ density: 1, align: 0 });
+    expect(applauseAfter({ density: 1, align: 1 }, 'turnShoes')).toEqual({ density: 1, align: 1 });
+    const def = DREAM_CHAPTER;
+    expect(soundStateAt(def, 0, 1.0)?.applause).toEqual(APPLAUSE_DEFAULT);
+    expect(soundStateAt(def, 0, 2.0)?.applause).toEqual({ density: 1, align: 1 });
+    expect(soundStateAt(def, 0, 2.0)?.ambience.amb).toBe('dreamApplause');
+    expect(soundStateAt(def, 1, 6.0)?.applause).toEqual({ density: 1, align: 1 });   // 4-4「新的掌声」接着整齐
+    expect(soundStateAt(def, 1, 6.0)?.ambience.amb).toBe('dreamApplause');
+  });
 });
 
 describe('cue 命名（静音与出声两种实现共用，§8.8 __game.cues()）', () => {
@@ -203,6 +239,7 @@ describe('cue 命名（静音与出声两种实现共用，§8.8 __game.cues()�
     expect(cueNames(E('fall', {}))).toEqual(['kneeThud']);
     expect(cueNames(E('lookBack', { phase: 'start' }))).toEqual(['followerSilence']);
     expect(cueNames(E('stand', { phase: 'step' }))).toEqual(['step']);
+    expect(cueNames(E('stand', { phase: 'fall' }))).toEqual([]);                    // 第七步的闷响记作 sfx:kneeThud（关卡 cue）
     expect(cueNames(E('steady', { value: 2 }))).toEqual([]);
   });
   it('环形日志只保留最近的', () => {

@@ -6,6 +6,7 @@ import type { AmbienceId } from '../core/types';
 import { biquadCoefs, biquadRun, dbToGain, qDb, rmsOf, type BiquadType } from './dsp';
 import { filt, gain, noise, osc, type NoiseBank, type NoiseKind } from './graph';
 import type { ApplauseKind } from './library';
+import { APPLAUSE_DEFAULT } from './places';
 import { rr } from './recipes/common';
 import type { GrainId } from './recipes/sfx';
 
@@ -284,7 +285,7 @@ function applause(d: AmbDeps, at: number, dest: AudioNode): Layer {
     (gs[i] as GainNode).connect(dest);
     srcs.push(s);
   });
-  let density = 0.5, align = 0;
+  let { density, align } = APPLAUSE_DEFAULT;
   const apply = (t: number) => {
     const w = [(1 - align) * (1 - density), (1 - align) * density, align];
     gs.forEach((g, i) => g.gain.setTargetAtTime(Math.sqrt(w[i] as number), t, 0.6));
@@ -313,7 +314,7 @@ function buildLayers(d: AmbDeps, id: AmbienceId, at: number, amb: AudioNode, flo
     case 'rainStreet': return [bed(d, at, amb, 'brown', [['lowpass', 120]], -36, { db: 3, period: 6 })];   // 夜街：远处车流 −36
     case 'shedRoof': return [bed(d, at, amb, 'brown', [['lowpass', 120]], -42, { db: 3, period: 6 }),
       grains(d, at, 'tinImpact', 25, -9, 0, 0.8), grains(d, at, 'acDing', 0.3, -3, 0, 0.6)];
-    case 'bus': return [drone(d, at, amb, 'sawtooth', 42, [['lowpass', 120]], -32), periodic(d, at, 'wiper', 1.4, 0), room(-44, 200)];
+    case 'bus': return [drone(d, at, amb, 'sawtooth', 42, [['lowpass', 120]], -30), periodic(d, at, 'wiper', 1.4, 0), room(-44, 200)];
     case 'home': return [room(-46, 150), drone(d, at, amb, 'sine', 100, [], -60)];
     case 'dream': return [bed(d, at, amb, 'white', [['highpass', 3000]], -44), drone(d, at, amb, 'sine', 41, [], -40), speedWind(d, at, amb)];
     case 'dreamApplause': return [applause(d, at, amb)];

@@ -3,8 +3,9 @@
 // 只依赖事件和快照（§8.10 WP7）：
 //   contact → 自己的三段声（预渲染库，按模拟时间戳前瞻 50 ms 调度）；followerContact → 追随者（混音按稳度与模式，§2.6）；
 //   hit → 擦地 / 闷响，人群段「安静的一秒」；fall → 膝盖闷响、节拍合一、环境掐断、其余淡出；lookBack → 追随者静音 1.2 s；
-//   twitch / drift → 肌肉声；stand → 自己的「先轻后重」；ask → 低语与短笑；快照 hush → 静音段；segment → 混响、环境音、
-//   人群的脚步（crowd.ts：walkers / queue 组和 walk 的腿，npc 总线）。
+//   twitch / drift → 肌肉声；stand → 自己的「先轻后重」（§8.7；5-8 第七步的膝盖闷响由关卡的 sfx cue 负责）；ask → 低语与短笑；
+//   快照 hush → 静音段；segment → 混响、环境音、人群的脚步（crowd.ts：walkers / queue 组和 walk 的腿，npc 总线）；
+//   crowd 的 applaud / crawlOvertake / normal → 梦中掌声对齐与否（锁存，dreamApplause 新建时立即应用）。
 //   bell / sfx / ambience / silence 四种 cue 由 index.ts 注册的处理器转到这里。
 // AudioContext 在第一次 pointerdown / keydown（Game 调 unlock）时才创建；之前只维护「期望状态」并记录 cue。
 // 挂起（§6.1「暂停和失焦时 ctx.suspend()」）有两个来源，任何一个成立就挂起，两个都清掉才恢复：
@@ -24,9 +25,9 @@ import { followerMix, mixKey, SILENT_MIX } from './follower';
 import { NoiseBank } from './graph';
 import { applauseLoop, renderOneShots, type ApplauseKind, type MakeOffline } from './library';
 import { LightModel } from './lights';
-import { Mixer, type FollowerMix, type GateBus } from './mixer';
+import { ALL_GATE_BUSES, Mixer, type FollowerMix, type GateBus } from './mixer';
 import type { AudioImpl } from './NullAudio';
-import { placeOf, soundStateAt, type AmbState, type KitLookup, type Place } from './places';
+import { APPLAUSE_DEFAULT, applauseAfter, placeOf, soundStateAt, type AmbState, type ApplauseState, type KitLookup, type Place } from './places';
 import { rr, type BusId, type OneShot } from './recipes/common';
 import { allPalmKeys, palmKeyString, palmRecipe, partsOf, type PalmKey } from './recipes/palm';
 import { BELL_SFX, SFX, allOneShots, type GrainId, type OneShotId } from './recipes/sfx';
@@ -48,10 +49,25 @@ export interface EngineDeps {
   preload?: { palms: Map<string, AudioBuffer[]>; sfx: Map<string, AudioBuffer[]> };
 }
 
-const HUSH_BUSES: readonly GateBus[] = ['follower', 'npc', 'ambience', 'floor', 'revB'];
+/**
+ * 静音段（§3「除了你自己的掌声，所有声音（包括雨和追随者）0.3 s 内降到 0」）：音效总线连同它的混响发送也门掉。
+ * 不门 floorSfx——在静音段里摔倒，膝盖闷响照样听得见（§2.7）。「嘘」本身走自己的总线（见 onSfx）。
+ */
+const HUSH_BUSES: readonly GateBus[] = ['follower', 'npc', 'ambience', 'floor', 'sfx', 'revB'];
+/** 静默 cue（5-5「全部声音静音 1 s」与椅子刮擦同一刻）：不门音效总线，刮擦声要响完。 */
 const SILENCE_BUSES: readonly GateBus[] = ['ambience', 'floor', 'npc', 'follower', 'revB'];
 const FAIL_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'sfx', 'ui', 'revA', 'revB'];
-const GLASS_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'ambience', 'floor', 'ui', 'revB'];
+const GLASS_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'ambience', 'floor', 'floorSfx', 'ui', 'revB'];
+const SCREEN_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'sfx', 'ambience', 'floor', 'floorSfx', 'revA', 'revB'];
+/** 不受静音段门影响的音效：「嘘」是静音段的开头（1-6 里和 hush 同一刻），走自己的总线。 */
+const HUSH_EXEMPT_SFX = new Set<SfxId>(['shush']);
+/** 同一声膝盖闷响的去重窗口（秒）：GameEvent fall 与 sfx cue 两条路径共用。 */
+const KNEE_DEDUPE = 0.1;
+/** 梦中掌声「先散后齐」：一片掌声刚起来时先是散的，这么久之后才开始对齐（τ 0.6 s）。 */
+const APPLAUSE_GATHER = 0.5;
+/** 空闲任务：一件重活至少要这么多空闲时间（Convolver 的 FFT 6–18 ms）；等太久（ms）就照做。 */
+const WARM_MIN_IDLE_MS = 10;
+const WARM_MAX_WAIT_MS = 1500;
 const MENU_SCREENS = new Set(['title', 'chapters', 'settings', 'notes', 'pause', 'outro', 'credits', 'fail']);
 /** 静音段的门：时间常数 35 ms，0.3 s 时已低于 −70 dB（验收 4 要求 ≤ −60 dB）。 */
 const HUSH_TAU = 0.035;
@@ -96,8 +112,8 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   private segT0 = 0;
   private chapterId: ChapterId | null = null;
   /** 解锁后在空闲时分批做的重活（脉冲响应、梦中掌声缓冲），不放进某一帧里。 */
-  private warm: Array<() => void> = [];
-  private warmTimer: ReturnType<typeof setTimeout> | null = null;
+  private warm: Array<{ fn: () => void; urgent: boolean; since: number }> = [];
+  private warmTimer: unknown = null;
   private errors = 0;
 
   // 期望状态（没有 context 时也维护，建图时一次性应用）
@@ -125,6 +141,12 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   private lastClick = -10;
   private lastSpeed = -1;
   private recipeCache = new Map<string, OneShot | null>();
+  /** 梦中掌声（锁存：crowd cue 不管当前是哪种环境音都更新；换章重置，跳段时按章节数据重建）。 */
+  private applause: ApplauseState = { ...APPLAUSE_DEFAULT };
+  /** 当前 dreamApplause 实例开始的音频时刻。 */
+  private applauseFrom = -Infinity;
+  /** 上一声膝盖闷响的音频时刻（去重）。 */
+  private kneeAt = -Infinity;
   // 主线程开销
   private cost = 0;
   private frames = 0;
@@ -255,11 +277,13 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   onSfx(id: SfxId, pan: number | undefined, g: number | undefined, snap: SimSnapshot): void {
     this.log.record(`sfx:${id}`);
     this.guard(() => {
+      if (g !== undefined && !(g > 0)) return;                      // gain 0（或负数、NaN）：不出声
       const at = this.atSnap(snap);
-      const gainDb = g !== undefined && g > 0 ? Math.min(0, 20 * Math.log10(g)) : 0;
+      const gainDb = g !== undefined ? Math.min(0, 20 * Math.log10(g)) : 0;
       // 缺省居中：1-6 的端墙镜在正前方、3-4 的水洼在中道；侧面的镜子由 cue 自己带 pan（§6.2「声像在镜子那一侧」）
       const p = pan ?? 0;
-      this.sfx(id, at, { pan: p, gainDb });
+      if (id === 'kneeThud') { this.kneeThud(at, gainDb, p); return; }
+      this.sfx(id, at, HUSH_EXEMPT_SFX.has(id) ? { pan: p, gainDb, bus: 'self' } : { pan: p, gainDb });
       if (id === 'glassTouch' && this.mixer) {
         const now = this.now();
         for (const b of GLASS_BUSES) this.mixer.gate(b).set('glass', dbToGain(-9), at + 0.3, at + 2.3, 0.1, 0.25, now);
@@ -286,7 +310,8 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   ui(kind: 'move' | 'confirm'): void {
     this.log.record(`ui:${kind}`);
     this.guard(() => {
-      if (!this.ctx) return;
+      // 挂起时（暂停菜单、失焦）不排：否则会在恢复的那一刻一齐响出来
+      if (!this.ctx || this.suspended) return;
       const at = this.now() + 0.01;
       if (kind === 'move') this.sfx('uiMove', at, {});
       else this.palm({ voice: 'self', surface: 'terrazzo', part: 'pad', heavy: false }, at, { bus: 'ui', gainDb: -13, pan: 0, send: 0 });
@@ -304,7 +329,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
       frames: this.frames, avgFrameMs: this.frames ? this.costTotal / this.frames : 0, maxFrameMs: this.costMax, maxFrameWhat: this.costMaxWhat,
       ambience: this.amb?.id ?? null, reverb: this.mixer?.reverb ?? null, place: this.place?.key ?? null,
       hush: this.hush, failing: this.failing, rain: this.wantRain, follower: this.folMix, makeup: this.mixer?.makeupDb ?? null,
-      suspended: this.suspended, crowd: this.crowd.count, errors: this.errors,
+      suspended: this.suspended, crowd: this.crowd.count, applause: { ...this.applause }, errors: this.errors,
     };
   }
 
@@ -351,19 +376,34 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     }
   }
 
-  /** 排一件空闲时做的重活（每件一个 setTimeout，不连成一个长任务）。离线（测试）模式不做。urgent：排到最前面。 */
+  /**
+   * 排一件空闲时做的重活（每件一个任务，不连成一个长任务）。离线（测试）模式不做。urgent：排到最前面，有空闲期就做。
+   * 有 requestIdleCallback 时放在帧与帧之间的空闲期里，空闲时间不够一件（< 10 ms）就等下一个；等了 1.5 s 还没轮上就照做。
+   */
   private later(fn: () => void, urgent = false): void {
     if (this.deps.offline || typeof setTimeout === 'undefined') return;
-    if (urgent) this.warm.unshift(fn); else this.warm.push(fn);
-    if (this.warmTimer !== null) return;
-    const tick = () => {
+    const job = { fn, urgent, since: this.perf() };
+    if (urgent) this.warm.unshift(job); else this.warm.push(job);
+    this.kickWarm();
+  }
+
+  private kickWarm(): void {
+    if (this.warmTimer !== null || !this.warm.length) return;
+    type Deadline = { timeRemaining(): number; didTimeout: boolean };
+    const ric = (globalThis as { requestIdleCallback?: (cb: (d: Deadline) => void, o?: { timeout: number }) => unknown }).requestIdleCallback;
+    const run = (d?: Deadline) => {
       this.warmTimer = null;
-      const job = this.warm.shift();
+      const job = this.warm[0];
       if (!job) return;
-      try { job(); } catch (err) { this.error(err); }
-      if (this.warm.length) this.warmTimer = setTimeout(tick, 0);
+      if (d && !d.didTimeout && !job.urgent && d.timeRemaining() < WARM_MIN_IDLE_MS && this.perf() - job.since < WARM_MAX_WAIT_MS) {
+        this.kickWarm();
+        return;
+      }
+      this.warm.shift();
+      try { job.fn(); } catch (err) { this.error(err); }
+      this.kickWarm();
     };
-    this.warmTimer = setTimeout(tick, 0);
+    this.warmTimer = typeof ric === 'function' ? ric.call(globalThis, run, { timeout: WARM_MAX_WAIT_MS }) : setTimeout(run, 0);
   }
 
   private async loadLibrary(): Promise<void> {
@@ -420,6 +460,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
         this.setFail(false, snap);
         this.clearTransient();
         this.crowd.restart();
+        this.applause = { ...APPLAUSE_DEFAULT };
         this.chapterId = e.data.id;
         if (this.ctx) this.prewarmChapter(e.data.id);
         // 梦中掌声的三个循环缓冲（每个约 25 ms 的 JS）：分三次空闲时生成
@@ -498,7 +539,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   private clearTransient(): void {
     if (!this.mixer) return;
     const now = this.now();
-    for (const b of ['ambience', 'floor', 'npc', 'follower', 'revB', 'self', 'ui'] as const) {
+    for (const b of ALL_GATE_BUSES) {
       for (const id of TRANSIENT_GATES) if (this.mixer.gate(b).has(id)) this.mixer.gate(b).clear(id, now, 0.1, now);
     }
     if (this.mixer.followerMute.has('look')) this.mixer.followerMute.clear('look', now, 0.1, now);
@@ -517,7 +558,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     this.screenQuiet = quiet;
     if (!this.mixer) return;
     const now = this.now();
-    for (const b of ['self', 'follower', 'npc', 'sfx', 'ambience', 'floor', 'revA', 'revB'] as const) {
+    for (const b of SCREEN_BUSES) {
       if (quiet) this.mixer.gate(b).set('screen', 0, now, Infinity, 0.25, 0.3, now);   // 约 1.5 s 内淡到听不见
       else this.mixer.gate(b).clear('screen', now, 0.3, now);
     }
@@ -543,7 +584,12 @@ export class AudioEngine implements AudioImpl, AudioAPI {
       this.jump = false;
       this.pendingAmb = null;
       const st = soundStateAt(def, d.index, snap.segBeat, this.deps.kitLookup);
-      if (st) { this.setAmbience(st.ambience.amb, st.ambience.level, 0.6, this.peekSnap(snap)); this.setRain(st.rain, 0.6, this.peekSnap(snap)); }
+      if (st) {
+        const at = this.peekSnap(snap);
+        this.setApplause(st.applause, at);                           // 先于环境音：落在掌声中间时，新建的 dreamApplause 直接用它
+        this.setAmbience(st.ambience.amb, st.ambience.level, 0.6, at);
+        this.setRain(st.rain, 0.6, at);
+      }
     } else if (changed) {
       // 同一 tick 里如果还有 ambience cue，它会覆盖这里（onAmbience 清掉 pending）
       this.pendingAmb = { st: { amb: place.ambience, level: place.ambLevel }, tick: this.lastTick };
@@ -584,7 +630,23 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     this.amb = new Ambience(this.ambDeps, amb, at);
     this.amb.fadeTo(level, at, s);
     this.amb.param('rain', this.wantRain, at);
+    if (amb === 'dreamApplause') { this.applauseFrom = at; this.applyApplause(this.amb, at); }
     this.amb.advance(now + 0.35);
+  }
+
+  /** 锁存梦中掌声的状态；正在放 dreamApplause 就立即应用。 */
+  private setApplause(st: ApplauseState, at: number): void {
+    this.applause = { ...st };
+    if (this.amb?.id === 'dreamApplause') this.applyApplause(this.amb, at);
+  }
+
+  /**
+   * 把锁存的状态应用到一个 dreamApplause 实例：密度立即滑变；对齐「先散后齐」——掌声刚起来的 0.5 s 里还是散的，
+   * 之后才逐渐对齐成整齐的一片（τ 0.6 s，§6.2「逐渐对齐」）。crowd cue 与 ambience cue 谁先到都一样。
+   */
+  private applyApplause(a: Ambience, at: number): void {
+    a.param('density', this.applause.density, at);
+    a.param('align', this.applause.align, Math.max(at, this.applauseFrom + APPLAUSE_GATHER));
   }
 
   private setRain(intensity: number, secs: number, at: number): void {
@@ -605,10 +667,9 @@ export class AudioEngine implements AudioImpl, AudioAPI {
           const at = this.clock.peek(snap.t, this.now());
           this.crowd.silence(b.group || null, at, at + 1);
         }
-        if (this.amb?.id === 'dreamApplause') {
-          const at = this.clock.peek(snap.t, this.now());
-          if (b.op === 'applaud' || b.op === 'crawlOvertake') { this.amb.param('align', 1, at); this.amb.param('density', 1, at); }
-          else if (b.op === 'normal') this.amb.param('align', 0, at);
+        // 梦中掌声：不管当前是哪种环境音都锁存（4-3 里 crowd applaud 与 ambience dreamApplause 同一 tick，crowd 在前）
+        if (b.op === 'applaud' || b.op === 'crawlOvertake' || b.op === 'normal') {
+          this.setApplause(applauseAfter(this.applause, b.op), this.clock.peek(snap.t, this.now()));
         }
         break;
       case 'board': this.sfx(b.op === 'write' ? 'chalk' : 'cloth', this.atSnap(snap), { gainDb: b.op === 'write' ? 0 : -3 }); break;
@@ -716,9 +777,9 @@ export class AudioEngine implements AudioImpl, AudioAPI {
 
   private onFall(snap: SimSnapshot): void {
     const at = this.atSnap(snap);
-    this.sfx('kneeThud', at, { bus: 'floor' });
-    if (this.folMix.audible) {
-      // 两串节拍合成一个声音，持续 0.6 s
+    this.kneeThud(at);
+    if (this.folMix.audible && !this.hush) {
+      // 两串节拍合成一个声音，持续 0.6 s（静音段里追随者本来就听不见，不合）
       const surface = snap.player.surface;
       for (const dt of [0.05, 0.36]) {
         for (const part of partsOf(surface)) {
@@ -751,6 +812,16 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     }
   }
 
+  /**
+   * 膝盖闷响（floorSfx：失败时不淡出，静音段里也听得见）。GameEvent fall 与 sfx cue 共用；0.1 s 内已经排过一次就跳过——
+   * 同一个 buffer 相隔 1 tick（8.3 ms）正好是 60 Hz 主体的半个周期，两遍会互相抵消（40–90 Hz 低约 11 dB）。
+   */
+  private kneeThud(at: number, gainDb = 0, pan = 0): void {
+    if (Math.abs(at - this.kneeAt) < KNEE_DEDUPE) return;
+    this.kneeAt = at;
+    this.sfx('kneeThud', at, { bus: 'floor', gainDb, pan });
+  }
+
   private onStand(s: GameEvents['stand'], snap: SimSnapshot): void {
     const at = this.atSnap(snap);
     switch (s.phase) {
@@ -764,7 +835,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
           }
         }
         break;
-      case 'fall': this.sfx('kneeThud', at, { bus: 'self' }); break;
+      // 'fall'：第七步的膝盖闷响由关卡的 sfx cue 负责（§8.7 分给 WP7 的 stand 只有「先轻后重」）
       default: break;
     }
   }

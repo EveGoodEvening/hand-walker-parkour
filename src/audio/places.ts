@@ -2,7 +2,7 @@
 // 「地点」= 跑段 / 站立段的 kit.variant，或静场的 set.variant。进入一个新地点时，混响交叉淡变到该地点的预设，
 // 环境音换成该地点的缺省值；关卡里的 ambience cue 随后可以覆盖（同一 tick 内的 cue 优先）。
 // 本表是 WP7 的声音设计；EnvKit.ambience() / reverb() 只在本表没有收录的 variant 上作为回落。
-import type { AmbienceId, KitId, ReverbId, SetId } from '../core/types';
+import type { AmbienceId, CrowdOp, KitId, ReverbId, SetId } from '../core/types';
 import type { ChapterDef, EventBody, SegmentDef, StillInput, TimedEventDef } from '../levels/schema';
 
 /** 混响衰减时间（秒，§6.1）。 */
@@ -101,9 +101,24 @@ export function placeKnown(kind: 'kit' | 'set', id: KitId | SetId, variant: stri
   return lookup(kind === 'kit' ? KIT_PLACES : SET_PLACES, id, variant) !== null;
 }
 
+// ——————————————————— 梦中掌声 ———————————————————
+/** 梦中掌声的状态（§6.2「梦中掌声」）：density 稀疏 → 稠密，align 散 → 整齐的一片。 */
+export interface ApplauseState { density: number; align: number }
+export const APPLAUSE_DEFAULT: Readonly<ApplauseState> = { density: 0.5, align: 0 };
+/**
+ * crowd cue 对掌声的影响。applaud（「整齐的鼓掌」）与 crawlOvertake（所有人爬着超过你：「掌根同时落下，发出一声巨大的、
+ * 整齐的拍击，像雷声，像掌声」）→ 稠密、整齐；normal → 散开。其余 op 不影响。
+ * 这是章内的状态（像环境音一样跨段保持）：4-3 的人群超过你之后，4-4 那阵「新的掌声」也是整齐的。
+ */
+export function applauseAfter(s: Readonly<ApplauseState>, op: CrowdOp): ApplauseState {
+  if (op === 'applaud' || op === 'crawlOvertake') return { density: 1, align: 1 };
+  if (op === 'normal') return { density: s.density, align: 0 };
+  return { ...s };
+}
+
 // ——————————————————— 读档 / 重来时重建声音状态 ———————————————————
 export interface AmbState { amb: AmbienceId; level: number }
-export interface SoundState { place: Place; ambience: AmbState; rain: number }
+export interface SoundState { place: Place; ambience: AmbState; rain: number; applause: ApplauseState }
 
 interface Flat { at: number; body: EventBody }
 
@@ -134,7 +149,7 @@ function strip(e: TimedEventDef | (EventBody & { at?: number; id?: string; atSte
 }
 
 /**
- * 章内某一位置（段序号 + 段内位置）的声音状态：地点、环境音、雨。
+ * 章内某一位置（段序号 + 段内位置）的声音状态：地点、环境音、雨、梦中掌声。
  * 规则与运行时一致：进入新地点时环境音换成地点缺省；ambience / rain cue 覆盖。
  */
 export function soundStateAt(def: ChapterDef, segIndex: number, pos: number, kitLookup?: KitLookup): SoundState | null {
@@ -144,6 +159,7 @@ export function soundStateAt(def: ChapterDef, segIndex: number, pos: number, kit
   let place: Place | null = null;
   let ambience: AmbState = { amb: 'none', level: 1 };
   let rain = 0;
+  let applause: ApplauseState = { ...APPLAUSE_DEFAULT };
   for (let j = 0; j <= last; j++) {
     const seg = segs[j] as SegmentDef;
     const p = placeOf(seg, kitLookup);
@@ -153,7 +169,8 @@ export function soundStateAt(def: ChapterDef, segIndex: number, pos: number, kit
       if (j === last && e.at >= pos - 1e-9) break;
       if (e.body.type === 'ambience') ambience = { amb: e.body.amb, level: e.body.level };
       else if (e.body.type === 'rain') rain = e.body.intensity;
+      else if (e.body.type === 'crowd') applause = applauseAfter(applause, e.body.op);
     }
   }
-  return place ? { place, ambience, rain } : null;
+  return place ? { place, ambience, rain, applause } : null;
 }

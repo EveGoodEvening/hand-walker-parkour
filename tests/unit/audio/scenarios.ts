@@ -370,6 +370,32 @@ export const CROWD_CHAPTER: ChapterDef = {
     events: [],
   }],
 };
+/**
+ * 和 WP2 第四章 4-3 / 4-4 同样排法的两段：站立段 1.8 s 同时有 crowd applaud 和 ambience dreamApplause（crowd 在前），
+ * 4.4 s 换回 dream、crowd crawlOvertake（也是同一刻，环境音在前）；静场 5.4 s「掌声涌上来」。
+ */
+export const DREAM_CHAPTER: ChapterDef = {
+  id: 'test', title: '测试', name: '梦', seed: 1, card: ['c1.card'], outro: { lines: [{ line: 'c1.out3' }] }, notes: [], requiredBeats: [],
+  segments: [
+    {
+      id: 'd-3', kind: 'stand', kit: 'placeholder', variant: 'default', script: 'dream', atmosphere: 'morning', duration: 12, follower: { mode: 'absent' },
+      events: [
+        { at: 1.8, type: 'crowd', group: 'ring2', op: 'applaud' },
+        { at: 1.8, type: 'ambience', amb: 'dreamApplause', level: 1, seconds: 1.0 },
+        { at: 4.4, type: 'ambience', amb: 'dream', level: 1, seconds: 0.4 },
+        { at: 4.4, type: 'crowd', group: 'imitators', op: 'crawlOvertake' },
+      ],
+    },
+    {
+      id: 'd-4', kind: 'still', set: 'placeholder', variant: 'default', atmosphere: 'morning', duration: 10, follower: { mode: 'behind' },
+      events: [
+        { at: 5.4, type: 'ambience', amb: 'dreamApplause', level: 1, seconds: 0.5 },
+        { at: 6.4, type: 'ambience', amb: 'dream', level: 0.6, seconds: 0.4 },
+      ],
+    },
+  ],
+};
+
 export interface CrowdReport {
   /** 引擎排程的每一步（音频时刻）。 */
   steps: Array<{ at: number; gainDb: number; pan: number; bus: string }>;
@@ -666,4 +692,159 @@ export function sfxTargets(): Record<string, number> {
   const o: Record<string, number> = {};
   for (const [k, r] of Object.entries(SFX)) o[k] = r.peakDb;
   return o;
+}
+
+// ——————————————————— 第 2 轮验收的修复：梦中掌声对齐、膝盖闷响只响一次、静音段 ———————————————————
+export type ApplauseOrder = 'crowdFirst' | 'ambienceFirst' | 'none';
+export interface ApplauseReport {
+  /** 掌声起来 2.3–3.7 s 的输出：10 ms RMS 包络的最大值相对中位数（dB）。整齐的一片是一阵一阵的拍击，散的掌声是平的。 */
+  pulseDb: number;
+  /** 包络在 0.44 s（整齐掌声的周期）处的归一化自相关。 */
+  periodicity: number;
+  rmsDb: number;
+  /** 引擎锁存的掌声状态。 */
+  applause: { density: number; align: number };
+}
+/**
+ * 4-3：同一 tick 内 crowd applaud 与 ambience dreamApplause（两种顺序；Game 先调 cue 处理器、再调 onEvent），
+ * 对照没有 crowd cue 的缺省掌声（稀疏 / 稠密各半）。只开环境音量。
+ */
+export async function applauseScenario(make: MakeCtx, sr: number, lib: Lib, order: ApplauseOrder): Promise<ApplauseReport> {
+  const dur = 4.4, T = 0.5;
+  const { e, ctx } = await engineFor(make, sr, dur, lib, {}, { master: 100, sfx: 0, ambience: 100 });
+  const S = (t: number) => snap({ t });
+  e.frame(S(0), 0);
+  let ft = 0;
+  while (ft + 1 / 60 < T) { ft += 1 / 60; e.frame(S(ft), 1 / 60); }
+  const crowd = () => e.onEvent(ev('cue', { body: { type: 'crowd', group: 'ring2', op: 'applaud' }, segment: 't-1' }, T), S(T));
+  const amb = () => {
+    e.onAmbience('dreamApplause', 1, 1.0, S(T));
+    e.onEvent(ev('cue', { body: { type: 'ambience', amb: 'dreamApplause', level: 1, seconds: 1 }, segment: 't-1' }, T), S(T));
+  };
+  if (order === 'crowdFirst') { crowd(); amb(); } else if (order === 'ambienceFirst') { amb(); crowd(); } else amb();
+  const at0 = T + (e.clock.offset as number);
+  while (ft + 1 / 60 < dur) { ft += 1 / 60; e.frame(S(ft), 1 / 60); }
+  const applause = (e.stats() as { applause: { density: number; align: number } }).applause;
+  const lat = await chainLatency(make, sr);
+  const out = await renderOffline(ctx);
+  const m = mono(out);
+  const a = Math.floor((at0 + 2.3 + lat) * sr), b = Math.floor((at0 + 3.7 + lat) * sr), hop = Math.floor(0.01 * sr);
+  const env: number[] = [];
+  for (let i = a; i + hop <= b; i += hop) env.push(rmsOf([m], i, i + hop));
+  const sorted = [...env].sort((x, y) => x - y);
+  const med = sorted[Math.floor(sorted.length / 2)] as number, mx = sorted[sorted.length - 1] as number;
+  const mean = env.reduce((s, x) => s + x, 0) / env.length;
+  const d = env.map((x) => x - mean);
+  const lag = Math.round(0.44 / 0.01);
+  let c0 = 0, c1 = 0;
+  for (let i = 0; i < d.length; i++) c0 += (d[i] as number) ** 2;
+  for (let i = 0; i + lag < d.length; i++) c1 += (d[i] as number) * (d[i + lag] as number);
+  return { pulseDb: db(mx) - db(med), periodicity: c0 > 0 ? (c1 / (d.length - lag)) / (c0 / d.length) : 0, rmsDb: db(rmsOf([m], a, b)), applause };
+}
+
+export type KneeMode = 'cue' | 'standFallThenCue' | 'fallThenCue';
+export interface KneeReport { count: number; buses: string[]; lowDb: number; rmsDb: number }
+/**
+ * 5-8 第七步：Sim 在第 n tick 发 stand fall，第 n+1 tick 发关卡的 sfx kneeThud。膝盖闷响只能排一次——
+ * 同一个缓冲相隔 8.3 ms 正好是 60 Hz 的半个周期，两遍会把主体抵消掉。lowDb：40–90 Hz 频段的 RMS（掌后 0.7 s）。
+ */
+export async function kneeScenario(make: MakeCtx, sr: number, lib: Lib, mode: KneeMode): Promise<KneeReport> {
+  const dur = 1.6, t = 0.5, t2 = t + 1 / 120;
+  const { e, ctx } = await engineFor(make, sr, dur, lib, {}, { master: 80, sfx: 90, ambience: 0 });
+  e.frame(snap({ t: 0 }), 0);
+  if (mode === 'standFallThenCue') e.onEvent(ev('stand', { phase: 'fall', step: 7, theta: 0 }, t), snap({ t }));
+  if (mode === 'fallThenCue') e.onEvent(ev('fall', { cause: 'legs', surface: 'terrazzo' }, t), snap({ t }));
+  e.onSfx('kneeThud', undefined, undefined, snap({ t: t2 }));
+  const at0 = t + (e.clock.offset as number);
+  const knees = e.scheduled.filter((x) => x.key === 'kneeThud');
+  const lat = await chainLatency(make, sr);
+  const out = await renderOffline(ctx);
+  const m = mono(out);
+  const low = biquadRun(biquadRun(m, biquadCoefs('lowpass', 90, qDb(Math.SQRT1_2), 0, sr)), biquadCoefs('highpass', 40, qDb(Math.SQRT1_2), 0, sr));
+  const a = Math.floor((at0 + lat) * sr), b = Math.floor((at0 + lat + 0.7) * sr);
+  return { count: knees.length, buses: knees.map((x) => x.bus), lowDb: db(rmsOf([low], a, b)), rmsDb: db(rmsOf([m], a, b)) };
+}
+
+export interface HushFallReport {
+  /** 静音段之前、之中（0.4 s 之后）房间底噪的输出（dBFS）。 */
+  roomPreDb: number; roomHushDb: number;
+  /** 摔倒后 0.5 s 的输出（dBFS）：膝盖闷响。 */
+  kneeDb: number;
+  /** 排在 floor 上的追随者三段声（「两串节拍合一」）的个数。 */
+  mergedFollower: number;
+  /** 摔倒 0.1 s 后 floor / floorSfx 两个门（dB）；浏览器里为 null。 */
+  floorGateDb: number | null; floorSfxGateDb: number | null;
+}
+/** 静音段里摔倒（3-4 的静音段里有 3 个必需动作）：房间底噪门掉了，膝盖闷响仍然听得见；追随者本来就听不见，所以不「合一」。 */
+export async function hushFallScenario(make: MakeCtx, sr: number, lib: Lib): Promise<HushFallReport> {
+  const dur = 2.2, H = 0.5, F = 1.3;
+  const { e, ctx } = await engineFor(make, sr, dur, lib, {}, FULL);
+  const fol = behind(0);
+  const S = (t: number) => snap({ t, follower: fol, steady: t >= F ? 0 : 1, hush: t >= H });
+  e.frame(S(0), 0);
+  e.onAmbience('room', 1, 0.05, S(0));
+  let ft = 0;
+  while (ft + 1 / 60 < F) { ft += 1 / 60; e.frame(S(ft), 1 / 60); }
+  e.onEvent(ev('fall', { cause: 'legs', surface: 'terrazzo' }, F), S(F));
+  while (ft + 1 / 60 < dur) { ft += 1 / 60; e.frame(S(ft), 1 / 60); }
+  const off = e.clock.offset as number, fallAt = F + off;
+  const mixer = e.mixer as NonNullable<typeof e.mixer>;
+  const va = (b: 'floor' | 'floorSfx') => (mixer.gate(b).param as unknown as { valueAt?: (t: number) => number }).valueAt;
+  const gate = (b: 'floor' | 'floorSfx') => { const f = va(b); return typeof f === 'function' ? db(f.call(mixer.gate(b).param, fallAt + 0.1)) : null; };
+  const lat = await chainLatency(make, sr);
+  const out = await renderOffline(ctx);
+  const chs = [out.getChannelData(0), out.getChannelData(1)];
+  const at = (x: number) => Math.floor((x + lat) * sr);
+  return {
+    roomPreDb: db(rmsOf(chs, at(off + 0.1), at(off + H - 0.05))),
+    roomHushDb: db(rmsOf(chs, at(off + H + 0.4), at(fallAt - 0.05))),
+    kneeDb: db(rmsOf(chs, at(fallAt), at(fallAt + 0.5))),
+    mergedFollower: e.scheduled.filter((x) => x.key.startsWith('follower:') && x.bus === 'floor').length,
+    floorGateDb: gate('floor'), floorSfxGateDb: gate('floorSfx'),
+  };
+}
+
+export interface HushSfxReport {
+  /** 铃（音效总线，混响发送 0.6）：静音段之前；静音段开始 0.3 s 之后；同一时间窗不进静音段的对照；静音段 1 s 之后（dBFS）。 */
+  bellPreDb: number; bellPostDb: number; bellRefPostDb: number; bellLateDb: number;
+  /** 静音段开始 0.3 s 后音效总线的门（dB）；浏览器里为 null。 */
+  sfxGateDb: number | null;
+  /** 「嘘」与静音段同一刻（1-6）：嘘本身 0.1–0.7 s 的输出（dBFS）和它走的总线。 */
+  shushDb: number; shushBus: string;
+}
+/**
+ * 静音段也门掉音效总线和它的混响发送（§3「除了你自己的掌声，所有声音……降到 0」）：干声 0.3 s 内降到 0，不再往混响里送；
+ * 静音段之前已经送进房间混响的那一点尾巴按房间的衰减时间自然消失（和自己掌声的尾巴一样）。
+ * 「嘘」是静音段的开头，不被掐掉。三次渲染（铃、不进静音段的铃、嘘）。
+ */
+export async function hushSfxScenario(make: MakeCtx, sr: number, lib: Lib): Promise<HushSfxReport> {
+  const dur = 2.6, H = 1.0;
+  const run = async (hush: boolean, f: (e: AudioEngine, S: (t: number) => SimSnapshot) => void, fAt: number) => {
+    const S = (t: number) => snap({ t, hush: hush && t >= H });
+    const { e, ctx } = await engineFor(make, sr, dur, lib, {}, FULL);
+    e.frame(S(0), 0);
+    let ft = 0, done = false;
+    while (ft + 1 / 60 < dur) {
+      if (!done && ft + 1 / 60 >= fAt) { f(e, S); done = true; }
+      ft += 1 / 60;
+      e.frame(S(ft), 1 / 60);
+    }
+    const off = e.clock.offset as number;
+    const va = (e.mixer as NonNullable<typeof e.mixer>).gate('sfx').param as unknown as { valueAt?: (t: number) => number };
+    const gate = typeof va.valueAt === 'function' ? db(va.valueAt(H + off + 0.3)) : null;
+    const lat = await chainLatency(make, sr);
+    const out = await renderOffline(ctx);
+    const chs = [out.getChannelData(0), out.getChannelData(1)];
+    const r = (a: number, b: number) => db(rmsOf(chs, Math.floor((a + off + lat) * sr), Math.floor((b + off + lat) * sr)));
+    return { e, gate, r };
+  };
+  const bell = (e: AudioEngine, S: (t: number) => SimSnapshot) => e.onBell('morning', S(0.2));
+  const hushed = await run(true, bell, 0.2);
+  const ref = await run(false, bell, 0.2);
+  const shush = await run(true, (e, S) => e.onSfx('shush', undefined, undefined, S(H)), H);
+  return {
+    bellPreDb: hushed.r(H - 0.5, H - 0.05), bellPostDb: hushed.r(H + 0.3, dur - 0.2), bellRefPostDb: ref.r(H + 0.3, dur - 0.2),
+    bellLateDb: hushed.r(H + 1.0, dur - 0.2), sfxGateDb: hushed.gate,
+    shushDb: shush.r(H + 0.1, H + 0.7), shushBus: shush.e.scheduled.find((x) => x.key === 'shush')?.bus ?? 'none',
+  };
 }

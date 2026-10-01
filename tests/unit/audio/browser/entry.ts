@@ -62,6 +62,18 @@ async function all(sr: number): Promise<Record<string, unknown>> {
   out.peak = await S.peakScenario(real, sr, lib);
   out.palm = await S.palmScenario(real, sr, lib);
   out.crowd = await S.crowdScenario(real, sr, lib);
+  out.applause = {
+    crowdFirst: await S.applauseScenario(real, sr, lib, 'crowdFirst'),
+    ambienceFirst: await S.applauseScenario(real, sr, lib, 'ambienceFirst'),
+    none: await S.applauseScenario(real, sr, lib, 'none'),
+  };
+  out.knee = {
+    cue: await S.kneeScenario(real, sr, lib, 'cue'),
+    stand: await S.kneeScenario(real, sr, lib, 'standFallThenCue'),
+    fall: await S.kneeScenario(real, sr, lib, 'fallThenCue'),
+  };
+  out.hushFall = await S.hushFallScenario(real, sr, lib);
+  out.hushSfx = await S.hushSfxScenario(real, sr, lib);
   out.biquad = biquadCheck(sr);
   return out;
 }

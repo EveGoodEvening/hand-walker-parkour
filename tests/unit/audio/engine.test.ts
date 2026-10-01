@@ -1,14 +1,17 @@
 // tests/unit/audio/engine.test.ts —— 整个声音引擎的离线渲染（DESIGN.md §8.10 WP7 验收 3、4、5、7；§2.6、§2.7、§6.1；lead 补充）。WP7。
 // 引擎在 OfflineAudioContext 上建出完整的总线图（门、两组混响、压缩器、限幅器、软削波），按模拟时间喂事件，渲染后测量。
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { LIMITS } from '../../../src/core/constants';
 import { SR, library, make, paramAt, toDb } from './lib';
 import { rmsOf } from '../../../src/audio/dsp';
 import { renderOffline } from '../../../src/audio/library';
 import {
-  CROWD_CHAPTER, behind, crowdScenario, engineFor, ev, followerScenario, hushScenario, peakScenario, perfScenario, quietScenario, snap, tickUp,
-  timingScenario, voicesScenario, type CrowdReport, type TimingReport,
+  CROWD_CHAPTER, DREAM_CHAPTER, applauseScenario, behind, crowdScenario, engineFor, ev, followerScenario, hushFallScenario, hushScenario,
+  hushSfxScenario, kneeScenario, peakScenario, perfScenario, quietScenario, snap, tickUp, timingScenario, voicesScenario,
+  type ApplauseOrder, type ApplauseReport, type CrowdReport, type TimingReport,
 } from './scenarios';
+import { Ambience } from '../../../src/audio/ambience';
+import { AudioEngine } from '../../../src/audio/Engine';
 import { getChapter } from '../../../src/levels/chapters/index';
 import type { ChapterDef } from '../../../src/levels/schema';
 
@@ -374,5 +377,187 @@ describe('§6.2 人群的脚步「先轻后重」（npc 总线；§5.7 walk / si
     const gaps = at.slice(1).map((t, i) => t - (at[i] as number));
     for (const g of gaps) expect(g < 0.56 ? g >= 0.5 - 1e-9 : g >= 1.5).toBe(true);
     expect(gaps.some((g) => g >= 1.5)).toBe(true);
+  });
+});
+
+describe('第 2 轮验收的修复：梦中掌声对齐（§6.2「4-3 被超越时逐渐对齐」）', () => {
+  let r: Record<ApplauseOrder, ApplauseReport>;
+  beforeAll(async () => {
+    r = {
+      crowdFirst: await applauseScenario(make, SR, lib, 'crowdFirst'),
+      ambienceFirst: await applauseScenario(make, SR, lib, 'ambienceFirst'),
+      none: await applauseScenario(make, SR, lib, 'none'),
+    };
+  }, 120_000);
+
+  it('同一 tick 内先 crowd applaud、后 ambience dreamApplause（4-3 的实际顺序）：状态锁存，掌声对齐', () => {
+    expect(r.crowdFirst.applause).toEqual({ density: 1, align: 1 });
+    expect(r.ambienceFirst.applause).toEqual({ density: 1, align: 1 });
+    expect(r.none.applause).toEqual({ density: 0.5, align: 0 });
+  });
+
+  it('渲染出来：两种顺序都是一阵一阵整齐的拍击（0.44 s 周期），缺省的散掌声是平的；电平相近', () => {
+    for (const o of ['crowdFirst', 'ambienceFirst'] as const) {
+      expect(r[o].pulseDb - r.none.pulseDb, o).toBeGreaterThan(10);
+      expect(r[o].periodicity, o).toBeGreaterThan(0.5);
+      expect(Math.abs(r[o].rmsDb - r.none.rmsDb), o).toBeLessThan(6);
+    }
+    expect(r.none.periodicity).toBeLessThan(0.3);
+  });
+
+  it('dreamApplause 新建时立即应用锁存的状态：密度当下就变，对齐排在 0.5 s 之后（先散后齐）；两种顺序一样', async () => {
+    for (const order of ['crowdFirst', 'ambienceFirst'] as const) {
+      const spy = vi.spyOn(Ambience.prototype, 'param');
+      try {
+        const { e } = await engineFor(make, SR, 2, lib);
+        e.frame(snap({ t: 0 }), 0);
+        const crowd = () => e.onEvent(ev('cue', { body: { type: 'crowd', group: 'ring2', op: 'applaud' }, segment: 't-1' }, 0.5), snap({ t: 0.5 }));
+        if (order === 'crowdFirst') crowd();
+        e.onAmbience('dreamApplause', 1, 1.0, snap({ t: 0.5 }));
+        if (order === 'ambienceFirst') crowd();
+        const from = 0.5 + (e.clock.offset as number);
+        const calls = spy.mock.calls.map((c, i) => ({ id: (spy.mock.contexts[i] as Ambience).id, name: c[0], v: c[1], at: c[2] }))
+          .filter((c) => c.id === 'dreamApplause' && c.name !== 'rain');
+        const last = (name: string) => calls.filter((c) => c.name === name).pop();
+        expect(last('density')?.v, order).toBe(1);
+        expect(last('density')?.at as number, order).toBeCloseTo(from, 6);
+        expect(last('align')?.v, order).toBe(1);
+        expect(last('align')?.at as number, order).toBeCloseTo(from + 0.5, 6);
+      } finally { spy.mockRestore(); }
+    }
+  });
+
+  it('章内跨段保持（4-3 人群超过你之后，4-4「新的掌声」也整齐）；跳段时按章节数据重建；换章重置', async () => {
+    const { e } = await engineFor(make, SR, 2, lib, { chapter: (id) => (id === 'test' ? DREAM_CHAPTER : getChapter(id)) });
+    const S = (t: number, segIndex: number, segBeat: number) => ({ ...snap({ t, segIndex, segBeat }), segKind: 'still' as const });
+    e.frame(S(0, 1, 6), 0);
+    e.onEvent(ev('chapter:start', { id: 'test' }, 0), S(0, 1, 6));
+    e.onEvent(ev('segment', { id: 'd-4', index: 1, kind: 'still' }, 0), S(0, 1, 6));       // 读档：落在 4-4 的掌声中间
+    expect(e.stats().ambience).toBe('dreamApplause');
+    expect(e.stats().applause).toEqual({ density: 1, align: 1 });
+    e.onEvent(ev('chapter:start', { id: 'test' }, 0.5), S(0.5, 0, 0));
+    expect(e.stats().applause).toEqual({ density: 0.5, align: 0 });
+    // 顺序走：crowd applaud 时环境音还不是掌声，照样锁存
+    e.onEvent(ev('segment', { id: 'd-3', index: 0, kind: 'stand' }, 0.5), S(0.5, 0, 0));
+    e.onEvent(ev('cue', { body: { type: 'crowd', group: 'ring2', op: 'applaud' }, segment: 'd-3' }, 0.6), S(0.6, 0, 0.1));
+    expect(e.stats().ambience).not.toBe('dreamApplause');
+    expect(e.stats().applause).toEqual({ density: 1, align: 1 });
+  });
+});
+
+describe('第 2 轮验收的修复：5-8 第七步的膝盖闷响只响一次', () => {
+  it('stand fall 之后下一 tick 的 sfx kneeThud（以及 GameEvent fall 之后的）：只排一次，40–90 Hz 的主体和单独一声一样', async () => {
+    const single = await kneeScenario(make, SR, lib, 'cue');
+    const stand = await kneeScenario(make, SR, lib, 'standFallThenCue');
+    const fall = await kneeScenario(make, SR, lib, 'fallThenCue');
+    for (const x of [single, stand, fall]) { expect(x.count).toBe(1); expect(x.buses).toEqual(['floor']); }
+    expect(single.lowDb).toBeGreaterThan(-45);
+    expect(Math.abs(stand.lowDb - single.lowDb)).toBeLessThan(0.5);
+    expect(Math.abs(fall.lowDb - single.lowDb)).toBeLessThan(0.5);
+    expect(Math.abs(stand.rmsDb - single.rmsDb)).toBeLessThan(0.5);
+  }, 60_000);
+
+  it('相隔 0.1 s 以上的两声各响各的（4-4 跪下的一声、之后的摔倒）', async () => {
+    const { e } = await engineFor(make, SR, 2, lib);
+    e.frame(snap({ t: 0 }), 0);
+    e.onSfx('kneeThud', undefined, undefined, snap({ t: 0.2 }));
+    e.onSfx('kneeThud', undefined, undefined, snap({ t: 0.25 }));
+    e.onEvent(ev('fall', { cause: 'legs', surface: 'terrazzo' }, 0.6), snap({ t: 0.6 }));
+    expect(e.scheduled.filter((x) => x.key === 'kneeThud').length).toBe(2);
+  });
+});
+
+describe('第 2 轮验收的修复：静音段、界面音、cue 增益、门', () => {
+  it('静音段里摔倒：房间底噪已经门掉，膝盖闷响照样听得见；追随者听不见，所以不「合一」', async () => {
+    const r = await hushFallScenario(make, SR, lib);
+    expect(r.roomPreDb).toBeGreaterThan(-50);
+    expect(r.roomHushDb).toBeLessThan(r.roomPreDb - 50);
+    expect(r.kneeDb).toBeGreaterThan(-40);
+    expect(r.mergedFollower).toBe(0);
+    expect(r.floorGateDb as number).toBeLessThanOrEqual(-60);
+    expect(r.floorSfxGateDb as number).toBeCloseTo(0, 3);
+  }, 60_000);
+
+  it('静音段也门掉音效总线和它的混响发送：铃 0.3 s 内降到 0，只剩房间里已有的尾巴自然衰减；「嘘」与静音段同一刻，照样响', async () => {
+    const r = await hushSfxScenario(make, SR, lib);
+    expect(r.bellPreDb).toBeGreaterThan(-40);
+    expect(r.sfxGateDb as number).toBeLessThanOrEqual(-60);
+    expect(r.bellPostDb).toBeLessThan(r.bellRefPostDb - 25);                  // 不进静音段时铃还在响
+    expect(r.bellLateDb).toBeLessThan(r.bellPreDb - 55);                      // 1 s 后连尾巴都没了
+    expect(r.shushBus).toBe('self');
+    expect(r.shushDb).toBeGreaterThan(-50);
+  }, 60_000);
+
+  it('挂起时（暂停菜单、失焦）不排界面音——否则恢复的那一刻一齐响出来；cue 照常记录', async () => {
+    const { e } = await engineFor(make, SR, 2, lib);
+    e.frame(snap({ t: 0 }), 0);
+    e.onScreen('pause');
+    e.suspend(true);
+    e.ui('confirm'); e.ui('move');
+    e.suspend(false);
+    e.onScreen('title');
+    e.background(true);
+    e.ui('move');
+    e.background(false);
+    expect(e.scheduled.filter((x) => x.bus === 'ui')).toEqual([]);
+    e.ui('confirm');
+    expect(e.scheduled.filter((x) => x.bus === 'ui').length).toBe(1);
+    expect(e.cues(4)).toEqual(['ui:confirm', 'ui:move', 'ui:move', 'ui:confirm']);
+  });
+
+  it('sfx cue 的 gain 为 0：不出声（不是按满电平放）', async () => {
+    const { e } = await engineFor(make, SR, 2, lib);
+    e.frame(snap({ t: 0 }), 0);
+    e.onSfx('drip', undefined, 0, snap({ t: 0.2 }));
+    expect(e.scheduled.filter((x) => x.key === 'drip')).toEqual([]);
+    e.onSfx('drip', undefined, 0.5, snap({ t: 0.4 }));
+    expect(e.scheduled.filter((x) => x.key === 'drip').map((x) => Math.round(x.gainDb))).toEqual([-6]);
+  });
+
+  it('人群段绊倒（安静的一秒）后很快摔倒、5 s 内重来：环境和人群的门都恢复（同一时刻连清两个门）', async () => {
+    const { e } = await engineFor(make, SR, 5, lib);
+    const S = (t: number) => snap({ t });
+    e.frame(S(0), 0);
+    e.onAmbience('reading', 1, 0.05, S(0));
+    for (let t = 1 / 60; t < 0.5; t += 1 / 60) e.frame(S(t), 1 / 60);
+    e.onEvent(ev('hit', { severity: 'stumble', kind: 'legs', obstacleId: 1, lane: 0, steady: 1, crowd: true, firstLegHit: false }, 0.5), S(0.5));
+    for (let t = 0.5; t < 1.0; t += 1 / 60) e.frame(S(t), 1 / 60);
+    e.onEvent(ev('fall', { cause: 'legs', surface: 'terrazzo' }, 1.0), S(1.0));
+    for (let t = 1.0; t < 2.5; t += 1 / 60) e.frame(S(t), 1 / 60);
+    e.onEvent(ev('retry', { segment: 't-1', beat: 0 }, 2.5), S(2.5));
+    const at = e.now();
+    const m = e.mixer as NonNullable<typeof e.mixer>;
+    for (const b of ['ambience', 'npc', 'self', 'sfx', 'revA', 'revB'] as const) expect(paramAt(m.gate(b).param, at + 0.6), b).toBeGreaterThan(0.95);
+  });
+
+  it('空闲任务（实时模式）：requestIdleCallback 的空闲期不够 10 ms 就等下一个；等满 1.5 s 或超时就照做', async () => {
+    type Deadline = { timeRemaining(): number; didTimeout: boolean };
+    const g = globalThis as { requestIdleCallback?: unknown };
+    const prev = g.requestIdleCallback;
+    const cbs: Array<(d: Deadline) => void> = [];
+    g.requestIdleCallback = (cb: (d: Deadline) => void) => { cbs.push(cb); return cbs.length; };
+    let clock = 0;
+    try {
+      const e = new AudioEngine({
+        createContext: () => make(2, SR, SR) as unknown as BaseAudioContext,
+        makeOffline: make, preload: lib, seed: 11, perfNow: () => clock,
+      });
+      await e.unlock();
+      await e.ready;
+      const warm = (e as unknown as { warm: unknown[] }).warm;
+      const next = (d: Deadline) => { expect(cbs.length).toBe(1); (cbs.shift() as (d: Deadline) => void)(d); };
+      expect(warm.length).toBe(3);                                               // 三种噪声缓冲
+      next({ timeRemaining: () => 4, didTimeout: false });
+      expect(warm.length).toBe(3);                                               // 空闲期太短：等下一个
+      next({ timeRemaining: () => 14, didTimeout: false });
+      expect(warm.length).toBe(2);
+      clock = 2000;
+      next({ timeRemaining: () => 1, didTimeout: false });                       // 等了 2 s：照做
+      expect(warm.length).toBe(1);
+      next({ timeRemaining: () => 0, didTimeout: true });
+      expect(warm.length).toBe(0);
+      expect(cbs.length).toBe(0);
+      expect(e.stats().errors).toBe(0);
+    } finally { g.requestIdleCallback = prev; }
   });
 });

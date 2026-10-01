@@ -117,6 +117,21 @@ try {
     check(!cr.steps.some((x) => x.at >= cr.hitAt && x.at < cr.hitAt + 1.06), '人群段绊倒：1 s 内没有新的脚步');
     const onc = cr.steps.filter((x) => x.pan > 0.2);
     check(onc.length >= 2 && onc[onc.length - 1].gainDb > onc[0].gainDb + 3, `迎面的腿：右侧、越近越响（${onc.map((x) => f1(x.gainDb)).join(' → ')} dB）`);
+    console.log('第 2 轮验收的修复：梦中掌声对齐、膝盖闷响只响一次、静音段');
+    const ap = r.applause;
+    for (const o of ['crowdFirst', 'ambienceFirst', 'none']) console.log(`       掌声 ${o.padEnd(14)} 包络峰值 / 中位 ${f1(ap[o].pulseDb)} dB  0.44 s 周期性 ${f2(ap[o].periodicity)}  电平 ${f1(ap[o].rmsDb)} dBFS`);
+    check(['crowdFirst', 'ambienceFirst'].every((o) => ap[o].applause.align === 1 && ap[o].pulseDb > ap.none.pulseDb + 10 && ap[o].periodicity > 0.5) && ap.none.periodicity < 0.3,
+      '4-3：crowd applaud 与 dreamApplause 同一 tick（两种顺序）都对齐成整齐的一片，缺省的散掌声是平的');
+    const kn = r.knee;
+    console.log(`       膝盖闷响 40–90 Hz：单独 ${f1(kn.cue.lowDb)}，stand fall + cue ${f1(kn.stand.lowDb)}，fall + cue ${f1(kn.fall.lowDb)} dBFS；排程 ${kn.cue.count} / ${kn.stand.count} / ${kn.fall.count} 次`);
+    check([kn.cue, kn.stand, kn.fall].every((x) => x.count === 1) && Math.abs(kn.stand.lowDb - kn.cue.lowDb) < 0.5 && Math.abs(kn.fall.lowDb - kn.cue.lowDb) < 0.5,
+      '5-8 第七步：膝盖闷响只排一次，60 Hz 主体不被抵消');
+    const hf = r.hushFall;
+    check(hf.kneeDb > -40 && hf.roomHushDb < hf.roomPreDb - 50 && hf.mergedFollower === 0,
+      `静音段里摔倒：底噪 ${f1(hf.roomPreDb)} → ${f1(hf.roomHushDb)} dBFS，膝盖闷响 ${f1(hf.kneeDb)} dBFS，不「合一」`);
+    const hs = r.hushSfx;
+    check(hs.bellPostDb < hs.bellRefPostDb - 25 && hs.bellLateDb < hs.bellPreDb - 55 && hs.shushBus === 'self' && hs.shushDb > -50,
+      `静音段门掉音效总线：铃 ${f1(hs.bellPreDb)} → ${f1(hs.bellPostDb)}（对照 ${f1(hs.bellRefPostDb)}）→ 1 s 后 ${f1(hs.bellLateDb)} dBFS；嘘照样响 ${f1(hs.shushDb)} dBFS`);
     const bq = Math.max(...r.biquad.map((x) => x.maxErrDb));
     check(bq < 0.1, `BiquadFilterNode 与规范公式（Node 实现用的）一致：最大偏差 ${bq.toFixed(4)} dB`);
     await p.close();
