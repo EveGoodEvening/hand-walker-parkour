@@ -6,7 +6,7 @@ import { SR, library, make, paramAt, toDb } from './lib';
 import { rmsOf } from '../../../src/audio/dsp';
 import { renderOffline } from '../../../src/audio/library';
 import {
-  CROWD_CHAPTER, DREAM_CHAPTER, applauseScenario, behind, crowdScenario, engineFor, ev, followerScenario, hushFallScenario, hushScenario,
+  CROWD_CHAPTER, DREAM_CHAPTER, applauseScenario, behind, chainLatency, crowdScenario, engineFor, ev, followerScenario, hushFallScenario, hushScenario,
   hushSfxScenario, kneeScenario, peakScenario, perfScenario, quietScenario, snap, tickUp, timingScenario, voicesScenario,
   type ApplauseOrder, type ApplauseReport, type CrowdReport, type TimingReport,
 } from './scenarios';
@@ -559,5 +559,132 @@ describe('第 2 轮验收的修复：静音段、界面音、cue 增益、门', 
       expect(cbs.length).toBe(0);
       expect(e.stats().errors).toBe(0);
     } finally { g.requestIdleCallback = prev; }
+  });
+});
+
+describe('U3：结尾卡的床单声、回到标题时复位声音', () => {
+  const internals = (e: AudioEngine) => e as unknown as { amb: Ambience | null; rain: { bedGain: GainNode | null } | null };
+
+  it('第四章结尾卡每按一下 ↓（sfx cloth，−4 dB）：屏幕门之后 2.0 / 2.6 / 3.2 s 排在没被门掉的总线上（≥ −6 dB），渲染出来听得见；游玩中照旧走 npc', async () => {
+    const { e, ctx } = await engineFor(make, SR, 4.4, lib);
+    e.frame(snap({ t: 0 }), 0);
+    e.onAmbience('reading', 1, 0.05, snap({ t: 0 }));
+    for (let t = 1 / 60; t < 0.5; t += 1 / 60) e.frame(snap({ t }), 1 / 60);
+    e.onSfx('cloth', undefined, undefined, snap({ t: 0.5 }));
+    expect(e.scheduled[e.scheduled.length - 1]).toMatchObject({ key: 'cloth', bus: 'npc' });
+    expect(e.outroTaps).toBe(0);
+    e.onScreen('outro');                                   // Game.onChapterEnd → setScreen('outro')
+    const m = e.mixer as NonNullable<typeof e.mixer>;
+    const rows: Array<(typeof e.scheduled)[number]> = [];
+    // 结尾卡上模拟时间停住，音频时间照走（与评审脚本 code/outro-cloth.mts 同样的推进方式）
+    for (const k of [2.0, 2.6, 3.2]) {
+      e.onSfx('cloth', undefined, Math.pow(10, -4 / 20), snap({ t: 0.5 + k }));   // Game.outroInput：{ sfx: 'cloth', gain: -4 }
+      const s = e.scheduled[e.scheduled.length - 1] as (typeof e.scheduled)[number];
+      expect(s.key).toBe('cloth');
+      expect(toDb(paramAt(m.gate(s.bus).param, s.at + 0.01)), `${k}s ${s.bus}`).toBeGreaterThanOrEqual(-6);
+      expect(toDb(paramAt(m.gate('npc').param, s.at + 0.01))).toBeLessThanOrEqual(-60);    // 原来那条总线确实被门掉了
+      rows.push(s);
+    }
+    expect(e.outroTaps).toBe(3);
+    const lat = await chainLatency(make, SR);
+    const out = await renderOffline(ctx);
+    const chs = [out.getChannelData(0), out.getChannelData(1)];
+    const win = (a: number, b: number) => toDb(rmsOf(chs, Math.floor((a + lat) * SR), Math.floor((b + lat) * SR)));
+    for (const s of rows) {
+      expect(win(s.at, s.at + 0.25)).toBeGreaterThan(-60);
+      expect(win(s.at, s.at + 0.25)).toBeGreaterThan(win(s.at - 0.3, s.at - 0.05) + 20);
+    }
+  }, 60_000);
+
+  it('回到标题：雨和那一章的环境音约 1 s 内淡出，换成标题底噪（早晨走廊的房间声）；之后 chapter:start + segment(1-1) 恢复第一章的设定', async () => {
+    const dur = 5;
+    const T = 1.0;
+    const lat = await chainLatency(make, SR);
+    /** 渲染一次，返回「模拟时刻窗口 → RMS（dBFS）」。 */
+    const levels = async (ctx: OfflineAudioContext, off: number) => {
+      const out = await renderOffline(ctx);
+      const chs = [out.getChannelData(0), out.getChannelData(1)];
+      return (a: number, b: number) => toDb(rmsOf(chs, Math.floor((a + off + lat) * SR), Math.floor((b + off + lat) * SR)));
+    };
+    // 参照：从头到尾只有房间底噪
+    const ref = await engineFor(make, SR, dur, lib);
+    ref.e.frame(snap({ t: 0 }), 0);
+    ref.e.onAmbience('room', 1, 0.05, snap({ t: 0 }));
+    for (let t = 1 / 60; t < dur - 0.2; t += 1 / 60) ref.e.frame(snap({ t }), 1 / 60);
+    const refDb = (await levels(ref.ctx, ref.e.clock.offset as number))(3.0, 4.5);
+
+    const { e, ctx } = await engineFor(make, SR, dur, lib);
+    e.frame(snap({ t: 0 }), 0);
+    e.onAmbience('rainStreet', 1, 0.05, snap({ t: 0 }));
+    e.onEvent(ev('cue', { body: { type: 'rain', intensity: 0.6, seconds: 0.05 }, segment: 't-1' }, 0), snap({ t: 0 }));
+    let ft = 0;
+    for (; ft + 1 / 60 < T; ft += 1 / 60) e.frame(snap({ t: ft + 1 / 60 }), 1 / 60);
+    expect(e.stats()).toMatchObject({ ambience: 'rainStreet', rain: 0.6 });
+    const old = internals(e).amb as Ambience;
+    const rainBed = (internals(e).rain as { bedGain: GainNode }).bedGain.gain;
+    e.onScreen('title');
+    const at = e.now();
+    expect(e.stats()).toMatchObject({ ambience: 'room', rain: 0, place: 'title', reverb: 'corridor', crowd: 0 });
+    const before = paramAt(rainBed, at - 0.01);
+    expect(toDb(paramAt(rainBed, at + 2) / before)).toBeLessThanOrEqual(-60);                // 雨：2 s 后 ≤ −60 dB
+    expect(toDb(paramAt(rainBed, at + 1) / before)).toBeLessThanOrEqual(-30);                // 约 1 s 内淡出
+    expect(toDb(paramAt(rainBed, at + 0.1) / before)).toBeGreaterThan(-6);                   // 是淡出，不是掐断
+    for (const g of [old.out.gain, old.floorOut.gain]) expect(toDb(paramAt(g, at + 2))).toBeLessThanOrEqual(-60);   // 夜街与它的底噪
+    // 标题上模拟时间停住；离线模式靠模拟时间推进「现在」
+    for (; ft + 1 / 60 < dur - 0.4; ft += 1 / 60) e.frame(snap({ t: ft + 1 / 60 }), 1 / 60);
+    const off = e.clock.offset as number;
+    // 之后开始第一章（Sim.load 连发 chapter:start 与 segment，模拟时间从 0 起）
+    const S1 = snap({ t: 0, chapter: 'ch1', segIndex: 0, segBeat: 0 });
+    e.onEvent(ev('chapter:start', { id: 'ch1' }, 0), S1);
+    e.onEvent(ev('segment', { id: '1-1', index: 0, kind: 'run' }, 0), S1);
+    expect(e.stats()).toMatchObject({ ambience: 'reading', rain: 0, place: 'kit:classroom.morning', reverb: 'classroom' });
+    // 渲染：标题上只剩房间底噪（与参照差 < 2 dB），比之前的雨夜街道低得多
+    const lv = await levels(ctx, off);
+    const preDb = lv(0.4, 0.95), postDb = lv(3.0, 4.5);
+    expect(preDb).toBeGreaterThan(postDb + 10);
+    expect(Math.abs(postDb - refDb)).toBeLessThan(2);
+  }, 60_000);
+
+  it('暂停菜单「回到标题」：人群不再走（标题上没有人），地点和混响换成标题的；下一个 segment 按跳段重建', async () => {
+    const { e } = await engineFor(make, SR, 4, lib, { chapter: (id) => (id === 'test' ? CROWD_CHAPTER : getChapter(id)) });
+    const S = (t: number) => snap({ t, segBeat: 2 + t });
+    e.frame(S(0), 0);
+    e.onEvent(ev('segment', { id: 'c-1', index: 0, kind: 'run' }, 0), S(0));
+    for (let t = 1 / 60; t < 1.5; t += 1 / 60) e.frame(S(t), 1 / 60);
+    expect(e.stats().crowd).toBe(4);
+    const steps = () => e.scheduled.filter((x) => x.key === 'stepPair');
+    expect(steps().length).toBeGreaterThanOrEqual(2);
+    e.onScreen('pause');
+    e.onScreen('title');
+    const at = e.now();
+    expect(e.stats()).toMatchObject({ crowd: 0, place: 'title', ambience: 'room' });
+    for (let t = 1.5; t < 3.5; t += 1 / 60) e.frame(S(t), 1 / 60);                      // 标题背景的快照还停在人群段
+    expect(steps().filter((x) => x.at > at + 0.36)).toEqual([]);                         // 之前提前排了的（≤ 0.35 s）之后，一步也没有
+    e.onEvent(ev('segment', { id: 'c-1', index: 0, kind: 'run' }, 3.5), S(3.5));          // 同一段（U4 复位用的 goto）也按跳段重建
+    expect(e.stats()).toMatchObject({ crowd: 4, place: 'kit:placeholder.default' });
+  });
+
+  it('从失败卡、结尾卡回到标题：失败门、屏幕门清掉（标题上的界面音听得见）；旧环境音本来就被门着，直接换掉', async () => {
+    for (const from of ['fail', 'outro'] as const) {
+      const { e } = await engineFor(make, SR, 4, lib);
+      const S = (t: number) => snap({ t });
+      e.frame(S(0), 0);
+      e.onAmbience('canteen', 1, 0.05, S(0));
+      for (let t = 1 / 60; t < 0.5; t += 1 / 60) e.frame(S(t), 1 / 60);
+      if (from === 'fail') e.onEvent(ev('fall', { cause: 'legs', surface: 'terrazzo' }, 0.5), S(0.5));
+      for (let t = 0.5; t < 1.5; t += 1 / 60) e.frame(S(t), 1 / 60);
+      e.onScreen(from);
+      for (let t = 1.5; t < 2.5; t += 1 / 60) e.frame(S(t), 1 / 60);
+      const old = internals(e).amb as Ambience;
+      expect(old.id).toBe('canteen');
+      e.onScreen('title');
+      const now = e.now();
+      expect(e.stats(), from).toMatchObject({ failing: false, ambience: 'room' });
+      const m = e.mixer as NonNullable<typeof e.mixer>;
+      for (const b of ['ui', 'self', 'sfx', 'ambience', 'floor', 'revA'] as const) expect(paramAt(m.gate(b).param, now + 1.2), `${from} ${b}`).toBeGreaterThan(0.95);   // 屏幕门 τ 0.3 s 恢复
+      expect(toDb(paramAt(old.out.gain, now + 0.3)), from).toBeLessThanOrEqual(-60);       // 门打开之前旧的已经停了
+      e.ui('confirm');
+      expect(e.scheduled[e.scheduled.length - 1]?.bus).toBe('ui');
+    }
   });
 });

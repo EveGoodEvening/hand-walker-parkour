@@ -8,6 +8,9 @@
 //   crowd 的 applaud / crawlOvertake / normal → 梦中掌声对齐与否（锁存，dreamApplause 新建时立即应用）。
 //   bell / sfx / ambience / silence 四种 cue 由 index.ts 注册的处理器转到这里。
 // AudioContext 在第一次 pointerdown / keydown（Game 调 unlock）时才创建；之前只维护「期望状态」并记录 cue。
+// 解锁不只试一次（U3）：context 没在运行（第一次 resume 被拒、iOS 来电打断、系统意外挂起）时，引擎自己在 window 上挂
+// pointerup / touchend / click / keydown，每次手势里同步地播一段静音 buffer 并 resume()，确认 running 之后才摘掉。
+// 屏幕：结尾卡、演职卡淡出所有声音（第四章结尾卡的床单声例外，走界面总线）；回到标题时换成标题的底噪（U3）。
 // 挂起（§6.1「暂停和失焦时 ctx.suspend()」）有两个来源，任何一个成立就挂起，两个都清掉才恢复：
 //   Game 的暂停（suspend()；离开暂停 / 设置屏幕时也视为结束——Game 从暂停菜单「重来」「回到标题」时不调 suspend(false)）；
 //   窗口失焦或标签页隐藏（background()，index.ts 监听 blur / focus / visibilitychange，任何屏幕都生效）。
@@ -47,6 +50,8 @@ export interface EngineDeps {
   perfNow?: () => number;
   /** 已经渲染好的库（同一采样率）：跳过预渲染。测试里多个引擎共用一份；将来重建 AudioContext 时也可复用。 */
   preload?: { palms: Map<string, AudioBuffer[]>; sfx: Map<string, AudioBuffer[]> };
+  /** 解锁手势的监听目标（index.ts 传 window）。没有就只靠 Game 的那一次 unlock。 */
+  gestures?: Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 }
 
 /**
@@ -61,6 +66,20 @@ const GLASS_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'ambience', 
 const SCREEN_BUSES: readonly GateBus[] = ['self', 'follower', 'npc', 'sfx', 'ambience', 'floor', 'floorSfx', 'revA', 'revB'];
 /** 不受静音段门影响的音效：「嘘」是静音段的开头（1-6 里和 hush 同一刻），走自己的总线。 */
 const HUSH_EXEMPT_SFX = new Set<SfxId>(['shush']);
+/**
+ * 结尾卡、演职卡上照样要听得见的音效：第四章结尾卡每按一下 ↓ 在床单上响的一声（Game.outroInput 发 sfx cloth，
+ * §4.4、§10.2）。cloth 平时走 npc 总线，屏幕门会把它压到 −70 dB 以下；这时改走界面总线（不在 SCREEN_BUSES 里，音量同样跟「音效」）。
+ */
+const SCREEN_EXEMPT_SFX = new Set<SfxId>(['cloth']);
+/**
+ * 标题屏的「地点」（§7.2：背景是早晨的走廊）：房间底噪、走廊混响、没有灯管嗡鸣、没有雨。
+ * key 不同于任何真实地点，所以之后的第一个 segment 一定按章节数据重建。
+ */
+const TITLE_PLACE: Place = { key: 'title', reverb: 'corridor', ambience: 'room', ambLevel: 1, hum: false, rain: 'indoor' };
+/** 回到标题时，之前那一章的环境音、雨、底噪淡出用的时间（秒；τ = 1/3 这个值，1 s 时约 −35 dB，2 s 时约 −70 dB）。 */
+const TITLE_FADE = 0.75;
+/** 解锁手势（§6.1）：iOS 只在 touchend / click 这类手势里允许 resume，pointerdown 不一定算。capture，别人 stopPropagation 也收得到。 */
+const GESTURES = ['pointerup', 'touchend', 'click', 'keydown'] as const;
 /** 同一声膝盖闷响的去重窗口（秒）：GameEvent fall 与 sfx cue 两条路径共用。 */
 const KNEE_DEDUPE = 0.1;
 /** 梦中掌声「先散后齐」：一片掌声刚起来时先是散的，这么久之后才开始对齐（τ 0.6 s）。 */
@@ -88,6 +107,8 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   /** 最近排程的一次性声音（测试与调试用，环形 512）。 */
   readonly scheduled: Array<{ key: string; at: number; bus: BusId; gainDb: number; pan: number; buf: AudioBuffer | null }> = [];
   screen = 'boot';
+  /** 在结尾卡上收到的床单声（sfx cloth）个数，只增不减。界面音用它判断一次 ↓ 是不是已经被结尾卡用掉（见 ui.ts）。 */
+  outroTaps = 0;
 
   private noise: NoiseBank | null = null;
   private ambDeps: AmbDeps | null = null;
@@ -115,6 +136,9 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   private warm: Array<{ fn: () => void; urgent: boolean; since: number }> = [];
   private warmTimer: unknown = null;
   private errors = 0;
+  /** 解锁手势监听是否挂着（context 确认 running 之前一直挂着）。 */
+  private armed = false;
+  private readonly onGesture = (): void => { this.guard(() => { void this.wake(); }); };
 
   // 期望状态（没有 context 时也维护，建图时一次性应用）
   private place: Place | null = null;
@@ -169,15 +193,64 @@ export class AudioEngine implements AudioImpl, AudioAPI {
       if (!this.ctx) {
         this.ctx = this.deps.createContext();
         this.build();
+        this.watchState();
       }
       if (this.deps.offline) return;
-      const ctx = this.ctx as AudioContext;
-      // iOS：在触摸事件里先播放一段静音 buffer，再 resume（§6.1）
-      const b = ctx.createBuffer(1, 1, ctx.sampleRate);
-      const s = ctx.createBufferSource();
-      s.buffer = b; s.connect(ctx.destination); s.start(0);
-      if (!this.suspended && ctx.state !== 'running') await ctx.resume();
+      await this.wake();
     } catch (err) { this.error(err); }
+  }
+
+  /**
+   * 在手势里同步地播一段 1 样本的静音 buffer 再 resume()（iOS 只认手势里的这两步，§6.1）。Game 暂停或失焦时不恢复。
+   * context 确认 running 之前一直挂着手势监听：第一次 resume 被拒（或一直没有结果），下一次手势再试。
+   */
+  private wake(): Promise<void> {
+    const ctx = this.ctx as AudioContext | null;
+    if (!ctx || this.deps.offline) return Promise.resolve();
+    const st = ctx.state as string;
+    if (st === 'running' || st === 'closed') { this.disarm(); return Promise.resolve(); }
+    this.arm();
+    if (this.suspended) return Promise.resolve();
+    const b = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const s = ctx.createBufferSource();
+    s.buffer = b; s.connect(ctx.destination); s.start(0);
+    return this.resumeCtx(ctx);
+  }
+
+  /** resume()，失败不抛；确认 running 之后摘掉手势监听。 */
+  private resumeCtx(ctx: AudioContext): Promise<void> {
+    let p: Promise<void>;
+    try { p = ctx.resume(); } catch (err) { this.error(err); return Promise.resolve(); }
+    return Promise.resolve(p).then(() => { if ((ctx.state as string) === 'running') this.disarm(); }, () => undefined);
+  }
+
+  /**
+   * context 的状态变化：running → 摘掉手势监听；iOS 的 interrupted（来电、别的 App 占用音频）或不是我们要的 suspended
+   * （系统挂起；我们自己暂停 / 失焦时的 suspended 不算）→ 重新挂上，等下一次手势恢复。
+   */
+  private watchState(): void {
+    if (this.deps.offline || !this.ctx) return;
+    this.ctx.onstatechange = () => this.guard(() => this.onCtxState());
+  }
+
+  private onCtxState(): void {
+    const st = (this.ctx?.state ?? 'closed') as string;
+    if (st === 'running' || st === 'closed') this.disarm();
+    else if (st === 'interrupted' || (st === 'suspended' && !this.suspended)) this.arm();
+  }
+
+  private arm(): void {
+    const t = this.deps.gestures;
+    if (this.armed || !t) return;
+    this.armed = true;
+    for (const k of GESTURES) t.addEventListener(k, this.onGesture, { capture: true, passive: true });
+  }
+
+  private disarm(): void {
+    const t = this.deps.gestures;
+    if (!this.armed || !t) return;
+    this.armed = false;
+    for (const k of GESTURES) t.removeEventListener(k, this.onGesture, { capture: true });
   }
 
   onEvent(e: GameEvent, snap: SimSnapshot): void {
@@ -259,7 +332,12 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     const ctx = this.ctx as AudioContext;
     try {
       if (on) void ctx.suspend().catch(() => undefined);
-      else { this.clock.reset(); this.crowd.restart(); void ctx.resume().catch(() => undefined); }
+      else {
+        this.clock.reset(); this.crowd.restart();
+        // 恢复不一定成功（失焦期间被系统打断时要等手势）：确认 running 之前挂着手势监听
+        if ((ctx.state as string) !== 'running') this.arm();
+        void this.resumeCtx(ctx);
+      }
     } catch (err) { this.error(err); }
   }
 
@@ -276,6 +354,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
 
   onSfx(id: SfxId, pan: number | undefined, g: number | undefined, snap: SimSnapshot): void {
     this.log.record(`sfx:${id}`);
+    if (id === 'cloth' && this.screen === 'outro') this.outroTaps++;
     this.guard(() => {
       if (g !== undefined && !(g > 0)) return;                      // gain 0（或负数、NaN）：不出声
       const at = this.atSnap(snap);
@@ -283,7 +362,8 @@ export class AudioEngine implements AudioImpl, AudioAPI {
       // 缺省居中：1-6 的端墙镜在正前方、3-4 的水洼在中道；侧面的镜子由 cue 自己带 pan（§6.2「声像在镜子那一侧」）
       const p = pan ?? 0;
       if (id === 'kneeThud') { this.kneeThud(at, gainDb, p); return; }
-      this.sfx(id, at, HUSH_EXEMPT_SFX.has(id) ? { pan: p, gainDb, bus: 'self' } : { pan: p, gainDb });
+      const bus: BusId | null = HUSH_EXEMPT_SFX.has(id) ? 'self' : this.screenQuiet && SCREEN_EXEMPT_SFX.has(id) ? 'ui' : null;
+      this.sfx(id, at, bus ? { pan: p, gainDb, bus } : { pan: p, gainDb });
       if (id === 'glassTouch' && this.mixer) {
         const now = this.now();
         for (const b of GLASS_BUSES) this.mixer.gate(b).set('glass', dbToGain(-9), at + 0.3, at + 2.3, 0.1, 0.25, now);
@@ -329,7 +409,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
       frames: this.frames, avgFrameMs: this.frames ? this.costTotal / this.frames : 0, maxFrameMs: this.costMax, maxFrameWhat: this.costMaxWhat,
       ambience: this.amb?.id ?? null, reverb: this.mixer?.reverb ?? null, place: this.place?.key ?? null,
       hush: this.hush, failing: this.failing, rain: this.wantRain, follower: this.folMix, makeup: this.mixer?.makeupDb ?? null,
-      suspended: this.suspended, crowd: this.crowd.count, applause: { ...this.applause }, errors: this.errors,
+      suspended: this.suspended, gestures: this.armed, crowd: this.crowd.count, applause: { ...this.applause }, errors: this.errors,
     };
   }
 
@@ -547,21 +627,46 @@ export class AudioEngine implements AudioImpl, AudioAPI {
 
   /**
    * 屏幕切换。Game 只把 'screen' 发到 EventBus，不经过 AudioAPI.onEvent，所以 index.ts 订阅总线后调用这里。
-   * 结尾卡和演职卡：所有声音 0.4 s 淡出（底噪也停）；菜单类屏幕：允许界面音。
+   * 结尾卡和演职卡：所有声音约 1.5 s 淡出（底噪也停；床单声例外，见 SCREEN_EXEMPT_SFX）；菜单类屏幕：允许界面音。
+   * 标题：换成标题的底噪（enterTitle）。
    */
   onScreen(name: string): void {
     this.screen = name;
     // 离开暂停菜单（以及从暂停菜单打开的设置）就结束 Game 的暂停：「重来」「回到标题」不会调 suspend(false)
     if (this.gamePaused && name !== 'pause' && name !== 'settings') { this.gamePaused = false; this.applySuspend(); }
     const quiet = name === 'outro' || name === 'credits';
-    if (quiet === this.screenQuiet) return;
-    this.screenQuiet = quiet;
-    if (!this.mixer) return;
-    const now = this.now();
-    for (const b of SCREEN_BUSES) {
-      if (quiet) this.mixer.gate(b).set('screen', 0, now, Infinity, 0.25, 0.3, now);   // 约 1.5 s 内淡到听不见
-      else this.mixer.gate(b).clear('screen', now, 0.3, now);
+    // 之前那一章的声音此刻已经听不见（被屏幕门或失败门压着）：回到标题时直接换掉，不必淡出
+    const muted = this.screenQuiet || this.failing;
+    if (quiet !== this.screenQuiet) {
+      this.screenQuiet = quiet;
+      if (this.mixer) {
+        const now = this.now();
+        for (const b of SCREEN_BUSES) {
+          if (quiet) this.mixer.gate(b).set('screen', 0, now, Infinity, 0.25, 0.3, now);   // 约 1.5 s 内淡到听不见
+          else this.mixer.gate(b).clear('screen', now, 0.3, now);
+        }
+      }
     }
+    if (name === 'title') this.enterTitle(muted);
+  }
+
+  /**
+   * 回到标题（暂停菜单、失败卡、结尾卡、演职卡之后，以及启动后第一次进标题）：之前那一章的环境音、雨、房间底噪
+   * 约 1 s 内淡出，换成标题的底噪（早晨走廊的房间声）；地点、混响、人群、失败和一次性的门一并清掉。
+   * 之后的 chapter:start / segment（开始、继续、选章；U4 回标题时把模拟复位到 1-1 也会发）照常按章节数据恢复——
+   * 下一个 segment 一定按「跳段」处理（soundStateAt 重建地点、环境音、雨）。
+   */
+  private enterTitle(muted: boolean): void {
+    this.jump = true; this.segIndex = -1; this.pendingAmb = null;
+    this.crowd.setSegment(null);
+    this.lights.reset();
+    const now = this.now();
+    if (this.failing) { this.failing = false; if (this.mixer) this.applyFail(false, now); }
+    this.clearTransient();
+    const fade = muted ? 0.05 : TITLE_FADE;
+    this.setPlaceAt(TITLE_PLACE, now, 0.8);
+    this.setRain(0, fade, now);
+    this.setAmbience(TITLE_PLACE.ambience, TITLE_PLACE.ambLevel, fade, now);
   }
 
   // ——————————————————— 地点、环境音、雨 ———————————————————
@@ -603,9 +708,12 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   }
 
   private setPlace(place: Place, snap: SimSnapshot, fade: number): void {
+    this.setPlaceAt(place, this.mixer ? this.clock.peek(snap.t, this.now()) : 0, fade);
+  }
+
+  private setPlaceAt(place: Place, at: number, fade: number): void {
     this.place = place;
     if (!this.mixer) return;
-    const at = this.clock.peek(snap.t, this.now());
     this.mixer.setRainExposure(place.rain, at);
     // Convolver 还没装好：不在这一帧里做 FFT，排到空闲任务的最前面（交叉淡变本来就有 0.8 s，晚几毫秒听不出来）
     if (this.deps.offline || this.mixer.reverbReady(place.reverb)) { this.mixer.setReverb(place.reverb, at, fade); return; }
