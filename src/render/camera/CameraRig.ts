@@ -5,6 +5,7 @@
 // 横向跟随：临界阻尼弹簧 ω = 12，换道滚转 1.5°；撑跃高度 +0.35 × 抬升；伏低 −0.10；受击震动 0.12 s / 0.03，视角脉冲 +1.5°；
 // 梦中高速（> 7 m/s）视角 +8°；回头 0.25 s 绕玩家转 160°、停 0.4 s、0.25 s 转回；站立 (0, 1.62, +1.9) 注视 (0, 1.5, −8)，
 // 1.2 s 过渡，滚转 = θ × 0.6；摔倒 (0.2, 0.18, +1.0)，0.35 s，滚转 0.2 rad；静场按 ShotId 固定机位（相对主角锚点）。
+// 静场里的 turnBack cue（2-9、3-10，修复轮 B3）：从静场机位转到看身后的机位（shots.ts 的 STILL_TURN_BACK），0.3 s 转过去、0.3 s 转回来。
 // 步态晃动：高度 1.2 cm、俯仰 0.3°，与掌根触地同步；落地下沉 1 cm。
 // 停拍里如果镜中 / 水洼里有替身（WP5.focus），镜头慢慢看过去（「我停下来，看了一眼。镜子里的人也停了下来。」）。
 // 「减少晃动」：没有晃动、滚转、震动和视角变化；回头、推近直接切镜头。
@@ -16,7 +17,10 @@ import { clamp, DEG, easeInOutSine, frac, lerp, springStep } from '../../core/ma
 import type { Settings } from '../../core/settings';
 import type { ShotId, SimSnapshot } from '../../core/types';
 import { WP5 } from '../actors/shared';
-import { FOLLOW, PUDDLE_GAZE, RUN_SHOT_OFFSETS, SEGMENT_SHOTS, SET_DEFAULT_SHOT, SET_SHOT_LATE, SET_SHOT_RETURN, SET_SHOTS, STAND_SHOTS, THROUGH_GLASS_SHOT, DEFAULT_SET_SHOT, type SetShot } from './shots';
+import {
+  FOLLOW, PUDDLE_GAZE, RUN_SHOT_OFFSETS, SEGMENT_SHOTS, SET_DEFAULT_SHOT, SET_SHOT_LATE, SET_SHOT_RETURN, SET_SHOTS, STAND_SHOTS, STILL_TURN_BACK,
+  STILL_TURN_DEFAULT_YAW, THROUGH_GLASS_SHOT, TURN_RAMP, DEFAULT_SET_SHOT, type SetShot,
+} from './shots';
 
 export interface CamPose { pos: THREE.Vector3; look: THREE.Vector3; roll: number; fov: number }
 
@@ -149,6 +153,15 @@ export class CameraRig implements ViewSystem {
         _g.set(late.shot.pos[0], late.shot.pos[1], late.shot.pos[2]).applyMatrix4(M);
         _gl.set(late.shot.look[0], late.shot.look[1], late.shot.look[2]).applyMatrix4(M);
         o.pos.lerp(_g, k); o.look.lerp(_gl, k); fov = lerp(fov, late.shot.fov, k);
+      }
+      // 回头（turnBack cue，修复轮 B3）：从这个机位转过去看身后，再转回来
+      const tb = this.shot;
+      if (tb && tb.id === 'turnBack') {
+        if (next.t > tb.until) this.shot = null;
+        else if (next.t >= tb.t0) {
+          const k = rm ? 1 : easeInOutSine(clamp(Math.min(next.t - tb.t0, tb.until - next.t) / TURN_RAMP, 0, 1));
+          if (k > 0) fov = stillTurn(o, STILL_TURN_BACK[id], M, k, fov);
+        }
       }
       o.fov = portrait ? Math.min(80, fov * 1.3) : fov;
       this.fallBlend = 0; this.gazeBlend = 0; this.standBlend = 0;
@@ -316,6 +329,38 @@ export class CameraRig implements ViewSystem {
       && Math.abs(yaw) < CHASE_MAX_TURN && Math.abs(pan) < CHASE_MAX_TURN;
     return o;
   }
+}
+
+const _tp = new THREE.Vector3(), _tl = new THREE.Vector3();
+
+/**
+ * 静场回头（修复轮 B3）：把机位 o 朝回头机位 to（相对锚点 M）转过去 k（0..1）。镜头位置直线平移；朝向按 to.turn 的方向绕竖直轴转
+ * （不对注视点插值：前后两个注视点的连线会穿过镜头，朝向会在中途翻转），俯仰和注视距离线性插值。to 缺省 = 原地向左转 160°。
+ * 返回插值后的视角。
+ */
+export function stillTurn(o: CamPose, to: (SetShot & { turn: 1 | -1 }) | undefined, M: THREE.Matrix4, k: number, fov: number): number {
+  _d.subVectors(o.look, o.pos);
+  const L0 = Math.max(1e-3, _d.length());
+  const a0 = Math.atan2(_d.x, _d.z), p0 = Math.asin(clamp(_d.y / L0, -1, 1));
+  let a1: number, p1 = p0, L1 = L0, turn = 1, fov1 = fov;
+  if (to) {
+    _tp.set(to.pos[0], to.pos[1], to.pos[2]).applyMatrix4(M);
+    _tl.set(to.look[0], to.look[1], to.look[2]).applyMatrix4(M);
+    _d.subVectors(_tl, _tp);
+    L1 = Math.max(1e-3, _d.length());
+    a1 = Math.atan2(_d.x, _d.z); p1 = Math.asin(clamp(_d.y / L1, -1, 1));
+    turn = to.turn; fov1 = to.fov;
+  } else {
+    _tp.copy(o.pos);
+    a1 = a0 + STILL_TURN_DEFAULT_YAW;
+  }
+  let da = a1 - a0;
+  const TAU = Math.PI * 2;
+  if (turn > 0) { while (da <= 0) da += TAU; while (da > TAU) da -= TAU; } else { while (da >= 0) da -= TAU; while (da < -TAU) da += TAU; }
+  const a = a0 + da * k, p = lerp(p0, p1, k), L = lerp(L0, L1, k);
+  o.pos.lerp(_tp, k);
+  o.look.set(Math.sin(a) * Math.cos(p), Math.sin(p), Math.cos(a) * Math.cos(p)).multiplyScalar(L).add(o.pos);
+  return lerp(fov, fov1, k);
 }
 
 const _m = new THREE.Matrix4();

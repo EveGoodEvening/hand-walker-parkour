@@ -54,6 +54,24 @@ export const SET_SHOT_LATE: Partial<Record<ShotId, { after: number; blend: numbe
   infirmaryBed: { after: 7.0, blend: 1.2, shot: { pos: [-0.9, 0.55, 0.6], look: [-0.5, -0.02, 0.75], fov: 40 } },
 };
 
+/**
+ * 静场里的回头（`camera` cue turnBack：2-9 5.2 s「它多了一只手」指向身后、3-10 5.4 s「回头：什么也没有」）。修复轮 B3：
+ * 以前静场只认 SET_SHOTS，turnBack 被丢掉，镜头一直停在原来的静场机位上。
+ * 从当前静场机位转到看身后的机位（pos / look 相对锚点，主角朝 −z，身后是 +z），镜头位置平移、朝向按 turn 的方向转过去
+ * （+1 向左、−1 向右，按镜头自己的朝向），TURN_RAMP 秒转过去、TURN_RAMP 秒转回来（与跑段的 turnBack 同速），「减少晃动」时直接切。
+ * 镜头都在主角头的后面（+z 一侧），转过去之后他在镜头身后，画面里只有他身后的东西。
+ *   labBoard：顺着影子那只手指的方向（右后方）转过去，看见教室后半边空着的实验台、凳子和后墙。
+ *   bathroomMirror：从他右后方转过去看身后的门和门旁边滴水的毛巾（「只有我背后的卫生间门，和门旁边墙上挂着的一条毛巾」）。
+ * 没有专门机位的静场：原地向左转 160°。
+ */
+export const STILL_TURN_BACK: Partial<Record<ShotId, SetShot & { turn: 1 | -1 }>> = {
+  labBoard: { pos: [-0.5, 0.5, 0.95], look: [0.75, 0.85, 2.9], fov: 60, turn: -1 },
+  bathroomMirror: { pos: [0.5, 1.45, 0.6], look: [-0.25, 1.35, 1.65], fov: 66, turn: 1 },
+};
+/** 静场 turnBack 的缺省：原地向左转（弧度）。转过去、转回来各用多少秒。 */
+export const STILL_TURN_DEFAULT_YAW = Math.PI * 160 / 180;
+export const TURN_RAMP = 0.3;
+
 /** 每个 set 的缺省机位（`camera` cue 可以覆盖）。键 = `${set}.${variant}` 或 `${set}`。 */
 export const SET_DEFAULT_SHOT: Partial<Record<string, ShotId>> = {
   deskFeet: 'deskFeet', counter: 'counter', canteenWindow: 'windowSeat', labBoard: 'labBoard', bus: 'busWindow', home: 'homeCrawl',

@@ -144,6 +144,17 @@ export function playerBox(w: Scene): [number, number, number, number] {
   return b;
 }
 
+/** 主角落在画面里（镜头前方、|NDC| < 1）的顶点数（修复轮 B3：静场回头时他在镜头身后）。 */
+export function playerVertsInFrame(w: Scene): number {
+  if (!w.actor.rig.root.visible) return 0;
+  let n = 0;
+  skinnedOf(w.actor.rig.root, (v) => {
+    const q = v.project(w.camera);
+    if (q.z <= 1 && Math.abs(q.x) <= 1 && Math.abs(q.y) <= 1) n++;
+  });
+  return n;
+}
+
 /** 替身（按 id）的世界顶点。 */
 export function doubleVerts(w: Scene, id: string, each: (v: THREE.Vector3, bone: number) => void): boolean {
   const i = w.dbl.slotIndexOf(id);
