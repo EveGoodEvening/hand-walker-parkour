@@ -24,7 +24,7 @@
 //     - 5-9 纸条显示 4.8 s，「像有人刚刚坐过。」挪到纸条收起之后；静场开头接 5-8 的「我失败了。」补原文下一句「或者说，我的身体成功了七步，
 //       然后把我摔在地上。」，5-9 因此 14.3 s。
 //     - 5-7 加 npc 组 'teacherMa'（跑道边站着的马老师，一个人，不是中道上的障碍），放在本段终点前方 2 m（@66），5-8 七步时在身边。
-//       WP6 的 specialOfGroup 目前只认 'monitor'：要 WP6 补上 'teacherMa'，他才会穿黑色运动裤、两侧白条。
+//       WP6 的 specialOfGroup 按组 id 认出他（黑色运动裤、两侧白条）。
 import type { ChapterDef } from '../schema';
 
 export default {
@@ -248,7 +248,7 @@ export default {
         { id: 'queue5', kind: 'queue', from: 20, to: 50, side: 'R', density: 0.6, gaze: 'none' },
         // 马老师一个人站在跑道左边（不是中道上的障碍）。站立段沿用紧挨着的前一个跑段的组（§10.2），所以他站在 5-8 七步的起点
         // （本段终点 @64）前方 2 m：起身时在画面左前方，第 7 步摔倒时就在身边，「你……在练习走路？」是他说的。
-        // 注意：WP6 的 specialOfGroup 目前只认 'monitor'，这个组现在画成一个普通的人；要 WP6 让它也认 'teacherMa'（见 U1 报告）
+        // WP6 的 specialOfGroup 按组 id 认出马老师（黑色运动裤、两侧白条），集成时补上。
         { id: 'teacherMa', kind: 'lineSides', from: 66, to: 66, side: 'L', density: 1, gaze: 'none' },
       ],
       rows: [

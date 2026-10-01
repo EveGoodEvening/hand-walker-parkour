@@ -144,7 +144,7 @@ describe('人墙的组与段（U6）', () => {
     expect(segs).toEqual(['2-2', '5-6']);
     expect(reveal).toEqual(['4-2→4-3', '5-7→5-8']);
     expect(walls).toEqual(['2-2:tables', '2-2:standing', '5-6:recessSides']);
-    expect(stands).toEqual(['4-2:ring2', '4-2:imitators', '5-7:class5', '5-7:queue5']);
+    expect(stands).toEqual(['4-2:ring2', '4-2:imitators', '5-7:class5', '5-7:queue5', '5-7:teacherMa']);
   });
 });
 

@@ -4,7 +4,7 @@
 // 推荐直接用 Speaker 名（types.ts）：chenMo、directorZhou、teacherMa、monitor、dreamBoy。
 //   陈默       kind 'chenMo'（能下蹲，全作唯一出现在你视线高度的头）；它身后同车道 4 m 内 id 含 chenmo 的 footOut 是他留在过道里的脚
 //   周主任     legs + id ∈ {directorZhou, zhou, director}；或 street.schoolGate 里带 id 的 legs：灰夹克下摆、指间烟头一明一灭
-//   马老师     legs + id ∈ {teacherMa, ma, coach, pe}：黑色运动裤、两侧白条
+//   马老师     legs + id ∈ {teacherMa, ma, coach, pe}，或 npc 组 id 同上：黑色运动裤、两侧白条
 //   班长       npc 组 id ∈ {monitor, banzhang}：只有脚和一摞作业本的下沿，渐远
 //   梦里的男生  kneeler + fallInto 行为，或 id ∈ {dreamBoy, boy}：干净的裤脚和鞋
 import { createRng } from '../../core/rng';
@@ -54,9 +54,10 @@ export function specialOfObstacle(o: CompiledObstacle, kit: KitId, variant: stri
   return byId === 'chenMo' ? 'chenMo' : null;
 }
 
+/** npc 组对应的特殊 NPC：班长（monitor）与马老师（teacherMa，5-7 跑道边一个人，5-8 七步时在身边）。 */
 export function specialOfGroup(g: NpcGroupDef): SpecialId | null {
   const sp = specialById(g.id);
-  return sp === 'monitor' ? 'monitor' : null;
+  return sp === 'monitor' || sp === 'teacherMa' ? sp : null;
 }
 
 // ——— 外观 ———

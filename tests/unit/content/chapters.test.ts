@@ -16,7 +16,7 @@ import { solver } from '../../../src/sim/Solver';
 import { Sim } from '../../../src/sim/Sim';
 import { advancePace, createPaceState, nominalCadence, paceEvents } from '../../../src/sim/Pace';
 import { expandSegment, type Decor, type GroupInfo } from '../../../src/render/npc/crowds';
-import { specialById } from '../../../src/render/npc/specials';
+import { specialById, specialOfGroup } from '../../../src/render/npc/specials';
 import { NOTE_OPEN } from '../../../src/ui/hud/Hud';
 
 const IDS = ['ch1', 'ch2', 'ch3', 'ch4', 'ch5'] as const;
@@ -454,7 +454,8 @@ describe('评审修复 U1 的数据形状', () => {
     const s57 = ch('ch5').segments.find((s) => s.id === '5-7') as RunSegmentDef;
     const ma = groups('ch5', '5-7').find((g) => g.id === 'teacherMa')!;
     expect(ma).toBeDefined();
-    expect(specialById(ma.id)).toBe('teacherMa');                        // WP6 的别名表认得这个 id（specialOfGroup 还要 WP6 补上）
+    expect(specialById(ma.id)).toBe('teacherMa');                        // WP6 的别名表认得这个 id
+    expect(specialOfGroup(ma)).toBe('teacherMa');                         // 组也按马老师画（黑色运动裤、两侧白条）
     // 站立段沿用紧挨着的前一个跑段的组（§10.2）：5-8 从 5-7 的终点起身，往前走七步，他要在那附近
     const segs = ch('ch5').segments;
     expect(segs[segs.findIndex((s) => s.id === '5-7') + 1]?.id).toBe('5-8');
