@@ -16,6 +16,7 @@ import { fakeCtx, snap } from './helpers';
 import { C as OC } from '../../../src/render/kits/outside/lib/colors';
 import type { AtmospherePreset } from '../../../src/core/registry';
 import { hexHsl, hsl, lin, screenColor, type V3 } from './shade';
+import { DARK_LIFT, darkLift } from '../../../src/render/kits/outside/lib/tone';
 
 registerAtmospheres();
 
@@ -149,5 +150,22 @@ describe('rainNight：冷色受光（U6）', () => {
     expect(hues.length).toBeGreaterThan(0);
     for (const h of hues) { expect(h).toBeGreaterThanOrEqual(30); expect(h).toBeLessThanOrEqual(55); }
     w.stopPreview();
+  });
+});
+
+describe('rainNight：暗色的部分补偿（lead 集成 2026-10，DESIGN §10.3）', () => {
+  it('kit 顶点色里的暗色 × DARK_LIFT：两灯之间柏油、楼背墙的画面亮度约三倍；灯下仍不超过色板；粉笔白不动', () => {
+    const L = (rgb: readonly number[]) => 0.2126 * (rgb[0] as number) + 0.7152 * (rgb[1] as number) + 0.0722 * (rgb[2] as number);
+    const lift = DARK_LIFT.rainNight as number;
+    for (const hex of [OC.asphalt, OC.wallNight, OC.wallNightDark, OC.iron, OC.bush]) {
+      const a = lin(hex), b = darkLift(a, lift);
+      const pal = L([((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]);
+      for (const [n, y] of [[[0, 1, 0], 0], [[1, 0, 0], 1.5]] as Array<[V3, number]>) {
+        const before = L(screenColor(a, RAIN, n, { lamp: 0.25, y }).rgb), after = L(screenColor(b, RAIN, n, { lamp: 0.25, y }).rgb);
+        expect(after / before, hex.toString(16)).toBeGreaterThan(2.7);
+        expect(L(screenColor(b, RAIN, n, { lamp: 1, y }).rgb), hex.toString(16)).toBeLessThanOrEqual(pal + 0.01);
+      }
+    }
+    expect(darkLift(lin(OC.chalk), lift)).toEqual(lin(OC.chalk));
   });
 });

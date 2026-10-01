@@ -9,7 +9,7 @@ import { createRng } from '../../../src/core/rng';
 import type { KitId } from '../../../src/core/types';
 import { C, hsv } from '../../../src/render/kits/outside/lib/colors';
 import { HALF } from '../../../src/render/kits/outside/lib/kit';
-import { Tone, lin, neutralInverse, neutralTone, presetOf, screenColor, type Lin3 } from '../../../src/render/kits/outside/lib/tone';
+import { DARK_LIFT, Tone, darkLift, lin, neutralInverse, neutralTone, presetOf, screenColor, type Lin3 } from '../../../src/render/kits/outside/lib/tone';
 import '../../../src/render/kits/outside/plaza';
 import '../../../src/render/kits/outside/street';
 import '../../../src/render/kits/outside/track';
@@ -79,10 +79,18 @@ describe('§5.1 的色板就是画面上的颜色（户外、梦、清晨）', (
       }
     }
   });
-  it('暗场景（第三章 rainNight）不补偿：顶点色仍是色板值，亮度交给 LampField 的灯', () => {
+  it('暗场景（第三章 rainNight）不做完整补偿，只把暗色乘 DARK_LIFT（色相不变，亮色不动）；albedo() 原样返回', () => {
     expect(Tone.of('rainNight').active).toBe(false);
+    expect(DARK_LIFT.rainNight).toBe(3.4);
+    // 主角、NPC 走 albedo()：暗场景照旧原样返回
+    expect(Tone.of('rainNight').albedo(lin(C.asphalt), 'floor')).toEqual(lin(C.asphalt));
+    // 亮色（粉笔白）不动；暗色三个通道乘同一个倍数
+    expect(darkLift(lin(C.chalk), 3.4)).toEqual(lin(C.chalk));
+    const w = darkLift(lin(C.wallNight), 3.4), w0 = lin(C.wallNight);
+    expect(w[0] / w0[0]).toBeCloseTo(w[2] / w0[2], 9);
     const night = chunks('street', 'alley');
-    const want = lin(C.asphalt);
+    const want = darkLift(lin(C.asphalt), 3.4);
+    expect(want[0] / lin(C.asphalt)[0]).toBeCloseTo(3.4, 9);
     let found = false;
     for (const ch of night) {
       const c = ch.floor.getAttribute('color');

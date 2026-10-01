@@ -6,7 +6,8 @@
 // E_ref 是参考受光：地面层用朝上的面（半球光 + 平行光）；static 用「背光的竖直面」（只有半球光：mix(地, 天, 0.5)），
 // 也就是说色板是阴面的颜色，被平行光照到的面、高处朝上的面（箱顶、台阶）更亮，保留体积感，而且没有哪个面会比色板更暗、
 // 被 toe 压得更饱和。贴地朝上的面（镜中房间的地）按地面算，镜子里外的地面一样亮。
-// 发光体（Basic）只做色调映射的逆。暗场景（preset.dark，第三章的雨夜）不补偿：那里的亮度由 LampField 的灯决定。
+// 发光体（Basic）只做色调映射的逆。暗场景（preset.dark，第三章的雨夜）不做完整补偿：那里的亮度由 LampField 的灯决定。
+// 但 rainNight 的暗色按 DARK_LIFT 部分补偿（lead 集成 2026-10，DESIGN §10.3）：只改 kit 的地面与 static 顶点色，色相不变。
 // LampField 的灯光（§5.3）不计入参考受光：路灯下面会更亮一些，这正是「灯的节拍」。
 import * as THREE from 'three';
 import { FALLBACK_ATMOSPHERES } from '../../../../core/fallbacks';
@@ -100,6 +101,26 @@ export function screenColorBasic(c: N3): Lin3 {
 /** 反照率上限：再高就是在拿顶点色硬撑一个本来就暗的氛围。 */
 export const ALBEDO_MAX = 4;
 
+/**
+ * 暗场景的部分补偿（lead 集成 2026-10，DESIGN §10.3）。rainNight 不做完整的受光补偿（亮度交给 LampField 的灯），
+ * 但把色板值直接当反照率时，柏油 #1C2227、楼背墙这些暗色过了 Neutral 的 toe 全是黑的，3-4 整帧亮度中位数只有约 0.02，
+ * 只调灯拉不上去（U6）。暗色的反照率乘 lift：线性亮度 ≤ DARK_LIFT_LO 时乘满，到 DARK_LIFT_HI 渐变回 1 倍
+ * （粉笔白、栏杆红、标线这些本来看得见的颜色不动）；三个通道乘同一个倍数，色相、饱和度不变。
+ * rainNight 取 3.4：两灯之间（LampField 0.25）柏油的画面亮度 0.011 → 0.036，3-4 最暗的一段（路灯坏了一半）整帧亮度中位数
+ * 约 0.02 → 0.06；灯下最亮的楼背墙约 0.197，不超过色板（#2A3238，0.191）0.01 以上。
+ * 发光体不动。只作用于 kit 的顶点色（applyArrays），albedo() 照旧原样返回（主角、NPC 不受影响）。
+ */
+export const DARK_LIFT: Partial<Record<AtmosphereId, number>> = { rainNight: 3.4 };
+export const DARK_LIFT_LO = 0.05, DARK_LIFT_HI = 0.2;
+
+/** 暗色的部分补偿：线性 RGB × 同一个倍数（见 DARK_LIFT）。 */
+export function darkLift(c: N3, lift: number): Lin3 {
+  const l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  const k = Math.min(1, Math.max(0, (DARK_LIFT_HI - l) / (DARK_LIFT_HI - DARK_LIFT_LO)));
+  const m = 1 + (lift - 1) * k;
+  return [c[0] * m, c[1] * m, c[2] * m];
+}
+
 const TONES = new WeakMap<AtmospherePreset, Tone>();
 
 /** 一个氛围下的补偿器。暗场景或受光太弱时不生效（原样返回）。 */
@@ -109,7 +130,7 @@ export class Tone {
   private readonly eSide: Lin3;
   private readonly cache = new Map<string, Lin3>();
 
-  constructor(readonly preset: AtmospherePreset) {
+  constructor(readonly preset: AtmospherePreset, readonly lift = 1) {
     this.eFloor = refIrradiance(preset, 'floor');
     this.eSide = refIrradiance(preset, 'side');
     const lum = (e: Lin3) => 0.2126 * e[0] + 0.7152 * e[1] + 0.0722 * e[2];
@@ -120,7 +141,7 @@ export class Tone {
   static of(id: AtmosphereId): Tone {
     const p = presetOf(id);
     let t = TONES.get(p);
-    if (!t) { t = new Tone(p); TONES.set(p, t); }
+    if (!t) { t = new Tone(p, p.dark ? DARK_LIFT[id] ?? 1 : 1); TONES.set(p, t); }
     return t;
   }
 
@@ -158,7 +179,16 @@ export class Tone {
    * 'exact'：按每个顶点自己的法线（每个面都正好是色板色，没有明暗，只给正对镜头的平面用）。
    */
   applyArrays(col: number[] | Float32Array, nor: ArrayLike<number>, pos: ArrayLike<number>, kind: 'floor' | 'static' | 'emissive' | 'exact'): void {
-    if (!this.active) return;
+    if (!this.active) {
+      // 暗场景：只给地面和 static 的暗色做部分补偿（DARK_LIFT），发光体不动
+      if (this.lift === 1 || kind === 'emissive') return;
+      const n = Math.floor(col.length / 3);
+      for (let v = 0; v < n; v++) {
+        const a = darkLift([col[v * 3] as number, col[v * 3 + 1] as number, col[v * 3 + 2] as number], this.lift);
+        col[v * 3] = a[0]; col[v * 3 + 1] = a[1]; col[v * 3 + 2] = a[2];
+      }
+      return;
+    }
     const n = Math.floor(col.length / 3);
     for (let v = 0; v < n; v++) {
       let ref: ToneRef | 'emissive' | N3 = kind === 'emissive' ? 'emissive' : 'floor';
