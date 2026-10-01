@@ -14,9 +14,11 @@
 // 越过的障碍（U6）：镜头在主角身后 2.35 m 以上，越过的障碍会在镜头和主角之间停留，形成横跨画面下部的暗条
 // （3-4 静音段里整屏被挡）。障碍远端落到玩家碰撞盒后沿之后 0.3 m（s1 < s − PASS_BEHIND）起，在 PASS_FADE 秒内
 // 以底面中心为原点缩小到 0（之后不画）；回头（lookBack > 0）或镜头转向身后（turnBack 机位）时照常画，身后保留 14 m。
-// 人墙（U6）：人墙段——人群段（2-2、5-6，数据注释里的「人墙」）和紧挨着站立段（4-3、5-8）的前一个跑段（4-2、5-7，站立段只显示它们的组）——
-// 里站着的人（路边的组和人腿障碍）每个画质都画上身和没有五官的头（isWallSegment，读章时定）；梦里（plaza）的人中、高画质本来就有上身，
-// 低画质也画。别处的路边的人、障碍，以及所有坐着的人、伸脚的人只到腰带。
+// 人墙（U6）：人群段（2-2、5-6，数据注释里的「人墙」）里站着的人（路边的组和人腿障碍）每个画质都画上身和没有五官的头
+// （isWallSegment，读章时定）；梦里（plaza）的人中、高画质本来就有上身，低画质也画。
+// 站立段（4-3、5-8）只显示紧挨着的前一个跑段（4-2、5-7）的组（§10.2）：这些组里站着的人只在站立段进行时画上身（每个画质；
+// 按组和当前段的种类定，不按远近）。爬行的时候它们和别处一样只到腰带（5-7 是「排队同学的腿」，§4）；进站立段时镜头正在升起，
+// 这些人在站立机位的身后（审查 r2 验收）。别处的路边的人、障碍，以及所有坐着的人、伸脚的人只到腰带。
 import * as THREE from 'three';
 import type { ArchetypeId, QualityProfile, ViewContext, ViewSystem } from '../../core/contracts';
 import { LANE_WIDTH } from '../../core/constants';
@@ -119,8 +121,10 @@ export class ObstacleView implements ViewSystem {
   private fadeMarks: number[] = [];
   private decor: Decor[] = [];
   private groups: GroupInfo[] = [];
-  /** 人墙段（U6）：段 → 这一段里站着的人（路边的组、人腿障碍）画上身。读章时定。 */
+  /** 人墙段（U6）：段 → 这一段里站着的人（路边的组、人腿障碍）一直画上身（人群段 2-2、5-6）。读章时定。 */
   private wallSegs: boolean[] = [];
+  /** 段 → 显示这一段的组的站立段下标（4-2 → 4-3、5-7 → 5-8；没有 = −1）。这一段里站着的人只在那个站立段进行时画上身。 */
+  private standOf: number[] = [];
   /** 重来 / 读章之后的第一帧把衣服色调直接切到当前氛围（那时 World 已经按检查点重放过 atmosphere）。 */
   private toneSnap = true;
   private groupState: Array<{ gaze: Decor['gaze'] | null; applaud: number; overtake: number; overtakeS: number }> = [];
@@ -146,7 +150,7 @@ export class ObstacleView implements ViewSystem {
   private readonly target = new THREE.Vector3();
   private readonly box: AABB = { x0: 0, x1: 0, y0: 0, y1: 0, s0: 0, s1: 0 };
   private readonly m = new THREE.Matrix4();
-  private readonly fctx: FrameCtx = { s: 0, px: 0, t: 0, tAnim: 0, beat: 0, tSeg: 0, speed: 0, bps: 5, ahead: 40, behind: BEHIND_FORWARD, hush: 0, reveal: 0 };
+  private readonly fctx: FrameCtx = { s: 0, px: 0, t: 0, tAnim: 0, beat: 0, tSeg: 0, speed: 0, bps: 5, ahead: 40, behind: BEHIND_FORWARD, hush: 0, reveal: 0, standSeg: -1 };
   private readonly fallbackLook: Look = lookFor('student', 1, 'fallback');
   private readonly sway: Sway = { dx: 0, knee: 0, side: 1 };
   private readonly trem: Tremble = { roll: 0, pitch: 0 };
@@ -192,6 +196,7 @@ export class ObstacleView implements ViewSystem {
     const { decor, groups } = expandChapter(ch.seed, ch.segments);
     this.groups = groups;
     this.wallSegs = ch.segments.map((_, i) => isWallSegment(ch.segments, i));
+    this.standOf = ch.segments.map((_, i) => standRevealOf(ch.segments, i));
     this.groupState = groups.map(() => ({ gaze: null, applaud: -1, overtake: -1, overtakeS: 0 }));
     this.specials.clear(); this.looks.clear(); this.chenFoot.clear(); this.chenFootIds.clear(); this.chenDest.clear();
     this.segStart = ch.segments.map(() => Number.NaN);
@@ -432,6 +437,7 @@ export class ObstacleView implements ViewSystem {
     const ctx = this.fctx;
     ctx.s = s; ctx.px = px; ctx.t = t; ctx.tAnim = tAnim; ctx.beat = beat; ctx.tSeg = tSeg; ctx.speed = speed; ctx.bps = bps;
     ctx.ahead = ahead; ctx.behind = behind; ctx.hush = hush; ctx.reveal = reveal;
+    ctx.standSeg = next.segKind === 'stand' ? next.segIndex : -1;
 
     // —— 障碍 ——
     if (this.stage) {
@@ -614,9 +620,9 @@ export class ObstacleView implements ViewSystem {
       if (shiftTurn !== 0) { const turn = shiftTurn * 70 * DEG; p.footYawL += turn; p.footYawR += turn; p.legYawL += turn * 0.3; p.legYawR += turn * 0.3; }
       // 障碍里的人只转鞋尖和腿（上身扭过去会让垂着的手伸出碰撞盒）
       this.applyGaze(p, o.id * 8 + i, (o.s0 + o.s1) / 2 + st.ds, f, 'turnShoes', -1, b.type === 'walk', OBSTACLE_GAZE_MAX, 0);
-      // 人墙段里的人腿障碍（2-2、5-6 的「两侧车道的人墙」，5-7「排队同学的腿」）和路边的人一样画上身，梦里的人本来就有上身：
-      // 每个画质都画（U6）；别处只到腰带。不再看「当前是不是站立段」：那是整帧的开关，进站立段的那一帧画面里所有人一起长出上身
-      p.wall = kit === 'plaza' || (!this.stage && this.wallSegs[seg.index] === true);
+      // 人群段里的人腿障碍（2-2、5-6 的「两侧车道的人墙」）和路边的人一样画上身，梦里的人本来就有上身：每个画质都画（U6）。
+      // 站立段要显示的那一段（5-7「排队同学的腿」）只在站立段进行时画；别处只到腰带
+      p.wall = kit === 'plaza' || this.wallAt(seg.index, f);
       p.upper = look.upper || p.wall;
       p.outdoor = OUTDOOR_KITS.has(kit);
       if (p.upper && this.globalOp.applaud >= 0) p.clap = clapClosed(f.tAnim, hash01(o.id + i)) ? 2 : 1;
@@ -671,6 +677,15 @@ export class ObstacleView implements ViewSystem {
     if (rise >= 1) this.applyIdle(p, f.tAnim, 0.37);
     this.forest.add(p);
     void st; void seg; void cur;
+  }
+
+  /**
+   * 第 seg 段里站着的人这一帧画不画上身（U6）：人群段一直画；站立段要显示的组所在的段（4-2、5-7）只在那个站立段进行时画。
+   * 只看段和当前段的种类，与玩家远近、画面上还有谁无关。调试舞台不算。
+   */
+  private wallAt(seg: number, f: FrameCtx): boolean {
+    if (this.stage || seg < 0) return false;
+    return this.wallSegs[seg] === true || (f.standSeg >= 0 && this.standOf[seg] === f.standSeg);
   }
 
   private resetPerson(p: Person, look: Look): void {
@@ -792,8 +807,8 @@ export class ObstacleView implements ViewSystem {
       } else this.applyIdle(p, f.tAnim, d.phase);
       this.applyGaze(p, -1 - i, sN, f, d.gaze, gi, d.pose === 'walk');
       const kit = groups[gi]?.kit;
-      // 人墙（U6）：按组所在的段决定（梦里的人一律算），坐着的人不算（与别处坐着的人、伸脚的人一样只到腰带）
-      p.wall = d.pose !== 'seat' && (kit === 'plaza' || (!this.stage && this.wallSegs[groups[gi]?.seg ?? -1] === true));
+      // 人墙（U6）：按组所在的段和当前段的种类决定（梦里的人一律算），坐着的人不算（与别处坐着的人、伸脚的人一样只到腰带）
+      p.wall = d.pose !== 'seat' && (kit === 'plaza' || this.wallAt(groups[gi]?.seg ?? -1, f));
       p.upper = d.look.upper || kit === 'plaza' || p.wall;
       p.outdoor = kit !== undefined && OUTDOOR_KITS.has(kit);
       const applaud = (gs && gs.applaud >= 0) || this.globalOp.applaud >= 0;
@@ -909,6 +924,8 @@ interface FrameCtx {
   s: number; px: number; t: number; tAnim: number; beat: number; tSeg: number; speed: number; bps: number; ahead: number; behind: number; hush: number;
   /** 身后看得见的程度（0..1）：回头或镜头转向身后时越过的障碍照常画。 */
   reveal: number;
+  /** 当前的站立段下标（不在站立段 = −1）：只有这时它要显示的组（前一个跑段的组）画上身。 */
+  standSeg: number;
 }
 
 /** 人群段（crowd: true，2-2、5-6）：绊倒触发「安静的一秒」的那几段，两侧车道的人墙在这里。 */
@@ -917,19 +934,31 @@ export function isCrowdSegment(seg: Pick<CompiledSegment, 'kind' | 'def'>): bool
 }
 
 /**
- * 人墙段（U6）：人群段（2-2、5-6），以及紧挨着站立段（4-3、5-8）的前一个跑段（4-2、5-7；站立段只显示这一段的组，§10.2）。
- * 这些段里站着的人（路边的组和人腿障碍）每个画质都画上身和没有五官的头，从出现到消失都一样：不按离玩家的远近
- * （r1 在近处 6–7.5 m 内从腰里长出来，像是冲着你来的），也不在进入站立段的那一帧突然长出来。
+ * 人墙段（U6）：人群段（2-2、5-6）。这些段里站着的人（路边的组和人腿障碍）每个画质都画上身和没有五官的头，
+ * 从出现到消失都一样：不按离玩家的远近（r1 在近处 6–7.5 m 内从腰里长出来，像是冲着你来的）。
  */
 export function isWallSegment(segments: ReadonlyArray<Pick<CompiledSegment, 'kind' | 'def'>>, i: number): boolean {
   const seg = segments[i];
-  if (!seg || seg.kind !== 'run') return false;
-  return isCrowdSegment(seg) || segments[i + 1]?.kind === 'stand';
+  return !!seg && isCrowdSegment(seg);
 }
 
-/** 人墙的组：组所在的段是人墙段。 */
+/**
+ * 显示第 i 段的组的站立段（U6）：站立段只显示紧挨着的前一个跑段的组（§10.2），所以 4-2 → 4-3、5-7 → 5-8；没有 = −1。
+ * 这一段里站着的人只在那个站立段进行时画上身（§5.4「世界突然『正常』了」、§5.7「躯干和头只在站立段……显示」）；
+ * 爬行经过时只到腰带（5-7 是「排队同学的腿」）。审查 r2：以前整段都画，站立段就没有什么可「突然正常」的了。
+ */
+export function standRevealOf(segments: ReadonlyArray<Pick<CompiledSegment, 'kind'>>, i: number): number {
+  return segments[i]?.kind === 'run' && segments[i + 1]?.kind === 'stand' ? i + 1 : -1;
+}
+
+/** 人墙的组：组所在的段是人墙段（一直画上身）。 */
 export function isWallGroup(g: Pick<GroupInfo, 'seg'>, segments: ReadonlyArray<Pick<CompiledSegment, 'kind' | 'def'>>): boolean {
   return isWallSegment(segments, g.seg);
+}
+
+/** 站立段要显示的组：组所在的段紧挨着一个站立段（只在那个站立段进行时画上身）。 */
+export function isStandGroup(g: Pick<GroupInfo, 'seg'>, segments: ReadonlyArray<Pick<CompiledSegment, 'kind'>>): boolean {
+  return standRevealOf(segments, g.seg) >= 0;
 }
 
 /**

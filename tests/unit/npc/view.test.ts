@@ -2,18 +2,20 @@
 import { appendFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import type { QualityTier, SimSnapshot } from '../../../src/core/types';
+import type { ChapterId, QualityTier, SimSnapshot } from '../../../src/core/types';
+import { compile } from '../../../src/levels/compile';
 import { OBSTACLES, OBSTACLE_KINDS } from '../../../src/levels/obstacles';
 import { getChapter } from '../../../src/levels/chapters/index';
 import type { ChapterDef } from '../../../src/levels/schema';
 import { customStage, makeStage, toStage, type StageName } from '../../../src/render/npc/stage';
 import { chapter, runSeg } from '../core/helpers';
 import { ViewDriver, faceBack, fakeCtx, instancedBounds, makeView, stageView } from './helpers';
-import { FEET, LOW_UPPER, LegForest, newPerson } from '../../../src/render/npc/LegForest';
-import { EMBER_PEAK, emberGlow, lookFor, specialLook } from '../../../src/render/npc/specials';
+import { FEET, HIPS_SPECIAL, LOW_UPPER, LegForest, newPerson } from '../../../src/render/npc/LegForest';
+import { EMBER_PEAK, emberGlow, lookFor, specialLook, specialOfGroup, specialOfObstacle } from '../../../src/render/npc/specials';
 import { LAMP_PEAK, lampGlow } from '../../../src/render/npc/archetypes/armBar';
 import { reducedPulse } from '../../../src/render/npc/behaviors';
-import { OVERTAKE_LIFE } from '../../../src/render/npc/ObstacleView';
+import { OVERTAKE_LIFE, isWallSegment, standRevealOf, zhouAllowed } from '../../../src/render/npc/ObstacleView';
+import type { RunSegmentDef } from '../../../src/levels/schema';
 
 /** 实测数字：设了 HW_ROWS（文件路径）时追加写进去，平时什么都不做（vitest 不打印通过的用例的输出）。 */
 function writeRows(rows: string[]): void { const f = process.env.HW_ROWS; if (f) appendFileSync(f, `${rows.join('\n')}\n`); }
@@ -106,6 +108,52 @@ describe('WP6 draw call 与数量上限（§9.4；验收 1）', () => {
     expect(rows.length).toBe(14);
   });
 
+  it('低画质：会画上身的每一段（人墙 2-2、5-6，梦里 4-1、4-2、4-5，站立段 4-3、5-8）逐帧 ≤ 8k、≤ 3 次 draw call；用 special 部件的特殊人物不和它们同段或相邻', () => {
+    const LOW_BUDGET = 8000;
+    // 数据：陈默、周主任、班长（低画质在 special 部件里）所在的段，以及前后相邻的段，都不会画人墙的上身。
+    // 人墙 24 人 + 陈默同帧要 8.9k（上一个用例记的那一笔），现有数据里不会出现
+    const upperSegs: string[] = [], specialSegs: string[] = [];
+    for (const id of ['ch1', 'ch2', 'ch3', 'ch4', 'ch5'] as ChapterId[]) {
+      const ch = compile(getChapter(id) as ChapterDef);
+      const uppers = ch.segments.map((sg, i) => sg.kind === 'run' && (isWallSegment(ch.segments, i) || standRevealOf(ch.segments, i) >= 0 || (sg.def as RunSegmentDef).kit === 'plaza'));
+      ch.segments.forEach((sg, i) => {
+        if (uppers[i]) upperSegs.push(sg.def.id);
+        if (sg.kind !== 'run') return;
+        const def = sg.def as RunSegmentDef;
+        const sp = sg.obstacles.map((o) => specialOfObstacle(o, def.kit, def.variant)).concat((def.npcs ?? []).map((g) => specialOfGroup(g)))
+          .filter((x): x is NonNullable<typeof x> => x !== null && (x !== 'directorZhou' || zhouAllowed(id)) && HIPS_SPECIAL.includes(specialLook(x).hips));
+        if (sp.length === 0) return;
+        specialSegs.push(`${sg.def.id}:${[...new Set(sp)].join(',')}`);
+        for (const j of [i - 1, i, i + 1]) expect(uppers[j] === true, `${sg.def.id} 的 ${sp.join(',')} 与 ${ch.segments[j]?.def.id}`).toBe(false);
+      });
+    }
+    expect(upperSegs).toEqual(['2-2', '4-1', '4-2', '4-5', '5-6', '5-7']);
+    expect(specialSegs.length).toBeGreaterThan(0);
+    // 画面：每一段从头跑到尾，每 12 tick 一帧
+    const rows: string[] = [];
+    for (const [ch, seg] of [['ch2', '2-2'], ['ch4', '4-1'], ['ch4', '4-2'], ['ch4', '4-3'], ['ch4', '4-5'], ['ch5', '5-6'], ['ch5', '5-8']] as const) {
+      const { view } = makeView('low');
+      const vd = new ViewDriver(view, getChapter(ch) as ChapterDef, { segment: seg, beat: 0 });
+      vd.d.sim.setInvincible(true);
+      const i0 = vd.d.snap.segIndex;
+      let max = 0, frames = 0, ups = 0;
+      for (let k = 0; k < 600; k++) {
+        const snap = vd.step(12);
+        if (snap.segIndex !== i0) break;
+        frames++;
+        const tri = view.forest.triangles();
+        max = Math.max(max, tri); ups = Math.max(ups, view.forest.lowUppers());
+        expect(tri, `${seg} t=${snap.t.toFixed(2)}`).toBeLessThanOrEqual(LOW_BUDGET);
+        expect(visible(view.forest.meshes), `${seg} t=${snap.t.toFixed(2)}`).toBeLessThanOrEqual(3);
+      }
+      rows.push(`${seg}: ${frames} 帧，最多 ${max} 个三角形，上身最多 ${ups}`);
+      expect(frames, seg).toBeGreaterThan(20);
+      expect(ups, seg).toBeGreaterThan(0);
+    }
+    writeRows(rows);
+    expect(rows.length).toBe(7);
+  });
+
   it('梦中的爬行者 ≤ 3 次 draw call；数量上限 低 24 / 中 60 / 高 120', () => {
     for (const [tier, max] of [['low', 24], ['medium', 60], ['high', 120]] as Array<[QualityTier, number]>) {
       const { view } = withStage(tier, 'dream', 20);
@@ -118,23 +166,24 @@ describe('WP6 draw call 与数量上限（§9.4；验收 1）', () => {
 });
 
 describe('站立段与梦里：躯干和头（§5.7「只在站立段、梦里、远景中显示」）', () => {
-  it('跑段里只到腰带（人墙、梦里除外，U6）；站立段要显示的组（4-2 → 4-3）在站立段里画出躯干和头（高画质）；crowd applaud 时手在胸前开合', () => {
+  it('跑段里只到腰带（人墙、梦里除外，U6）；站立段要显示的组（5-7 → 5-8、4-2 → 4-3）在站立段里画出躯干和头（高画质）；crowd applaud 时手在胸前开合', () => {
     const { view } = withStage('high', 'forest', 10);
     expect(view.forest.counts().torso).toBe(0);
-    // 5-7 跑段里，5-8 站立段要显示的组（class5、queue5）已经有上身：进站立段的那一帧不会一起长出来
+    // 5-7 跑段里，5-8 站立段要显示的组（class5、queue5）只到腰带（「排队同学的腿」）；站立段的第一帧起才有躯干和头
+    // （审查 r2：以前整个 5-7 都画，站立时就没有什么可「突然正常」的了）。逐帧的检查见 upper.test.ts
     {
       const { view: v2 } = makeView('high');
       const vd = new ViewDriver(v2, getChapter('ch5') as ChapterDef, { segment: '5-7', beat: 40 });
       vd.d.sim.setInvincible(true);
       vd.step(20);
-      expect(v2.forest.counts().torso).toBeGreaterThan(3);
-      let n = 0;
-      while (vd.d.snap.segKind === 'run' && n++ < 2400) vd.step(1, false);
-      const before = v2.forest.counts().torso;
-      vd.step(1);
+      expect(v2.forest.people).toBeGreaterThan(3);
+      expect(v2.forest.counts().torso).toBe(0);
+      let n = 0, before = -1;
+      while (vd.d.snap.segKind === 'run' && n++ < 2400) { vd.step(1); if (vd.d.snap.segKind === 'run') before = v2.forest.counts().torso; }
       expect(vd.d.snap.segKind).toBe('stand');
-      expect(v2.forest.counts().torso).toBeGreaterThan(0);
-      expect(before).toBeGreaterThan(0);
+      expect(before).toBe(0);
+      expect(v2.forest.counts().torso).toBeGreaterThan(2);
+      expect(v2.forest.counts().head).toBe(v2.forest.counts().torso);
     }
     // 4-3（站立段）：4-2 围观的环有躯干和头；crowd applaud 时手在胸前开合
     const { view: v3 } = makeView('high');
