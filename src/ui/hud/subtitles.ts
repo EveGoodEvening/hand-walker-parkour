@@ -1,5 +1,6 @@
 // src/ui/hud/subtitles.ts —— 字幕队列（DESIGN.md §7.2 字幕规则、§2.7、§4.0 字幕样式）。WP8。纯模型，不碰 DOM。
-// · 停留时间 = 字数 × 90 ms + 800 ms（字数按整个文字事件算，不含自动加的引号）；已看过的减半（重试、重看）。
+// · 停留时间 = 字数 × 90 ms + 800 ms（字数按整个文字事件算，不含自动加的引号）；已看过的减半（重试、重看；
+//   重玩存档里已经打完的章时整章都算看过）。
 // · 屏幕上最多 2 行，新行把旧行往上推（超出时丢掉最旧的一行）。
 // · self / other 自动加「“”」；other 的说话人名只在他本章第一次开口时显示在上方（11 px 小字）。
 // · whisper 贴在声像那一侧（pan < −0.15 靠左，> 0.15 靠右）；board 不进字幕。
@@ -23,6 +24,8 @@ export class SubtitleQueue {
   lines: SubLine[] = [];
   /** 已经显示过的文字（按 LineId 或文字本身），本次运行内有效。 */
   private readonly seen = new Set<string>();
+  /** 重玩已经打完的章（存档里记着打完）：本章的字幕都算看过，停留时间减半——跨会话也成立。 */
+  replayed = false;
   private readonly spoken = new Set<Speaker>();
   private seq = 0;
   /** 模型版本号：每次变化 +1，渲染层据此判断要不要改 DOM。 */
@@ -36,7 +39,7 @@ export class SubtitleQueue {
     const pairs = texts.map((x, i) => [keys[i] ?? x, x] as const).filter(([, x]) => !!x);
     if (!pairs.length || style === 'board') return 0;
     const all = pairs.map(([, x]) => x).join('');
-    const seen = pairs.every(([k]) => this.seen.has(k));
+    const seen = this.replayed || pairs.every(([k]) => this.seen.has(k));
     const dur = dwellSeconds(all, seen);
     for (const [k] of pairs) this.seen.add(k);
     let sp: Speaker | null = null;

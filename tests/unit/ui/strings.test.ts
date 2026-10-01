@@ -1,5 +1,7 @@
 // tests/unit/ui/strings.test.ts —— ui/strings.ts 过附录 B.8 的禁用规则（§8.10 WP8 验收 8）。
 // WP2 的 levels/lint.ts 合并之前，这里按 B.8 原文实现同一套规则（纯函数，只读）；lint.ts 合并后 lead 可改为直接 import 它。
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { allStrings, CHAPTER_NAMES, HINTS, hintText, numZh, SPEAKERS, statsLine, STR } from '../../../src/ui/strings';
 
@@ -51,8 +53,25 @@ describe('B.2 操作提示按设备与情境', () => {
     expect(hintText('look', 'touch')).toBe('点「回头」'); expect(hintText('skip', 'touch')).toBe('长按「跳过」');
     expect(HINTS.balance[1]).toBe('按住左半 / 右半屏 稳住');
   });
-  it('hold 的触摸文字：跑段「下滑不抬手」，静场「按住屏幕」', () => {
-    expect(hintText('hold', 'touch')).toBe('下滑不抬手');
+  it('HINTS 与 DESIGN.md 附录 B.2 表格逐条一致（括号里是给实现者的注释，不显示）', () => {
+    const doc = readFileSync(fileURLToPath(new URL('../../../docs/DESIGN.md', import.meta.url)), 'utf8');
+    const sec = doc.slice(doc.indexOf('### B.2'), doc.indexOf('### B.3'));
+    const rows = new Map<string, [string, string]>();
+    for (const line of sec.split('\n')) {
+      const m = line.match(/^\|\s*`(\w+)`\s*\|([^|]*)\|([^|]*)\|\s*$/);
+      if (!m) continue;
+      const clean = (s: string) => s.replace(/（[^）]*）/g, '').trim();
+      rows.set(m[1] as string, [clean(m[2] as string), clean(m[3] as string)]);
+    }
+    expect(rows.size).toBeGreaterThanOrEqual(17);
+    // anyKey 不在 B.2 表里（取 B.4 失败卡文字的前半句），其余每一条都必须在表里且逐字一致。
+    const ids = Object.keys(HINTS).filter((k) => k !== 'anyKey').sort();
+    expect([...rows.keys()].sort()).toEqual(ids);
+    for (const [id, pair] of rows) expect([id, ...HINTS[id as keyof typeof HINTS]]).toEqual([id, ...pair]);
+    expect(sec).toContain('静场：按住屏幕');
+  });
+  it('hold 的触摸文字：跑段「下滑不松手」，静场「按住屏幕」', () => {
+    expect(hintText('hold', 'touch')).toBe('下滑不松手');
     expect(hintText('hold', 'touch', { still: true })).toBe('按住屏幕');
     expect(hintText('hold', 'keyboard', { still: true })).toBe('↓ 按住');
   });

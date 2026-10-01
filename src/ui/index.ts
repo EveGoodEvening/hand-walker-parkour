@@ -5,6 +5,7 @@ import './styles.css';
 import { registerCueHandler, registerDebug, registerUI } from '../core/registry';
 import type { ScreenName } from '../core/types';
 import { urlParams } from '../core/urlParams';
+import { Input } from '../input/Input';
 import { UI } from './UI';
 import { hudDemo } from './demo';
 
@@ -22,5 +23,11 @@ const guard = () => { if (!urlParams().debugEnabled) throw new Error('debug disa
 registerDebug('ui', () => ui?.debugState() ?? null);
 registerDebug('hudDemo', (...a: unknown[]) => { guard(); if (ui) hudDemo(ui, (a[0] as string | undefined) ?? 'full'); return ui?.debugState() ?? null; });
 registerDebug('uiSeed', (...a: unknown[]) => { guard(); ui?.seed((a[0] ?? {}) as Parameters<UI['seed']>[0]); return true; });
-registerDebug('uiFlip', (...a: unknown[]) => { guard(); if (ui) ui.forceFlip = a[0] !== false; return ui?.forceFlip ?? null; });
+registerDebug('uiFlip', (...a: unknown[]) => {
+  guard();
+  const on = a[0] !== false;
+  if (ui) ui.forceFlip = on;
+  if (Input.active) Input.active.debugFlip = on;          // 画面和输入一起翻（§2.2）
+  return ui?.forceFlip ?? null;
+});
 registerDebug('uiScreen', (...a: unknown[]) => { guard(); ui?.show(a[0] as ScreenName, a[1]); return ui?.screen ?? null; });

@@ -13,3 +13,7 @@
 - 窄屏的中文字幕和卡片句子用 `text-wrap: balance`，否则「……很闷的」「响。」这种只剩一两个字的第二行很难看。
 - CSS grid `grid-auto-flow: column` 下给某一项写死 `grid-column: 2`，它会被先放到第 2 列的第 1 行（显式定位的项先排），设置界面的「返回」就跑到了右上角。
 - 标题背景是实时 3D 的亮走廊，灰色小字（首次启动提示、角落署名）几乎看不见。只在文字所在的三边加墨色渐变，并给 `.hw-screen` 统一加文字阴影；纸面（`.hw-paper-face`）要显式去掉阴影。
+- 附录 B.2 的提示文字要逐字照抄（hold 的触摸是「下滑不松手」，不是「下滑不抬手」）。`tests/unit/ui/strings.test.ts` 现在直接解析 `docs/DESIGN.md` 的 B.2 表格（去掉括号注释）逐条对照 `HINTS`，改文字之前先改设计文档。
+- 「每帧最多一次 DOM 写入」要连 Input 一起算：Game 在模拟 tick 里调 `Input.setContext()`，情境按钮如果在那里直接改 `style.display`，开关回头窗口的那一帧就会写两次。现在 Input 只维护模型（`buttonView()`），UI 挂载时调 `deferButton()`，由 `UI.frame()` 经 DomBatch 写。没有 UI 的场合（CORE 的 `tests/unit/core/input.test.ts`）仍然立即写，所以那个冻结的测试不受影响。
+- 本机有 PreToolUse hook：凡是会起无头浏览器的命令（`npm run e2e:*`、`shot.mjs`、`verify` 里的 e2e:smoke）必须写成 `~/.claude/bin/heavy-gate -l '<标签>' -- <命令>`，并用 `run_in_background: true`，不要套 `timeout`；`heavy-gate --status` 看槽位。
+- WP2 收录对白时可能保留原文的 ASCII 双引号（`"让一下。"`）。按文字找 LineId 时先逐字匹配，再忽略两端引号匹配（`bareLine`）；self / other 样式会自动加「“”」，显示前要去掉原文引号，否则变成两层引号。

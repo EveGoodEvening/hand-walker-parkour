@@ -1,6 +1,7 @@
 // src/input/Input.ts —— 输入汇总（DESIGN.md §2.2、§8.4 InputAPI）。WP8。
 // 键盘 + 触摸 → InputEvent 队列（t = 意图时刻，performance.now() 时间轴）与按住集合。
 // · 情境按钮「回头」「让一下」：只在跑段可用时出现（右下角 64 px），单独处理，不经过滑动识别。
+//   Input 只维护模型（buttonView）；UI 挂载后由 UI.frame() 经 DomBatch 写进 DOM。
 // · 画面翻转（5-11）时左右互换：按 ← 或左滑，角色往屏幕左边走（§2.2）。
 // · 菜单情境里任何键（修饰键除外）、轻触屏幕空白处都发出 confirm，供「按任意键 / 轻触」跳过开场卡、失败后重来。
 // · 长按 Enter 跳过静场由 UI 计时（它知道哪些静场看过），这里不再自己发 skip，避免与 Game 的判断重复跳过。
@@ -125,7 +126,7 @@ export class Input implements InputAPI {
   private readonly keyActs = new Map<string, Action>();
 
   private mapFlip(a: Action): Action {
-    if (this.flip && (a === 'left' || a === 'right')) return a === 'left' ? 'right' : 'left';
+    if (this.flipped && (a === 'left' || a === 'right')) return a === 'left' ? 'right' : 'left';
     return a;
   }
 
@@ -182,17 +183,34 @@ export class Input implements InputAPI {
     this.refreshButton();
   }
 
-  private refreshButton(): void {
-    if (!this.btn) return;
+  /** 情境按钮该怎么显示（模型）。UI 接管之后每帧读它，经 DomBatch 写进 DOM。 */
+  buttonView(): { el: HTMLButtonElement; show: boolean; label: string } | null {
+    if (!this.btn) return null;
     const c = this.ctx;
-    const show = c.kind === 'run' && (c.look || c.ask);
-    this.btn.style.display = show ? '' : 'none';
-    const label = c.look ? STR.look : STR.ask;
-    if (this.btn.textContent !== label) this.btn.textContent = label;
+    return { el: this.btn, show: c.kind === 'run' && (c.look || c.ask), label: c.look ? STR.look : STR.ask };
+  }
+
+  /**
+   * UI 挂载时调用：情境按钮改由 UI.frame() 经 DomBatch 写（§7 总则「每帧最多一次 DOM 写入」）。
+   * setContext 在模拟 tick 里被调用，这里直接写 DOM 会在同一帧里多出一次写入。
+   */
+  deferButton(): void { this.buttonDeferred = true; }
+  private buttonDeferred = false;
+
+  private refreshButton(): void {
+    if (this.buttonDeferred) return;
+    // 没有 UI（单独使用 Input 的测试）：值变了才写
+    const v = this.buttonView();
+    if (!v) return;
+    const display = v.show ? '' : 'none';
+    if (v.el.style.display !== display) v.el.style.display = display;
+    if (v.el.textContent !== v.label) v.el.textContent = v.label;
   }
 
   setFlip(on: boolean): void { this.flip = on; }
-  get flipped(): boolean { return this.flip; }
+  /** 调试（__game.ext.uiFlip）：不经模拟强制翻转，与 UI.forceFlip 一起用，截图和手动试玩时画面与输入一致。 */
+  debugFlip = false;
+  get flipped(): boolean { return this.flip || this.debugFlip; }
 
   inject(a: Action, phase: 'down' | 'up'): void { this.push(a, phase, now(), 'keyboard'); }
 }

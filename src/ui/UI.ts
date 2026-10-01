@@ -45,10 +45,20 @@ const MENU_SCREENS: ReadonlySet<ScreenName> = new Set(['title', 'chapters', 'set
 const HUD_SCREENS: ReadonlySet<ScreenName> = new Set(['play', 'pause']);
 const GAME_SCREENS: ReadonlySet<ScreenName> = new Set(['play', 'pause', 'fail']);
 
-/** 按文字找 LineId（第二章「让一下。」这类由 WP2 收录、键名未知的句子）。 */
+/** 去掉句子两端的引号和空白（第二章原文的对白用 ASCII 双引号，WP2 可能原样收录）。 */
+export function bareLine(s: string): string {
+  return s.trim().replace(/^["'“”‘’「『]+/u, '').replace(/["'“”‘’」』]+$/u, '').trim();
+}
+
+/** 按文字找 LineId（第二章「让一下。」这类由 WP2 收录、键名未知的句子）。先逐字匹配，再忽略两端引号匹配。 */
 export function lineIdByText(t: string): string | null {
-  for (const [k, v] of Object.entries(LINES as Record<string, LineEntry>)) if (v.t === t) return k;
-  return null;
+  const want = bareLine(t);
+  let loose: string | null = null;
+  for (const [k, v] of Object.entries(LINES as Record<string, LineEntry>)) {
+    if (v.t === t) return k;
+    if (loose === null && bareLine(v.t) === want) loose = k;
+  }
+  return loose;
 }
 
 function vibrate(ms: number): void {
@@ -91,6 +101,8 @@ export class UI implements UIAPI {
   private scheduled: Array<{ at: number; fn: () => void }> = [];
   private creditsTimer: ReturnType<typeof setTimeout> | null = null;
   private lastStandHalves = false;
+  /** 本段已经出现过「让一下」之后的低语（每段每次重来只出现一次；每段最多可以请求 2 次）。 */
+  private askWhispered = false;
   /** 调试（__game.ext.uiFlip）：不经模拟强制画面翻转，只用于截图。 */
   forceFlip = false;
 
@@ -116,7 +128,7 @@ export class UI implements UIAPI {
     h('div', 'hw-card hw-boot', '……', this.el('boot'));
     this.settingsScreen = new SettingsScreen(this.el('settings'), {
       set: (k, v) => cmd.setSetting(k, v),
-      reset: () => { cmd.resetProgress(); this.store.reset(); this.hud.subs.forgetSeen(); this.seenStills.clear(); },
+      reset: () => { cmd.resetProgress(); this.store.reset(); this.hud.subs.forgetSeen(); this.hud.subs.replayed = false; this.seenStills.clear(); },
       back: () => this.show(this.settingsReturn),
     });
     this.notesScreen = new NotesScreen(this.el('notes'), () => this.show('title'));
@@ -133,7 +145,7 @@ export class UI implements UIAPI {
       });
     }
     const inp = Input.active;
-    if (inp) inp.hooks.escape = () => this.onEscape();
+    if (inp) { inp.hooks.escape = () => this.onEscape(); inp.deferButton(); }
     this.show('boot');
   }
 
@@ -262,6 +274,8 @@ export class UI implements UIAPI {
         this.scheduled = [];
         this.fallT = -1;
         this.prevSeg = null;
+        this.askWhispered = false;
+        this.hud.subs.replayed = chapterDone(e.data.id, this.save.load(), this.store.data.completed);
         break;
       }
       case 'retry':
@@ -270,6 +284,7 @@ export class UI implements UIAPI {
         this.overlays.reset();
         this.scheduled = [];
         this.fallT = -1;
+        this.askWhispered = false;
         break;
       case 'segment': {
         const prev = this.prevSeg;
@@ -280,6 +295,7 @@ export class UI implements UIAPI {
         this.hud.inStill = e.data.kind === 'still';
         this.hud.clearPromptHint();
         this.skipDone = '';
+        this.askWhispered = false;
         if (e.data.kind === 'still' && this.skippable(e.data.id)) this.policyHint('skip', 'cue', t, HINT_SEC);
         break;
       }
@@ -315,10 +331,14 @@ export class UI implements UIAPI {
         if (e.data.phase === 'warn') { this.hud.driftDir = e.data.dir; this.policyHint('straighten', 'cue', t, 2.0); }
         break;
       case 'ask': {
+        // 「让一下。」每次请求都说；低语每段只出现一次（同一句低语连着出现两次会显得像机关）
         const me = lineIdByText('让一下。');
         const whisper = lineIdByText('他每天都这样，不脏吗？');
-        if (me) this.hud.text([me], 'self', undefined, 0, t);
-        if (whisper) this.later(t + ASK_WHISPER_DELAY, (tt) => this.hud.text([whisper], 'whisper', undefined, 0.6, tt));
+        if (me) this.hud.textRaw([me], [bareLine(lineText(me))], 'self', 0, t);
+        if (whisper && !this.askWhispered) {
+          this.askWhispered = true;
+          this.later(t + ASK_WHISPER_DELAY, (tt) => this.hud.textRaw([whisper], [bareLine(lineText(whisper))], 'whisper', 0.6, tt));
+        }
         break;
       }
       case 'cue': if (e.data.body.type === 'sfx' && e.data.body.sfx === 'tap' && this.settings?.vibrate && this.device === 'touch') vibrate(15); break;
@@ -453,6 +473,9 @@ export class UI implements UIAPI {
       this.lastStandHalves = halves;
       if (inp) { inp.hooks.standHalves = halves; inp.refreshHooks(); }
     }
+    // 情境按钮「回头」「让一下」：Input 在 tick 里只改模型，这里随本帧的批量写入一起写
+    const cb = inp?.buttonView();
+    if (cb) { b.style(cb.el, 'display', cb.show ? '' : 'none'); b.text(cb.el, cb.label); }
     b.flush();
   }
 

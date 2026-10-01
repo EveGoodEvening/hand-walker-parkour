@@ -70,6 +70,17 @@ describe('画面翻转（§2.2）', () => {
     expect(inp.held().size).toBe(0);
     expect(drain()).toEqual(['right:down', 'right:up']);
   });
+  it('调试翻转（__game.ext.uiFlip）同样互换输入；Game 每 tick 的 setFlip(false) 不会把它冲掉', () => {
+    inp.setContext({ kind: 'run', look: false, ask: false, standHalves: false });
+    inp.debugFlip = true;
+    inp.setFlip(false);
+    expect(inp.flipped).toBe(true);
+    key('keydown', 'ArrowRight', 'ArrowRight'); key('keyup', 'ArrowRight', 'ArrowRight');
+    expect(drain()).toEqual(['left:down', 'left:up']);
+    inp.debugFlip = false;
+    key('keydown', 'ArrowRight', 'ArrowRight'); key('keyup', 'ArrowRight', 'ArrowRight');
+    expect(drain()).toEqual(['right:down', 'right:up']);
+  });
 });
 
 describe('情境按钮', () => {

@@ -170,8 +170,10 @@
   :root { --tsz: clamp(40px, 6.8vh, 72px); }
   .hw-title { right: 12%; top: 8%; }
   .hw-sub { right: calc(12% + var(--tsz) * 1.4); top: 10%; }
-  .hw-title-menu { left: 50%; top: auto; bottom: calc(22% + var(--sab)); transform: translateX(-50%); }
-  .hw-title-menu button { text-align: center; }
+  /* 竖屏时菜单压在主角身上：垫一层边缘化开的墨色，菜单项不和身体的亮部混在一起 */
+  .hw-title-menu { left: 50%; top: auto; bottom: calc(22% + var(--sab)); transform: translateX(-50%); padding: 14px 26px;
+    background: radial-gradient(ellipse closest-side, rgba(13,18,22,.72), rgba(13,18,22,.5) 60%, rgba(13,18,22,0)); }
+  .hw-title-menu button { text-align: center; text-shadow: 0 0 6px rgba(13,18,22,.9); }
 }
 @media (max-height: 420px) { :root { --tsz: 44px; } .hw-title { gap: .25em; } .hw-menu button, .hw-row button { padding: 5px 16px; } }
 /* 竖屏矮屏：设置的 15 行加「返回」要一屏放下（360×640 不用滚动） */

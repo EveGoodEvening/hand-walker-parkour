@@ -2,7 +2,9 @@
 // tests/unit/ui/ui.test.ts —— 界面与 HUD（DESIGN.md §7、§2.7、附录 B；§8.10 WP8 验收 5、6，以及 lead 的补充要求）。
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { EventBody } from '../../../src/levels/schema';
-import { lineIdByText } from '../../../src/ui/UI';
+import { LINES, lineText, type LineEntry } from '../../../src/levels/lines';
+import { dwellSeconds } from '../../../src/ui/hud/subtitles';
+import { bareLine, lineIdByText } from '../../../src/ui/UI';
 import { ev, flushMicrotasks, mountUI, settings, snap } from './helpers';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
@@ -136,6 +138,58 @@ describe('每帧最多一次 DOM 写入（§7 总则、验收 6）', () => {
   });
 });
 
+describe('情境按钮也走 DomBatch（验收 6）', () => {
+  it('Game 在 tick 里改输入情境不碰 DOM；按钮的显隐和文字在 frame() 里随本帧唯一一次写入', async () => {
+    const { Input } = await import('../../../src/input/Input');
+    document.body.replaceChildren();
+    const app = document.createElement('div'); app.id = 'app'; document.body.appendChild(app);
+    const inp = new Input(); inp.attach(app);
+    try {
+      const { ui } = await mountUI();
+      // mountUI 换掉了 body 的内容：把 Input 的元素挂回同一棵树里观察
+      const btn = inp.buttonView()?.el as HTMLButtonElement;
+      const uiApp = document.getElementById('app') as HTMLElement;
+      uiApp.appendChild(btn);
+      ui.show('play');
+      inp.setContext({ kind: 'run', look: false, ask: false, standHalves: false });
+      ui.frame(snap({ t: 0 }), 0);
+      expect(btn.style.display).toBe('none');
+      const mo = new MutationObserver(() => {});
+      mo.observe(uiApp, { attributes: true, childList: true, subtree: true, characterData: true });
+      // 回头窗口打开（tick 里）
+      inp.setContext({ kind: 'run', look: true, ask: false, standHalves: false });
+      expect(mo.takeRecords().length).toBe(0);
+      expect(btn.style.display).toBe('none');
+      const f0 = ui.batch.flushes;
+      ui.frame(snap({ t: 0.1 }), 0);
+      expect(ui.batch.flushes - f0).toBe(1);
+      expect(btn.style.display).toBe(''); expect(btn.textContent).toBe('回头');
+      mo.takeRecords();
+      // prompt 事件补上「让一下」、窗口关闭：同样只改模型
+      inp.setContext({ kind: 'run', look: false, ask: false, standHalves: false });
+      ui.onEvent(ev('prompt', { hint: null, context: { look: false, ask: true } }), snap({ t: 0.2 }));
+      expect(mo.takeRecords().length).toBe(0);
+      const f1 = ui.batch.flushes;
+      ui.frame(snap({ t: 0.2 }), 0);
+      expect(ui.batch.flushes - f1).toBe(1);
+      expect(btn.style.display).toBe(''); expect(btn.textContent).toBe('让一下');
+      mo.takeRecords();
+      // 进静场：隐藏，同样在 frame() 里
+      inp.setContext({ kind: 'still', look: false, ask: false, standHalves: false });
+      expect(mo.takeRecords().length).toBe(0);
+      ui.frame(snap({ t: 0.3, segKind: 'still' }), 0);
+      expect(btn.style.display).toBe('none');
+      // 不变的帧零写入
+      mo.takeRecords();
+      const f2 = ui.batch.flushes;
+      ui.frame(snap({ t: 0.3, segKind: 'still' }), 0);
+      expect(ui.batch.flushes).toBe(f2);
+      expect(mo.takeRecords().length).toBe(0);
+      mo.disconnect();
+    } finally { inp.detach(); }
+  });
+});
+
 describe('失败卡（§2.7；lead 补充 4）', () => {
   it('提示与按钮按模拟时间在摔倒后 1.2 s 出现；之前按「再来」无效', async () => {
     const { ui, cmd } = await mountUI();
@@ -183,13 +237,13 @@ describe('操作提示（附录 B.2）', () => {
     ui.frame(snap({ t: 6.1 }), 0);
     expect(ui.hud.hintEl.textContent).toBe('');
   });
-  it('提示随最后一次输入的设备切换；hold 的触摸文字：跑段「下滑不抬手」、静场「按住屏幕」', async () => {
+  it('提示随最后一次输入的设备切换；hold 的触摸文字：跑段「下滑不松手」、静场「按住屏幕」', async () => {
     const { ui } = await mountUI();
     ui.show('play');
     ui.setDevice('touch');
     ui.cueHint({ type: 'hint', hint: 'hold' }, { snap: snap({ t: 1 }), segment: seg });
     ui.frame(snap({ t: 1.1 }), 0);
-    expect(ui.hud.hintEl.textContent).toBe('下滑不抬手');
+    expect(ui.hud.hintEl.textContent).toBe('下滑不松手');
     ui.setDevice('keyboard');
     ui.frame(snap({ t: 1.2 }), 0);
     expect(ui.hud.hintEl.textContent).toBe('↓ 按住');
@@ -234,6 +288,46 @@ describe('操作提示（附录 B.2）', () => {
   it('按文字找 LineId（第二章「让一下。」由 WP2 收录）', () => {
     expect(lineIdByText('喂。')).toBe('c1.hey');
     expect(lineIdByText('并不存在的句子')).toBeNull();
+    expect(bareLine('"让一下。"')).toBe('让一下。'); expect(bareLine('“别。”')).toBe('别。'); expect(bareLine('喂。')).toBe('喂。');
+  });
+  it('「让一下」：WP2 用 ASCII 引号收录也能找到；「让一下。」每次都说，低语每段只出现一次，显示时不带原文引号', async () => {
+    const lines = LINES as unknown as Record<string, LineEntry>;
+    lines['t.letMe'] = { t: '"让一下。"', ch: 2, quote: true };
+    lines['t.dirty'] = { t: '他每天都这样，不脏吗？', ch: 2, quote: true };
+    try {
+      const { ui } = await mountUI();
+      ui.show('play');
+      ui.onEvent(ev('chapter:start', { id: 'ch1' }), snap({ t: 0 }));
+      ui.onEvent(ev('segment', { id: '2-2', index: 1, kind: 'run' }), snap({ t: 0 }));
+      const ask = (t: number) => ui.onEvent(ev('ask', { targetId: 1, result: 'part' }), snap({ t }));
+      ask(10);
+      ui.frame(snap({ t: 10.1 }), 0);
+      expect(ui.hud.currentText()).toEqual(['“让一下。”']);
+      ui.frame(snap({ t: 10.8 }), 0);
+      expect(ui.hud.currentText()).toEqual(['“让一下。”', '他每天都这样，不脏吗？']);
+      ui.hud.subs.clear();
+      ask(14); ui.frame(snap({ t: 14.1 }), 0);
+      expect(ui.hud.currentText()).toEqual(['“让一下。”']);
+      ui.frame(snap({ t: 14.9 }), 0);
+      expect(ui.hud.currentText()).not.toContain('他每天都这样，不脏吗？');   // 同一段第二次：不再低语
+      ui.hud.subs.clear();
+      ui.onEvent(ev('retry', { segment: '2-2', beat: 0 }), snap({ t: 20 }));
+      ask(21); ui.frame(snap({ t: 21.8 }), 0);
+      expect(ui.hud.currentText()).toContain('他每天都这样，不脏吗？');   // 重来后重新计
+    } finally { delete lines['t.letMe']; delete lines['t.dirty']; }
+  });
+  it('重玩存档里已经打完的章：整章字幕都算看过（跨会话也减半）', async () => {
+    const { ui } = await mountUI();
+    ui.seed({ completed: ['ch1'] });
+    ui.show('play');
+    ui.onEvent(ev('chapter:start', { id: 'ch1' }), snap({ t: 0 }));
+    expect(ui.hud.subs.replayed).toBe(true);
+    const d = ui.hud.text(['c1.empty'], 'narration', undefined, 0, 1);
+    expect(d).toBeCloseTo(dwellSeconds(lineText('c1.empty'), true), 9);
+    ui.seed({ completed: [] });
+    ui.onEvent(ev('chapter:start', { id: 'ch1' }), snap({ t: 10 }));
+    expect(ui.hud.subs.replayed).toBe(false);
+    expect(ui.hud.text(['c1.inverted'], 'narration', undefined, 0, 11)).toBeCloseTo(dwellSeconds(lineText('c1.inverted'), false), 9);
   });
 });
 

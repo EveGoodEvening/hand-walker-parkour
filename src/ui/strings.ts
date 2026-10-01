@@ -34,13 +34,13 @@ export const SPEAKERS: Record<Speaker, string> = {
 
 /**
  * 操作提示（B.2）：[键盘, 触摸]。B.2 表格里的括号是给实现者的注释，按情境取值：
- *   · hold 的触摸：跑段「下滑不抬手」，静场「按住屏幕」（HOLD_TOUCH_STILL）；
+ *   · hold 的触摸：跑段「下滑不松手」，静场「按住屏幕」（HOLD_TOUCH_STILL）；
  *   · straighten 的键盘：显示偏移方向的反方向箭头（STRAIGHTEN_KEY）。
  * anyKey 不在 B.2 表里，取 B.4 失败卡文字的前半句。
  */
 export const HINTS: Record<HintId, readonly [string, string]> = {
   jump: ['↑ 撑跃', '上滑 撑跃'], lane: ['← → 换道', '左右滑 换道'], duck: ['↓ 伏低', '下滑 伏低'],
-  hold: ['↓ 按住', '下滑不抬手'], wet: ['水渍会让手掌打滑', '水渍会让手掌打滑'], look: ['Q 回头', '点「回头」'],
+  hold: ['↓ 按住', '下滑不松手'], wet: ['水渍会让手掌打滑', '水渍会让手掌打滑'], look: ['Q 回头', '点「回头」'],
   ask: ['E 让一下', '点「让一下」'], tray: ['端着餐盘：只能换道、伏低', '端着餐盘：只能换道、伏低'],
   wipe: ['↓ 按住 擦掉', '按住屏幕 擦掉'], slap: ['↓ 拍地 亮灯', '下滑 拍地 亮灯'], straighten: ['← / → 掰正', '反方向滑 掰正'],
   rise: ['↑ 按住 站起来', '按住屏幕 站起来'], balance: ['← → 稳住', '按住左半 / 右半屏 稳住'], kneel: ['↓', '下滑'],
