@@ -177,8 +177,12 @@ export function walkingLegs(P: Posture, phase: number, stepLen: number, stiff: n
 // ———————————————————— 站立段（§3「站起来」、§5.6 站立）————————————————————
 const _stand = { at: { x: 0, y: 0, s: 0, yaw: 0 } as RootAt };
 
-/** 站立段姿势：按 StandSnap（WP1 的 Stand）驱动；没有快照时是梦中那种稳定站立。 */
-export function standPose(next: SimSnapshot, prev: SimSnapshot, a: number, b: PoseBuilder): Pose {
+/**
+ * 站立段姿势：按 StandSnap（WP1 的 Stand）驱动；没有快照时是梦中那种稳定站立。
+ * fallSec：摔倒之后经过的秒数（Stand 在 fallen 之后不再推进 stepT，由 Actor 自己计时；修复轮 U5：以前一直停在跪姿，
+ * 「翻成仰躺，脚悬在空中发抖」从来没出现）。
+ */
+export function standPose(next: SimSnapshot, prev: SimSnapshot, a: number, b: PoseBuilder, fallSec?: number): Pose {
   const N = next.player, Pp = prev.player;
   const st: StandSnap | null = N.stand;
   const at = _stand.at;
@@ -203,7 +207,7 @@ export function standPose(next: SimSnapshot, prev: SimSnapshot, a: number, b: Po
     }
     case 'fallen': {
       // 第 7 步：膝盖砸地，手拍地，翻成仰躺，脚悬在空中发抖
-      const u = clamp(st.stepT / 1.2, 0, 1);
+      const u = clamp((fallSec ?? st.stepT) / 1.2, 0, 1);
       const P0 = kneeling({ lean: 30, L: { t: [-0.3, 0.03, PELVIS_Z - 0.5] }, R: { t: [0.3, 0.03, PELVIS_Z - 0.5] } });
       const shake = 0.03 * Math.sin(t * 38) * smoothstep(0.6, 1, u);
       const P1 = lyingBack({ knees: 50, feetUp: 0.35 + shake });

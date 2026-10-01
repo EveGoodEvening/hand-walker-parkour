@@ -11,6 +11,7 @@ import type { SimSnapshot } from '../../core/types';
 import type { CompiledChapter, CompiledSegment } from '../../levels/schema';
 import { crawlPose, jumpDur, PoseBuilder, type CrawlInput } from './handCycle';
 import type { ActorRigFactory, Rig } from './rigBuild';
+import { planFor, prewarmPlans } from './planCache';
 
 /** 中道时领跑者偏离车道中线的距离（米）。 */
 export const LEADER_CENTER_OFFSET = 0.3;
@@ -45,7 +46,10 @@ export class LeaderSystem implements ViewSystem {
     this.rig.root.visible = false;
     ctx.scene.add(this.rig.root);
   }
-  async loadChapter(ch: CompiledChapter): Promise<void> { this.chapter = ch; this.plan = null; this.planSeg = -1; this.alpha = 0; }
+  async loadChapter(ch: CompiledChapter): Promise<void> {
+    this.chapter = ch; this.plan = null; this.planSeg = -1; this.alpha = 0;
+    prewarmPlans(this.ctx.solver, ch);
+  }
   onSegment(seg: CompiledSegment): void { if (seg.index !== this.planSeg) { this.plan = null; this.planSeg = -1; } }
   onEvent(e: GameEvent): void { if (e.type === 'retry') { this.lastBeat = NaN; } }
   onReset(): void { this.lastBeat = NaN; this.plan = null; this.planSeg = -1; }
@@ -69,7 +73,7 @@ export class LeaderSystem implements ViewSystem {
     const s = lerp(P.s, N.s, a);
     const dist = Math.max(3, f.distance > 0 ? f.distance : (AHEAD_DISTANCE[clamp(Math.floor(N.steady), 0, 4)] as number));
     const sl = f.leaderS !== null ? Math.max(f.leaderS, s + 3) : s + dist;
-    if (this.planSeg !== seg.index) { this.plan = this.ctx.solver.solve(seg); this.planSeg = seg.index; }
+    if (this.planSeg !== seg.index) { this.plan = planFor(this.ctx.solver, seg); this.planSeg = seg.index; }
     const plan = this.plan;
     const lane = f.leaderLane ?? (plan ? plan.laneAt(sl) : 0);
     // 中道时偏离车道中线 0.3 m：追尾镜头在中道正后方，它正好被主角的头挡住（两侧车道本来就错开）

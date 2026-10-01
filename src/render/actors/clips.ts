@@ -5,14 +5,16 @@
 import { clamp, DEG, easeInOutSine, frac, lerp, smoothstep } from '../../core/math';
 import type { Pose } from '../../core/rig';
 import type { PoseClipId, SetId } from '../../core/types';
-import { crawlPose, type CrawlInput, type PoseBuilder } from './handCycle';
+import { armTo, crawlPose, setHand, type CrawlInput, type PoseBuilder } from './handCycle';
+import { PALM_DROP } from './rigBuild';
+import * as THREE from 'three';
 import {
   applyPosture, blendPoses, floorSit, kneeling, lyingBack, mixPosture, PELVIS_Z, seated, standing, walkingLegs, type Posture, type RootAt,
 } from './poses';
 import { copyPose, createPose } from '../../core/rig';
 
 /** 包内额外的姿势（静场缺省用，不属于冻结的 PoseClipId）。 */
-export type InternalClip = 'crawlIdle' | 'palmEyeHold' | 'handsInWater' | 'sitFloor' | 'kneelSit' | 'sitDesk';
+export type InternalClip = 'crawlIdle' | 'palmEyeHold' | 'handsInWater' | 'sitFloor' | 'kneelSit' | 'sitDesk' | 'sitEatTucked' | 'lieBackHandsIn';
 export type AnyClip = PoseClipId | InternalClip;
 
 export const ALL_CLIPS: readonly PoseClipId[] = ['sit', 'sitEat', 'busSeat', 'busSeatNormal', 'standIdle', 'standUp', 'walkUpright', 'turnAround',
@@ -22,11 +24,22 @@ export const ALL_CLIPS: readonly PoseClipId[] = ['sit', 'sitEat', 'busSeat', 'bu
 
 /** 静场的缺省主角姿势：键 = `${set}.${variant}` 或 `${set}`；null = 不显示主角（镜头在他眼睛里）。 */
 export const SET_DEFAULT_CLIP: Partial<Record<string, AnyClip | null>> = {
-  deskFeet: 'sitDesk', counter: 'counterStand', canteenWindow: 'sitEat', labBoard: 'sitFloor', bus: 'busSeat', home: 'crawlToward',
-  // lead 集成：palmEye、water 的镜头在他眼睛里（4-4 的手由 WP4 的 set 画），画出身体会挡住整个画面
-  bathroom: 'sinkLean', palmEye: null, water: null, 'bedroom.feet': 'lieBack', 'bedroom.ceiling': 'lieBack',
-  bedroom: 'lieBack', 'infirmary.bed': 'lieBack', 'infirmary.ceiling': 'lieBack', infirmary: 'lieBack', placeholder: 'sitDesk',
+  deskFeet: 'sitDesk', counter: 'counterStand', canteenWindow: 'sitEatTucked', labBoard: 'sitFloor', bus: 'busSeat', home: 'crawlToward',
+  // lead 集成：palmEye 的镜头在他眼睛里（4-4 的手由 WP4 的 set 画），画出身体会挡住整个画面。
+  // 修复轮 U5：4-6（water）画按进水里的手臂和手，身体其余部分由 Actor 藏起来（EYE_GROUPS）
+  bathroom: 'sinkLean', palmEye: null, water: 'handsInWater', 'bedroom.feet': 'lieBack', 'bedroom.ceiling': 'lieBack',
+  bedroom: 'lieBack', 'infirmary.bed': 'lieBackHandsIn', 'infirmary.ceiling': 'lieBack', infirmary: 'lieBack', placeholder: 'sitDesk',
 } satisfies Partial<Record<SetId | string, AnyClip | null>>;
+
+/** 4-6 按进水里的双手（角色空间、相对根：横向半宽、高度、前方）。water.ts 的涟漪中心与它一致。 */
+export const WATER_HANDS: readonly [number, number, number] = [0.3, -0.05, -0.62];
+const _hv = new THREE.Vector3(), _hw = new THREE.Vector3();
+
+/** palmToGlass（2-10）：躯干前倾（度）、右手掌心的高度与在骨盆前方的距离（米）。 */
+export const PALM_GLASS_POSE = { lean: 15, y: 1.0, z: 0.55 };
+
+/** smile：抬头的角度（弧度，局部 x）。 */
+export const SMILE_HEAD_UP = 0.22;
 
 const crawlIn: CrawlInput = { s: 0, x: 0, y: 0, floorY: 0, beat: 0, stride: 1, cadence: 4.8, speed: 4.8, duck: 0, air: false, airT: 0, mode: 'crawl', modeT: 0, laneTarget: 0, twitch: 0, drift: 0, lookBack: 0 };
 const _tmp = createPose();
@@ -50,7 +63,15 @@ function posture(id: AnyClip, t: number): Posture | null {
     case 'sit': return seated({});
     // 主角在课桌前：腿伸进桌下，脚平放（1-4 / 5-5 镜头在桌下，鞋在前景）
     case 'sitDesk': return seated({ flat: true, lean: 8 });
-    case 'sitEat': return seated({ tucked: true, lean: 10, L: { t: [-0.16, 0.78, PELVIS_Z - 0.42], pole: [-0.6, -0.2, 1], f: [0.3, 0, -1], n: [0, -1, 0] }, R: { t: [0.16, 0.8, PELVIS_Z - 0.44], pole: [0.6, -0.2, 1], f: [-0.3, 0, -1], n: [0, -1, 0] } });
+    // 2-5：主角吃饭时把腿塞进椅子下面的横档（sitEatTucked，静场缺省）；倒影「双腿自然垂落，脚尖点地」（sitEat，替身）
+    case 'sitEatTucked': return seated({ tucked: true, lean: 10, L: { t: [-0.16, 0.78, PELVIS_Z - 0.42], pole: [-0.6, -0.2, 1], f: [0.3, 0, -1], n: [0, -1, 0] }, R: { t: [0.16, 0.8, PELVIS_Z - 0.44], pole: [0.6, -0.2, 1], f: [-0.3, 0, -1], n: [0, -1, 0] } });
+    case 'sitEat': {
+      const P = seated({ lean: 6, L: { t: [-0.16, 0.74, PELVIS_Z - 0.4], pole: [-0.6, -0.2, 1], f: [0.3, 0, -1], n: [0, -1, 0] }, R: { t: [0.16, 0.76, PELVIS_Z - 0.42], pole: [0.6, -0.2, 1], f: [-0.3, 0, -1], n: [0, -1, 0] } });
+      // 脚尖刚好点在地上（seated 的踝高按平放的脚算，脚尖朝下时会戳进地面约 7 cm）
+      P.legL = { ...P.legL, t: [P.legL.t[0], P.legL.t[1] + 0.07, P.legL.t[2]] };
+      P.legR = { ...P.legR, t: [P.legR.t[0], P.legR.t[1] + 0.07, P.legR.t[2]] };
+      return P;
+    }
     case 'busSeat': return seated({ tucked: true, lean: 4 });
     case 'busSeatNormal': return seated({ lean: 2, L: { t: [-0.13, 0.6, PELVIS_Z - 0.36], pole: [-0.6, 0, 1], f: [0, 0, -1], n: [0, -1, 0] }, R: { t: [0.13, 0.6, PELVIS_Z - 0.36], pole: [0.6, 0, 1], f: [0, 0, -1], n: [0, -1, 0] } });
     case 'standIdle': case 'standBehindShoulder': {
@@ -58,7 +79,16 @@ function posture(id: AnyClip, t: number): Posture | null {
       P.chest = [0.01 * Math.sin(t * 1.4), 0, 0];
       return P;
     }
-    case 'smile': { const P = standing({ knee: 4, lean: 0 }); P.head = [0.04, 0.05, 0.1]; return P; }
+    case 'smile': {
+      // 4-3 镜中的「我」在笑（没有五官，附录 A-4）：慢慢抬起头、肩膀松下来，两手垂到身侧
+      const k = smoothstep(0.3, 1.5, t);
+      const P = standing({ knee: 4, lean: 0, arms: 'hang' });
+      P.head = [0.04 + SMILE_HEAD_UP * k, 0.05, 0.1 * (1 - k)];
+      P.chest = [-0.05 * k, 0, 0];
+      P.L = { ...P.L, t: [P.L.t[0] - 0.01 * k, P.L.t[1] - 0.04 * k, P.L.t[2]] };
+      P.R = { ...P.R, t: [P.R.t[0] + 0.01 * k, P.R.t[1] - 0.04 * k, P.R.t[2]] };
+      return P;
+    }
     case 'walkUpright': return walkingLegs(armSwing(standing({ knee: 6, lean: 3 }), t * 0.95), t * 0.95, 0.62, 0);
     case 'turnAround': { const P = standing({ knee: 5 }); P.yaw = Math.PI * easeInOutSine(clamp(t / 1.0, 0, 1)); return P; }
     case 'turnHead': { const P = seated({ lean: 2, L: { t: [-0.13, 0.6, PELVIS_Z - 0.36], f: [0, 0, -1], n: [0, -1, 0] }, R: { t: [0.13, 0.6, PELVIS_Z - 0.36], f: [0, 0, -1], n: [0, -1, 0] } }); P.head = [0, 70 * DEG * easeInOutSine(clamp(t / 0.8, 0, 1)), 0]; return P; }
@@ -74,16 +104,23 @@ function posture(id: AnyClip, t: number): Posture | null {
       };
     }
     case 'tapGlass': {
-      // 坐着，转头，用食指敲一下玻璃（3-5）：右手抬到窗边，0.9 s 处敲一下
+      // 坐着，转头，用食指敲一下玻璃（3-5）：反射之前车窗在它的左边（−x），左手抬到窗边，1.0 s 处敲一下
+      // （修复轮 U5：以前抬的是右手、头转向右边，反射之后手和脸都背对着玻璃）
       const P = seated({ lean: 2 });
-      const tap = Math.exp(-Math.pow((t - 0.9) / 0.08, 2));
-      P.R = { t: [0.36 + 0.04 * tap, 0.95, PELVIS_Z - 0.3], pole: [0.8, -0.5, 0.3], f: [1, 0.3, -0.2], n: [0, -1, 0], k: -0.2, d: -0.2 };
-      P.head = [0, -60 * DEG * smoothstep(0, 0.5, t), 0];
+      const reach = smoothstep(0, 0.6, t);
+      const tap = Math.exp(-Math.pow((t - 1.0) / 0.08, 2));
+      // 3-5 里它坐在靠窗的座位上（离玻璃约 0.37 m）：食指尖敲到玻璃
+      P.L = { t: [-0.07 - 0.1 * reach - 0.025 * tap, 0.98, PELVIS_Z - 0.34], pole: [-0.8, -0.5, 0.3], f: [-1, 0.3, -0.2], n: [0, -1, 0], k: -0.2, d: -0.2 };
+      P.head = [0, 60 * DEG * smoothstep(0, 0.5, t), 0];
       return P;
     }
     case 'palmToGlass': {
-      // 跪着，右手掌心贴在身前的竖直玻璃上（2-5 替身 / 2-10 掌心贴掌心）
-      return kneeling({ lean: 8, R: armUp(1, 0.95, PELVIS_Z - 0.62, [0, 1, 0], [0, 0, -1]) });
+      // 跪着，右手掌心贴在身前的竖直玻璃上（2-10 掌心贴掌心）。修复轮 U5 第二轮：身子朝镜子探过去、肘弯着，脸离玻璃近
+      // （镜中的它也一样近），第三只手从它胸口穿过玻璃才够得到额头；头抬着，目光和镜中的它平齐
+      const G = PALM_GLASS_POSE;
+      const P = kneeling({ lean: G.lean, R: armUp(1, G.y, PELVIS_Z - G.z, [0, 1, 0], [0, 0, -1]) });
+      P.neck = [G.lean * DEG * 0.5, 0, 0]; P.head = [G.lean * DEG * 0.4, 0, 0];
+      return P;
     }
     case 'pointMirror': {
       const P = standing({ knee: 5 });
@@ -100,6 +137,11 @@ function posture(id: AnyClip, t: number): Posture | null {
     case 'kneel': return kneeling({ lean: 3 });
     case 'kneelSit': return kneeling({ sitBack: 1, lean: 10 });
     case 'lieBack': return lyingBack({});
+    // 5-9：躺在医务室的床上，双手搭在肚子上（修复轮 U5：手不压在枕边的凹陷上，镜头推近时也不进画面）
+    case 'lieBackHandsIn': return lyingBack({
+      L: { t: [-0.14, 0.24, PELVIS_Z + 0.2], pole: [-1, 0.3, 0], f: [0.6, 0, 0.6], n: [0, -1, 0] },
+      R: { t: [0.14, 0.24, PELVIS_Z + 0.24], pole: [1, 0.3, 0], f: [-0.6, 0, 0.6], n: [0, -1, 0] },
+    });
     case 'feetArch': {
       // 被子里的脚自己弯起来（5-1）：膝盖慢慢拱起
       const k = smoothstep(0, 1.5, t);
@@ -159,9 +201,10 @@ function posture(id: AnyClip, t: number): Posture | null {
       return P;
     }
     case 'touchPillowDent': {
-      const P = lyingBack({ bed: 0.5, knees: 12 });
-      P.R = { t: [0.45, 0.62, PELVIS_Z + 0.55], pole: [1, 0.5, 0], f: [0.3, 0, 1], n: [0, -1, 0] };
-      P.head = [-0.15, -0.5, 0];
+      // 5-9：躺着，左手摸一下枕边的凹陷（凹陷在头的左边；锚点在床面上，修复轮 U5：以前右手伸向床尾、整个人浮在床面上方 0.5 m）
+      const P = lyingBack({ knees: 12 });
+      P.L = { t: [-0.46, 0.03, PELVIS_Z + 0.4], pole: [-1, 0.6, 0], f: [-0.2, 0, 1], n: [0, -1, 0] };
+      P.head = [-0.15, 0.5, 0];
       return P;
     }
     case 'fistAir': {
@@ -177,21 +220,14 @@ function posture(id: AnyClip, t: number): Posture | null {
       P.R = { t: [0.04, 1.02, PELVIS_Z - 0.34], pole: [1, -0.5, 0.2], f: [0, 1, 0], n: [0, 0, 1] };
       return P;
     }
-    case 'handsInWater': {
-      // 4-6：双手按进水里
-      const P = kneeling({ lean: 38 });
-      P.L = { t: [-0.24, -0.02, PELVIS_Z - 0.55], pole: [-0.6, 0, 1], f: [0, 0, -1], n: [0, -1, 0] };
-      P.R = { t: [0.24, -0.02, PELVIS_Z - 0.55], pole: [0.6, 0, 1], f: [0, 0, -1], n: [0, -1, 0] };
-      return P;
-    }
     case 'sitFloor': return floorSit();
     default: return null;
   }
 }
 
 /** 与时间无关的体态：缓存一次，避免每帧分配（§9.4「热路径不分配内存」）。 */
-const STATIC: ReadonlySet<AnyClip> = new Set<AnyClip>(['sit', 'sitDesk', 'sitEat', 'busSeat', 'busSeatNormal', 'smile', 'kneel', 'kneelSit', 'lieBack',
-  'palmToGlass', 'pointMirror', 'pointBack', 'answerLean', 'counterStand', 'sinkLean', 'touchPillowDent', 'palmEyeHold', 'handsInWater', 'sitFloor']);
+const STATIC: ReadonlySet<AnyClip> = new Set<AnyClip>(['sit', 'sitDesk', 'sitEat', 'sitEatTucked', 'busSeat', 'busSeatNormal', 'kneel', 'kneelSit', 'lieBack',
+  'palmToGlass', 'pointMirror', 'pointBack', 'answerLean', 'counterStand', 'sinkLean', 'touchPillowDent', 'palmEyeHold', 'sitFloor', 'lieBackHandsIn']);
 const STATIC_CACHE = new Map<AnyClip, Posture>();
 
 /** 行走时的手臂轻摆。 */
@@ -211,6 +247,19 @@ export function clipPose(id: AnyClip, t: number, b: PoseBuilder, out: Pose, at: 
       crawlAt(at, 0.3, b);
       b.addLocal('neck', -0.35, 0, 0); b.addLocal('head', -0.6, 0, 0);
       b.fkAll(); return copyPose(out, b.finish());
+    }
+    case 'handsInWater': {
+      // 4-6：趴在水边，双手按进水里（手掌在水面下约 2 cm）。镜头在他眼睛里（waterDown），只画手臂和手（Actor 的 EYE_GROUPS）
+      crawlAt(at, 0.25, b);
+      for (const side of ['L', 'R'] as const) {
+        const sx = side === 'L' ? -1 : 1;
+        b.toWorld(_hv.set(sx * WATER_HANDS[0], WATER_HANDS[1] - at.y, WATER_HANDS[2]), _hw);
+        _hw.y = at.y + WATER_HANDS[1] + PALM_DROP;
+        armTo(b, side, _hw, 0.8);
+        setHand(b, side, at.yaw - sx * 6 * DEG, 0, 0, 0, 0);
+      }
+      b.fkAll();
+      return copyPose(out, b.finish());
     }
     case 'crawlReach': {
       crawlAt(at, 0.3, b);

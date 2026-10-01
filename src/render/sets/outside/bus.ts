@@ -23,6 +23,11 @@ const PANES: ReadonlyArray<readonly [number, number]> = [[1.3, 0.45], [0.35, -1.
 const ROWS = [0, -0.85, -1.7, -2.55, -3.4, -4.25, -5.1, -5.95, -6.8];
 /** 车窗开口（主角旁边那一格）：[z0, y0, z1, y1]。 */
 export const BUS_WINDOW_RECT: readonly [number, number, number, number] = [-1.55, WIN_Y0, 0.35, WIN_Y1];
+/**
+ * 车窗里的「我」坐在哪（反射之前，set 局部坐标）：前一排靠窗的座位（修复轮 U5）。以前就是主角座位的倒影，
+ * 从 busWindow 机位看过去头正好落在两格车窗之间的立柱后面；挪到前一排，头落在这一格玻璃的中间。朝向不变（WP5 的 STILL_DOUBLE_YAW）。
+ */
+export const BUS_DOUBLE_AT: readonly [number, number, number] = [-0.85, 0, -0.85];
 
 function seat(g: OGeo, x: number, z: number, frame: number): void {
   g.box([x, 0.24, z], [0.05, 0.48, 0.05], frame);
@@ -211,7 +216,7 @@ export const busSet: StillSet = {
   surfaces: () => {
     const plane = new THREE.Plane(new THREE.Vector3(1, 0, 0), -BUS_WALL_X);
     const rect = [...BUS_WINDOW_RECT] as [number, number, number, number];
-    return ['busWindow', 'window', 'busGlass'].map((id) => ({ id, plane: plane.clone(), rect }));
+    return ['busWindow', 'window', 'busGlass'].map((id) => ({ id, plane: plane.clone(), rect, at: [...BUS_DOUBLE_AT] as [number, number, number] }));
   },
   update: (t, snap) => liveList('bus').update(snap.still?.t ?? t, snap),
 };

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, type Settings } from '../../../src/core/settings';
 import { CameraRig, vFromH } from '../../../src/render/camera/CameraRig';
+import { FOLLOW, SEGMENT_SHOTS } from '../../../src/render/camera/shots';
 import { snap } from './helpers';
 
 function apply(cam: THREE.PerspectiveCamera, o: { pos: THREE.Vector3; look: THREE.Vector3; roll: number; fov: number }, aspect: number): void {
@@ -24,13 +25,14 @@ function settle(rig: CameraRig, s0: ReturnType<typeof snap>, aspect: number, set
 }
 
 describe('CameraRig (§5.4)', () => {
-  it('landscape follow camera matches the table: (0.7·x, 0.92, +2.35), vertical fov 50–62°', () => {
+  it('landscape follow camera matches FOLLOW.landscape: (0.7·x, 1.15, +2.8) (U5, replaces §5.4 0.92 / 2.35), vertical fov 50–62°', () => {
     const rig = new CameraRig();
     const settings = { ...DEFAULT_SETTINGS, reducedMotion: true };
     const { out, last } = settle(rig, snap({ s: 10, lane: 1 }), 16 / 9, settings);
     expect(out.pos.x).toBeCloseTo(0.7 * 1.1, 2);
-    expect(out.pos.y).toBeCloseTo(0.92, 3);
-    expect(out.pos.z).toBeCloseTo(-last.player.s + 2.35, 3);
+    expect(out.pos.y).toBeCloseTo(FOLLOW.landscape.h, 3);
+    expect(out.pos.z).toBeCloseTo(-last.player.s + FOLLOW.landscape.back, 3);
+    expect(out.look.y).toBeCloseTo(FOLLOW.landscape.ly, 3);
     expect(out.fov).toBeGreaterThanOrEqual(50);
     expect(out.fov).toBeLessThanOrEqual(62);
   });
@@ -103,5 +105,39 @@ describe('CameraRig (§5.4)', () => {
   it('vFromH derives the vertical fov from 76° horizontal', () => {
     expect(vFromH(76, 16 / 9)).toBeCloseTo(47.4, 0);
     expect(vFromH(76, 1)).toBeCloseTo(76, 6);
+  });
+});
+
+describe('segment chase shot (U5): 5-3 @30–@212 pulls back so the shadow crawling after you is in frame', () => {
+  const run = (segBeatOf: (i: number) => number, frames: number) => {
+    const rig = new CameraRig();
+    const settings = { ...DEFAULT_SETTINGS, reducedMotion: false };
+    let prev = snap({ s: 0 }); prev.segment = '5-3';
+    let o = rig.compute(prev, prev, 1, 1 / 60, 16 / 9, settings);
+    for (let i = 1; i <= frames; i++) {
+      const n = snap({ s: i * 0.09, beat: i * 0.09, t: i / 60 });
+      n.segment = '5-3'; n.segBeat = segBeatOf(i);
+      o = rig.compute(prev, n, 1, 1 / 60, 16 / 9, settings);
+      prev = n;
+    }
+    return { o, last: prev };
+  };
+  it('inside the range the camera is ~1.8 m up and ~3.8 m back, looking at the ground 2 m ahead; outside it is the normal follow camera', () => {
+    const inside = run((i) => 40 + i * 0.08, 120);
+    const sh = SEGMENT_SHOTS['5-3']!;
+    expect(inside.o.pos.y).toBeCloseTo(sh.h, 1);
+    expect(inside.o.pos.z - -inside.last.player.s).toBeCloseTo(sh.back, 1);
+    expect(inside.o.look.y).toBeLessThan(0.15);
+    // 身后 2 m 的地面在画面里（追来的影子）
+    const cam = new THREE.PerspectiveCamera(inside.o.fov, 16 / 9, 0.05, 200);
+    apply(cam, inside.o, 16 / 9);
+    const behind = new THREE.Vector3(0, 0, -inside.last.player.s + 2).project(cam);
+    expect(Math.abs(behind.x)).toBeLessThan(1); expect(Math.abs(behind.y)).toBeLessThan(1);
+    const late = run((i) => 150 + i * 0.08, 120);                                     // 「我开始跑。」之后照样
+    expect(late.o.pos.y).toBeCloseTo(sh.h, 1);
+    const outside = run((i) => 213 + i * 0.08, 120);
+    expect(outside.o.pos.y).toBeCloseTo(FOLLOW.landscape.h, 1);
+    const before = run((i) => 10 + i * 0.08, 120);
+    expect(before.o.pos.y).toBeCloseTo(FOLLOW.landscape.h, 1);
   });
 });

@@ -22,9 +22,23 @@ import { stencilInside, stencilWrite } from './lib/mats';
 import { SetBuild, crawlerFigure } from './lib/setkit';
 
 export const WATER_EDGE_Z = 0.2;
+/**
+ * 水里站着的「我」（WP5 的替身，反射之前站的位置）与围着它爬的人群中心（修复轮 U5）。4-6 的镜头在主角眼睛里、
+ * 从水边斜着往下看（约 −36°，camera/shots.ts 的 waterDown）：倒影是倒着的，脚在上、头在下，正面朝着镜头，
+ * 低头看着镜头，脸在画面中间偏下；画面下沿是按进水里的双手和手边的涟漪，岸边的灰带出画。
+ * 修复轮 U5 第二轮：−0.6 → −2.1（§10.2 是 −1.9）。替身离镜头太近时只能从正上方看，倒影先露出两只鞋底，头藏在肩膀后面。
+ */
+export const WATER_DOUBLE_Z = -2.1;
+/** 人群在替身前方（靠岸、靠镜头的一侧）让开的半宽（米）：镜头看它的脸的视线从这条走廊里穿过。 */
+export const CROWD_CLEAR_X = 1.0;
+/** 双手按进水里的位置（相对 STILL_ORIGIN，与 WP5 handsInWater 的手一致）：开场的涟漪从这两点扩散。 */
+export const WATER_HAND_X = 0.3, WATER_HAND_Z = -0.07;
 /** 水面范围 [x0, z0, x1, z1]（y = 0 平面，z0 < z1）。 */
 export const WATER_RECT: readonly [number, number, number, number] = [-40, -60, 40, WATER_EDGE_Z];
-const RINGS = 4, RING_SEG = 28;
+/** 涟漪：前 RINGS 圈是双手按下去时的大圈（几秒后水面重新变平；碎开时从中间炸开），后 HAND_RINGS 圈是手边一直有的小圈。 */
+const RINGS = 4, HAND_RINGS = 4, RING_SEG = 28;
+/** 涟漪的亮度（加法混合的顶点色；修复轮 U5 第二轮：0.07 在浅灰的水面上看不出来）。 */
+export const RIPPLE_GAIN = { big: 0.2, hand: 0.15 } as const;
 
 /** 碎开时倒影沉下去的深度（米，倒影在水面以下，往下移就是沉得更深）。 */
 const SINK = 1.6;
@@ -88,15 +102,18 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
     const cg = new OGeo();
     const rng = keyRng('water', 'crowd');
     const n = ctx.quality.tier === 'low' ? 14 : 26;
-    const cx = 0, cz = -1.9;
+    const cx = 0, cz = WATER_DOUBLE_Z;
+    // 围着中间站着的「我」爬的人（修复轮 U5）：缩小到 0.6、压暗，离得远一些；水面叠加层越远越浅，像隔着一层雾
     cg.mirrored(new THREE.Matrix4().makeScale(1, -1, 1), () => {
       for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2 + rng.next() * 0.3, r = 1.6 + rng.next() * 3.5;
+        const a = (i / n) * Math.PI * 2 + rng.next() * 0.3, r = 1.3 + rng.next() * 3.0;
         const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r * 0.8;
         if (z > WATER_EDGE_Z - 0.4) continue;
+        // 镜头（岸上，斜着往下看）和它的脸之间不放人（修复轮 U5 第三轮：中画质 26 个人时，有一个正好挡住半张脸和一只眼睛）
+        if (z > cz - 0.2 && Math.abs(x - cx) < CROWD_CLEAR_X) continue;
         const yaw = Math.atan2(-(cx - x), -(cz - z));
         const tone = rng.next();
-        crawlerFigure(cg, x, z, yaw, mix(0x7a848c, 0x6a747c, tone), mix(C.skin, 0x9aa2a6, 0.7), 0.95, 0x5a6268);
+        crawlerFigure(cg, x, z, yaw, mix(0x5c656c, 0x4c555c, tone), mix(C.skin, 0x7a8286, 0.75), 0.57, 0x454c52);
       }
     });
     tone.applyArrays(cg.col, cg.nor, cg.pos, 'static');
@@ -119,7 +136,7 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   // 没有模板：一个模糊的站立剪影（倒着，躺在水面上）
   if (!ctx.stencil) {
     const sg = new OGeo();
-    const z = -1.9;
+    const z = WATER_DOUBLE_Z;
     for (let i = 0; i < 4; i++) {
       const w = 0.24 + i * 0.07;
       sg.flat(0.003 + i * 0.0005, -w, w, z - 0.02 * i, z - 1.7 - 0.05 * i, 0x2a3136, true);
@@ -129,7 +146,7 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   // 水花与涟漪（加法）：RINGS 个圈 + 一些水滴，顶点每帧按时间重算（不建几何体）
   const fg = new OGeo();
   // 每个环段 2 个三角形（6 个顶点），位置在 animate() 里按时间写
-  for (let r = 0; r < RINGS * RING_SEG; r++) {
+  for (let r = 0; r < (RINGS + HAND_RINGS) * RING_SEG; r++) {
     fg.gtri([0, 0, 0], [1, 0, 0], [0, 0, 1], 0, 0, 0);
     fg.gtri([0, 0, 0], [1, 0, 0], [0, 0, 1], 0, 0, 0);
   }
@@ -179,15 +196,17 @@ function animate(a: WaterAnim, t: number, snap: SimSnapshot | null): void {
   let v = 0;
   // 涟漪：从双手按下的两点（±0.18, z −0.25）扩散；碎开时从中间炸开、更多更快
   const burst = k > 0;
-  for (let r = 0; r < RINGS; r++) {
-    const ph = burst ? Math.min(1, k * (1 + r * 0.3)) : ((t * 0.45 + r / RINGS) % 1);
-    const cx = burst ? 0 : (r % 2 === 0 ? -0.18 : 0.18), cz = burst ? -1.9 : -0.25;
-    const R = burst ? 0.2 + ph * (2 + r * 0.8) : 0.05 + ph * 1.6;
-    const wdt = 0.006 + ph * 0.012;
+  for (let r = 0; r < RINGS + HAND_RINGS; r++) {
+    const small = r >= RINGS;
+    const ph = burst ? Math.min(1, k * (1 + (r % RINGS) * 0.3)) : small ? ((t * 0.6 + Math.floor((r - RINGS) / 2) / (HAND_RINGS / 2)) % 1) : ((t * 0.45 + r / RINGS) % 1);
+    const cx = burst ? 0 : (r % 2 === 0 ? -WATER_HAND_X : WATER_HAND_X), cz = burst ? WATER_DOUBLE_Z : WATER_HAND_Z;
+    const R = burst ? 0.2 + ph * (2 + (r % RINGS) * 0.8) : small ? 0.06 + ph * 0.3 : 0.05 + ph * 1.6;
+    const wdt = small ? 0.005 + ph * 0.006 : 0.006 + ph * 0.012;
     const ri = R - wdt, ro = R + wdt;
-    // 双手按进水里的那几秒有涟漪，之后水面重新变平（「水面很平」）；碎开时再炸开
-    const settle = burst ? 1 : Math.max(0, 1 - Math.max(0, t - 1.5) / 1.5);
-    const bright = (burst ? 1 - ph * 0.6 : 1 - ph) * (t < 0.2 && !burst ? t / 0.2 : 1) * settle;
+    // 双手按进水里的那几秒有大圈的涟漪，之后水面重新变平（「水面很平」），只有手边一圈圈的小涟漪；碎开时再炸开
+    const settle = burst ? (small ? 0 : 1) : small ? 1 : Math.max(0, 1 - Math.max(0, t - 1.5) / 1.5);
+    const gain = small ? RIPPLE_GAIN.hand : RIPPLE_GAIN.big;
+    const bright = (burst ? 1 - ph * 0.6 : 1 - ph) * (t < 0.2 && !burst ? t / 0.2 : 1) * settle * gain / 0.07;
     for (let i = 0; i < RING_SEG; i++) {
       const a0 = (i / RING_SEG) * Math.PI * 2, a1 = ((i + 1) / RING_SEG) * Math.PI * 2;
       const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
@@ -210,7 +229,7 @@ function animate(a: WaterAnim, t: number, snap: SimSnapshot | null): void {
     const life = Math.min(1, t / 1.2);
     const vx = Math.cos(ang) * (0.4 + rr * 0.5), vz = Math.sin(ang) * 0.3 - 0.2, vy = 1.4 + rr * 0.8;
     const tt = life * 0.7;
-    const x = (i % 2 === 0 ? -0.18 : 0.18) + vx * tt, z = -0.25 + vz * tt, y = Math.max(0, vy * tt - 4.9 * tt * tt);
+    const x = (i % 2 === 0 ? -WATER_HAND_X : WATER_HAND_X) + vx * tt, z = WATER_HAND_Z + vz * tt, y = Math.max(0, vy * tt - 4.9 * tt * tt);
     const vis = life < 1 && y > 0 ? 1 : 0;
     for (let j = 0; j < 36; j++) {
       const base = (v + j) * 3;
@@ -238,8 +257,8 @@ export const waterSet: StillSet = {
   surfaces: () => {
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const rect = [-6, -8, 6, WATER_EDGE_Z] as [number, number, number, number];
-    // at：水里站着的「我」在爬行的人群中间（与上面 crowd 的中心 cz = −1.9 一致；lead 集成）
-    return ['water', 'puddle', 'waterSurface'].map((id) => ({ id, plane: plane.clone(), rect, at: [0, 0, -1.9] as [number, number, number] }));
+    // at：水里站着的「我」在爬行的人群中间（与上面 crowd 的中心一致：WATER_DOUBLE_Z）
+    return ['water', 'puddle', 'waterSurface'].map((id) => ({ id, plane: plane.clone(), rect, at: [0, 0, WATER_DOUBLE_Z] as [number, number, number] }));
   },
   update: (t, snap) => liveList('water').update(snap.still?.t ?? t, snap),
 };
