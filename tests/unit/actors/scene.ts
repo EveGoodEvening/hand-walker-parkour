@@ -116,9 +116,10 @@ function skinnedOf(root: THREE.Object3D, each: (v: THREE.Vector3, bone: number) 
   const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute;
   const skin = m.geometry.getAttribute('skinIndex') as THREE.BufferAttribute;
   const v = new THREE.Vector3();
+  const third = (m.skeleton.bones[24]?.scale.x ?? 0) > 0.01;
   for (let i = 0; i < pos.count; i++) {
     const bi = skin.getX(i);
-    if (bi >= 24) continue;                          // 第三只手、道具（缩放为 0 时）不算
+    if (bi >= 27 || (bi >= 24 && !third)) continue;  // 道具、缩放为 0 的第三只手不算
     v.fromBufferAttribute(pos, i);
     m.applyBoneTransform(i, v);
     v.applyMatrix4(m.matrixWorld);
@@ -156,4 +157,125 @@ export function headNdc(w: Scene, id: string): THREE.Vector3 | null {
 
 export function inBox(p: THREE.Vector3, b: readonly number[]): boolean {
   return p.x > (b[0] as number) && p.x < (b[2] as number) && p.y > (b[1] as number) && p.y < (b[3] as number);
+}
+
+/** 主角网格的软件光栅化深度图（W×H，NDC z；没有覆盖的像素为 +∞）。只用来判断替身的某些顶点是否被主角挡住。 */
+export function playerDepth(w: Scene, W = 320, H = 180): Float32Array {
+  const depth = new Float32Array(W * H).fill(Infinity);
+  if (!w.actor.rig.root.visible) return depth;
+  const tris: THREE.Vector3[] = [];
+  skinnedOf(w.actor.rig.root, (v) => { tris.push(v.clone().project(w.camera)); });
+  // skinnedOf 跳过了道具等顶点，三角形按顺序三个一组：只在三个顶点都保留时才成立（被跳过的骨骼整块跳过，顺序不乱）
+  for (let i = 0; i + 2 < tris.length; i += 3) {
+    const a = tris[i]!, b = tris[i + 1]!, c = tris[i + 2]!;
+    if (a.z > 1 || b.z > 1 || c.z > 1 || a.z < -1 || b.z < -1 || c.z < -1) continue;
+    const P = [a, b, c].map((p) => [(p.x * 0.5 + 0.5) * W, (1 - (p.y * 0.5 + 0.5)) * H, p.z] as [number, number, number]);
+    const [p0, p1, p2] = P as [[number, number, number], [number, number, number], [number, number, number]];
+    const x0 = Math.max(0, Math.floor(Math.min(p0[0], p1[0], p2[0]))), x1 = Math.min(W - 1, Math.ceil(Math.max(p0[0], p1[0], p2[0])));
+    const y0 = Math.max(0, Math.floor(Math.min(p0[1], p1[1], p2[1]))), y1 = Math.min(H - 1, Math.ceil(Math.max(p0[1], p1[1], p2[1])));
+    const area = (p1[0] - p0[0]) * (p2[1] - p0[1]) - (p2[0] - p0[0]) * (p1[1] - p0[1]);
+    if (Math.abs(area) < 1e-9) continue;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const px = x + 0.5, py = y + 0.5;
+      const w0 = ((p1[0] - px) * (p2[1] - py) - (p2[0] - px) * (p1[1] - py)) / area;
+      const w1 = ((p2[0] - px) * (p0[1] - py) - (p0[0] - px) * (p2[1] - py)) / area;
+      const w2 = 1 - w0 - w1;
+      if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+      const z = w0 * p0[2] + w1 * p1[2] + w2 * p2[2];
+      const k = y * W + x;
+      if (z < (depth[k] as number)) depth[k] = z;
+    }
+  }
+  return depth;
+}
+
+/** 替身（id）在某些骨骼上的顶点里，有多少比例在画面内且没有被主角挡住。 */
+export function visibleFraction(w: Scene, id: string, bones: readonly number[], W = 320, H = 180): { visible: number; total: number } {
+  const depth = playerDepth(w, W, H);
+  const set = new Set(bones);
+  let total = 0, visible = 0;
+  doubleVerts(w, id, (v, bi) => {
+    if (!set.has(bi)) return;
+    total++;
+    const p = v.clone().project(w.camera);
+    if (Math.abs(p.x) > 1 || Math.abs(p.y) > 1 || p.z > 1) return;
+    const x = Math.min(W - 1, Math.floor((p.x * 0.5 + 0.5) * W)), y = Math.min(H - 1, Math.floor((1 - (p.y * 0.5 + 0.5)) * H));
+    if (p.z <= (depth[y * W + x] as number) + 1e-4) visible++;
+  });
+  return { visible: total ? visible / total : 0, total };
+}
+
+/**
+ * 跑段停拍：从 stopBeat 前 3 s 爬到 stopBeat（写历史、按拍发出段的事件），然后停下 tAfter 秒，按停拍的 timeline 发出 cue。
+ * 返回最后一份快照。主角按 lane 爬（停拍前不换道）。
+ */
+export function playStop(w: Scene, segId: string, stopBeat: number, tAfter: number, lane: -1 | 0 | 1 = 0): SimSnapshot {
+  const seg = w.ch.segments.find((s) => s.def.id === segId)!;
+  const def = seg.def as { events?: Ev[]; stride?: number; cadence?: number | number[] };
+  const evs = [...(def.events ?? [])].sort((a, b) => a.at - b.at);
+  const stop = evs.find((e) => e.type === 'stop' && Math.abs(e.at - stopBeat) < 1e-6) as (Ev & { timeline: Ev[] }) | undefined;
+  const tl = [...(stop?.timeline ?? [])].sort((a, b) => a.at - b.at);
+  const cad = seg.cadenceAt(stopBeat), stride = seg.stride, speed = cad * stride;
+  const b0 = Math.max(0, stopBeat - 3 * cad);
+  const at = (beat: number, t: number, mode: 'crawl' | 'stop', modeT: number) => {
+    const s = seg.s0 + beat * stride;
+    const n = snap({ s, lane, beat: beat, t, mode, speed: mode === 'stop' ? 0 : speed });
+    n.segIndex = seg.index; n.segment = seg.def.id; n.segBeat = beat;
+    n.player.floorY = seg.floorY(s); n.player.cadence = cad; n.player.stride = stride; n.player.modeT = modeT;
+    return n;
+  };
+  w.cam.onEvent({ type: 'segment', tick: 0, data: {} } as never);
+  w.dbl.onSegment(seg); w.actor.onSegment(seg);
+  const tStart = 50;
+  let prev = at(b0, tStart, 'crawl', 0);
+  w.cam.onReset(prev);
+  let k = 0;
+  const dt = 1 / 60;
+  let t = tStart;
+  // 停拍前：爬到 stopBeat
+  for (let beat = b0; beat < stopBeat - 1e-9;) {
+    beat = Math.min(stopBeat, beat + cad * dt); t += dt;
+    const n = at(beat, t, 'crawl', 0);
+    while (k < evs.length && evs[k]!.at <= beat + 1e-9) { const e = evs[k++]!; if (e.type !== 'stop') fire(w, e, n); }
+    frame(w, prev, n); prev = n;
+  }
+  // 停拍
+  const t0 = t;
+  let j = 0;
+  for (let u = 0; u <= tAfter + 1e-9; u += dt) {
+    t = t0 + u;
+    const n = at(stopBeat, t, 'stop', u);
+    while (j < tl.length && tl[j]!.at <= u + 1e-9) fire(w, tl[j++]!, n);
+    frame(w, prev, n); prev = n;
+  }
+  return prev;
+}
+
+/** 跑段：从 b0 拍爬到 b1 拍（车道 lane），按拍发出段的事件。返回最后一份快照。 */
+export function playRun(w: Scene, segId: string, b0: number, b1: number, lane: -1 | 0 | 1 = 0): SimSnapshot {
+  const seg = w.ch.segments.find((s) => s.def.id === segId)!;
+  const evs = [...((seg.def as { events?: Ev[] }).events ?? [])].sort((a, b) => a.at - b.at);
+  const cad = seg.cadenceAt(b0), stride = seg.stride, speed = cad * stride;
+  const at = (beat: number, t: number) => {
+    const s = seg.s0 + beat * stride;
+    const n = snap({ s, lane, beat, t, speed });
+    n.segIndex = seg.index; n.segment = seg.def.id; n.segBeat = beat;
+    n.player.floorY = seg.floorY(s); n.player.cadence = cad; n.player.stride = stride;
+    return n;
+  };
+  w.cam.onEvent({ type: 'segment', tick: 0, data: {} } as never);
+  w.dbl.onSegment(seg); w.actor.onSegment(seg);
+  let t = 30;
+  let prev = at(b0, t);
+  w.cam.onReset(prev);
+  let k = 0;
+  while (k < evs.length && evs[k]!.at < b0) { const e = evs[k++]!; if (e.type === 'double') fire(w, e, prev); }
+  const dt = 1 / 60;
+  for (let beat = b0; beat < b1 - 1e-9;) {
+    beat = Math.min(b1, beat + cad * dt); t += dt;
+    const n = at(beat, t);
+    while (k < evs.length && evs[k]!.at <= beat + 1e-9) fire(w, evs[k++]!, n);
+    frame(w, prev, n); prev = n;
+  }
+  return prev;
 }

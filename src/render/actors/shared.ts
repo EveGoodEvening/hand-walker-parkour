@@ -12,6 +12,8 @@ export interface CameraFocus {
   kind: 'side' | 'end' | 'floor' | 'world';
   /** 可见程度 0..1（淡入淡出）。 */
   weight: number;
+  /** 第三只手正穿过玻璃碰你的额头（forehead 手势开始后的秒数；没有时为 −1）。2-10 的侧面机位按它切。 */
+  through: number;
 }
 
 export const WP5 = {

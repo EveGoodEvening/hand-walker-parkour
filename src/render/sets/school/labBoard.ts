@@ -1,6 +1,6 @@
 // src/render/sets/school/labBoard.ts —— 静场「你后面」（DESIGN.md §4.2 2-9，WP3）。
 // 空置的化学教室，窗户朝北，阳光照不进来。主角背靠实验桌腿坐在地上（头顶是「一片灰色的森林」）。
-// 镜头转向身后的黑板（WP5 的 labBoard 机位 (0, 0.5, 1.4) → (0, 1.2, −3)）：黑板上的粉笔字由 board cue 写 / 擦，
+// 镜头转向身后的黑板（WP5 的 labBoard 机位，见 camera/shots.ts）：黑板上的粉笔字由 board cue 写 / 擦，
 // 黑板的反光面 id：'labBoard'（surfaces()；board cue 的 surface 用它）。写字、擦字的动画见 render/boards.ts。
 import * as THREE from 'three';
 import type { StillSet, ViewContext } from '../../../core/contracts';
@@ -49,7 +49,7 @@ function build(ctx: ViewContext): THREE.Object3D {
     stat.box([XL + 0.03, 2.25, z], [0.04, 1.5, 0.05], 0x9aa4a7, { faces: '+x+z-z' });
   }
   // 实验台：主角靠着的那张在右手边（钢架腿就在身旁），左边一张，两侧各一列；镜头从台与台之间看见黑板
-  bench(stat, e, 1.05, -0.6, 2.4);
+  bench(stat, e, 1.5, -0.6, 2.4);                  // 修复轮 U5：以前在 x = 1.05，从 labBoard 机位看过去挡住黑板右半边
   bench(stat, e, -1.45, -0.2, 2.4);
   for (const [x, s] of [[-2.9, -0.2], [2.9, -0.2], [-2.9, 2.2], [2.9, 2.2], [-2.9, -2.4], [2.9, -2.4]] as const) {
     bench(stat, e, x, s, 2.0);

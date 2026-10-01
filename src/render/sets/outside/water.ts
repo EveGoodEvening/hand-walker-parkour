@@ -22,6 +22,13 @@ import { stencilInside, stencilWrite } from './lib/mats';
 import { SetBuild, crawlerFigure } from './lib/setkit';
 
 export const WATER_EDGE_Z = 0.2;
+/**
+ * 水里站着的「我」（WP5 的替身，反射之前站的位置）与围着它爬的人群中心（修复轮 U5）。4-6 的镜头在主角眼睛里、
+ * 从水边俯看（约 −60°）：倒影里站着的「我」在画面中间约 1/3 高，画面下沿是按进水里的双手，岸边的灰带出画。
+ */
+export const WATER_DOUBLE_Z = -0.6;
+/** 双手按进水里的位置（相对 STILL_ORIGIN，与 WP5 handsInWater 的手一致）：开场的涟漪从这两点扩散。 */
+export const WATER_HAND_X = 0.3, WATER_HAND_Z = -0.07;
 /** 水面范围 [x0, z0, x1, z1]（y = 0 平面，z0 < z1）。 */
 export const WATER_RECT: readonly [number, number, number, number] = [-40, -60, 40, WATER_EDGE_Z];
 const RINGS = 4, RING_SEG = 28;
@@ -88,15 +95,16 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
     const cg = new OGeo();
     const rng = keyRng('water', 'crowd');
     const n = ctx.quality.tier === 'low' ? 14 : 26;
-    const cx = 0, cz = -1.9;
+    const cx = 0, cz = WATER_DOUBLE_Z;
+    // 围着中间站着的「我」爬的人（修复轮 U5）：缩小到 0.6、压暗，离得远一些；水面叠加层越远越浅，像隔着一层雾
     cg.mirrored(new THREE.Matrix4().makeScale(1, -1, 1), () => {
       for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2 + rng.next() * 0.3, r = 1.6 + rng.next() * 3.5;
+        const a = (i / n) * Math.PI * 2 + rng.next() * 0.3, r = 1.3 + rng.next() * 3.0;
         const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r * 0.8;
         if (z > WATER_EDGE_Z - 0.4) continue;
         const yaw = Math.atan2(-(cx - x), -(cz - z));
         const tone = rng.next();
-        crawlerFigure(cg, x, z, yaw, mix(0x7a848c, 0x6a747c, tone), mix(C.skin, 0x9aa2a6, 0.7), 0.95, 0x5a6268);
+        crawlerFigure(cg, x, z, yaw, mix(0x5c656c, 0x4c555c, tone), mix(C.skin, 0x7a8286, 0.75), 0.57, 0x454c52);
       }
     });
     tone.applyArrays(cg.col, cg.nor, cg.pos, 'static');
@@ -119,7 +127,7 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   // 没有模板：一个模糊的站立剪影（倒着，躺在水面上）
   if (!ctx.stencil) {
     const sg = new OGeo();
-    const z = -1.9;
+    const z = WATER_DOUBLE_Z;
     for (let i = 0; i < 4; i++) {
       const w = 0.24 + i * 0.07;
       sg.flat(0.003 + i * 0.0005, -w, w, z - 0.02 * i, z - 1.7 - 0.05 * i, 0x2a3136, true);
@@ -181,7 +189,7 @@ function animate(a: WaterAnim, t: number, snap: SimSnapshot | null): void {
   const burst = k > 0;
   for (let r = 0; r < RINGS; r++) {
     const ph = burst ? Math.min(1, k * (1 + r * 0.3)) : ((t * 0.45 + r / RINGS) % 1);
-    const cx = burst ? 0 : (r % 2 === 0 ? -0.18 : 0.18), cz = burst ? -1.9 : -0.25;
+    const cx = burst ? 0 : (r % 2 === 0 ? -WATER_HAND_X : WATER_HAND_X), cz = burst ? WATER_DOUBLE_Z : WATER_HAND_Z;
     const R = burst ? 0.2 + ph * (2 + r * 0.8) : 0.05 + ph * 1.6;
     const wdt = 0.006 + ph * 0.012;
     const ri = R - wdt, ro = R + wdt;
@@ -210,7 +218,7 @@ function animate(a: WaterAnim, t: number, snap: SimSnapshot | null): void {
     const life = Math.min(1, t / 1.2);
     const vx = Math.cos(ang) * (0.4 + rr * 0.5), vz = Math.sin(ang) * 0.3 - 0.2, vy = 1.4 + rr * 0.8;
     const tt = life * 0.7;
-    const x = (i % 2 === 0 ? -0.18 : 0.18) + vx * tt, z = -0.25 + vz * tt, y = Math.max(0, vy * tt - 4.9 * tt * tt);
+    const x = (i % 2 === 0 ? -WATER_HAND_X : WATER_HAND_X) + vx * tt, z = WATER_HAND_Z + vz * tt, y = Math.max(0, vy * tt - 4.9 * tt * tt);
     const vis = life < 1 && y > 0 ? 1 : 0;
     for (let j = 0; j < 36; j++) {
       const base = (v + j) * 3;
@@ -238,8 +246,8 @@ export const waterSet: StillSet = {
   surfaces: () => {
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const rect = [-6, -8, 6, WATER_EDGE_Z] as [number, number, number, number];
-    // at：水里站着的「我」在爬行的人群中间（与上面 crowd 的中心 cz = −1.9 一致；lead 集成）
-    return ['water', 'puddle', 'waterSurface'].map((id) => ({ id, plane: plane.clone(), rect, at: [0, 0, -1.9] as [number, number, number] }));
+    // at：水里站着的「我」在爬行的人群中间（与上面 crowd 的中心一致：WATER_DOUBLE_Z）
+    return ['water', 'puddle', 'waterSurface'].map((id) => ({ id, plane: plane.clone(), rect, at: [0, 0, WATER_DOUBLE_Z] as [number, number, number] }));
   },
   update: (t, snap) => liveList('water').update(snap.still?.t ?? t, snap),
 };

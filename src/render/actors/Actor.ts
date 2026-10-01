@@ -22,6 +22,12 @@ import { WP5, type PoseTestName } from './shared';
 
 const _m = new THREE.Matrix4();
 
+/**
+ * 镜头在他眼睛里、但要看见自己手的静场（修复轮 U5）：只画某些分组（readability.ts 的 BONE_GROUP：腿、手、手臂、躯干与头）。
+ * 4-6 看水：画面下沿伸进来按在水里的双手，身体其余部分不画（否则挡满画面）。
+ */
+export const EYE_GROUPS: Readonly<Record<string, readonly [number, number, number, number]>> = { water: [0, 1, 1, 0] };
+
 function crawlInputFrom(prev: SimSnapshot, next: SimSnapshot, a: number, out: CrawlInput): CrawlInput {
   const P = prev.player, N = next.player;
   out.s = lerp(P.s, N.s, a); out.x = lerp(P.x, N.x, a); out.y = lerp(P.y, N.y, a); out.floorY = lerp(P.floorY, N.floorY, a);
@@ -164,6 +170,8 @@ export class PlayerActor implements ViewSystem {
       WP5.stillAnchor.makeTranslation(STILL_ORIGIN.x, STILL_ORIGIN.y, STILL_ORIGIN.z).multiply(anchor);
       rig.root.visible = false; WP5.playerVisible = false; this.lastTick = -1; return;
     }
+    const eg = EYE_GROUPS[`${setId}.${variant}`] ?? EYE_GROUPS[setId];
+    if (eg) this.groupU.value.set(eg[0], eg[1], eg[2], eg[3]); else this.groupU.value.set(1, 1, 1, 1);
     const tc = this.clip ? t - this.clip.t0 : (st?.t ?? 0);
     const pose = clipPose(clipId, tc, this.b, this.clipOut, { x: 0, y: 0, s: 0, yaw: 0 });
     if (this.clip && base && this.clipWeight < 1) {

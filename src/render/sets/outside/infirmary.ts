@@ -23,7 +23,8 @@ export const INFIRMARY_CEILING_TUBES: ReadonlyArray<readonly [number, number]> =
 
 interface Bed { cx: number; z0: number; z1: number; top: number; pillowZ: number; dent: [number, number] | null }
 const BEDS: Record<'bed' | 'ceiling', Bed> = {
-  bed: { cx: -0.9, z0: -2.7, z1: -0.7, top: 0.6, pillowZ: -2.42, dent: [-0.6, -2.04] },
+  // 凹陷在枕头下方、靠床沿（修复轮 U5：往床沿挪了 8 cm，主角也往里躺 0.1 m，躺下后左手不再正好搭在上面）
+  bed: { cx: -0.9, z0: -2.7, z1: -0.7, top: 0.6, pillowZ: -2.42, dent: [-0.52, -2.16] },
   ceiling: { cx: 0, z0: -1.2, z1: 0.8, top: 0.6, pillowZ: -0.95, dent: null },
 };
 
@@ -123,6 +124,9 @@ export const infirmarySet: StillSet = {
   build,
   playerAnchor: (variant) => {
     const bed = BEDS[variant === 'ceiling' ? 'ceiling' : 'bed'];
+    // 5-9（bed）：头枕在枕头上（枕头在床的 −z 端；仰躺姿势的头朝角色 +z，所以转 180°，修复轮 U5）。
+    // 5-10（ceiling）镜头在他眼睛里往上看，看不到身体，维持原样
+    if (variant !== 'ceiling') return new THREE.Matrix4().makeRotationY(Math.PI).setPosition(bed.cx - 0.1, bed.top, (bed.z0 + bed.z1) / 2 + 0.2);
     return new THREE.Matrix4().makeTranslation(bed.cx, bed.top, (bed.z0 + bed.z1) / 2 + 0.2);
   },
   update: (t, snap) => liveList('infirmary').update(snap.still?.t ?? t, snap),

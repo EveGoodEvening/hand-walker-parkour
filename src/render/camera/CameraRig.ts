@@ -16,7 +16,7 @@ import { clamp, DEG, easeInOutSine, frac, lerp, springStep } from '../../core/ma
 import type { Settings } from '../../core/settings';
 import type { ShotId, SimSnapshot } from '../../core/types';
 import { WP5 } from '../actors/shared';
-import { FOLLOW, RUN_SHOT_OFFSETS, SEGMENT_SHOTS, SET_DEFAULT_SHOT, SET_SHOTS, STAND_SHOTS, DEFAULT_SET_SHOT } from './shots';
+import { FOLLOW, PUDDLE_GAZE, RUN_SHOT_OFFSETS, SEGMENT_SHOTS, SET_DEFAULT_SHOT, SET_SHOT_LATE, SET_SHOT_RETURN, SET_SHOTS, STAND_SHOTS, THROUGH_GLASS_SHOT, DEFAULT_SET_SHOT, type SetShot } from './shots';
 
 export interface CamPose { pos: THREE.Vector3; look: THREE.Vector3; roll: number; fov: number }
 
@@ -43,6 +43,8 @@ export class CameraRig implements ViewSystem {
   private shake = 0;
   private shot: { id: ShotId; until: number; t0: number } | null = null;
   private stillShot: ShotId | null = null;
+  /** 本段里每个静场机位被切到的次数（第二次起用 SET_SHOT_RETURN）。 */
+  private readonly stillCuts = new Map<ShotId, number>();
   private standShot: 'standEye' | 'trackSky' | null = null;
   private fallBlend = 0;
   private gazeBlend = 0;
@@ -64,17 +66,18 @@ export class CameraRig implements ViewSystem {
 
   /** camera cue。seconds = 0 表示一直保持到下一次切换（静场）。 */
   setShot(id: ShotId, seconds: number, t: number): void {
-    if (SET_SHOTS[id]) { this.stillShot = id; return; }
+    if (SET_SHOTS[id]) { this.stillShot = id; this.stillCuts.set(id, (this.stillCuts.get(id) ?? 0) + 1); return; }
     if (id === 'standEye' || id === 'trackSky') { this.standShot = id; return; }
     if (id === 'follow') { this.shot = null; return; }
-    this.shot = { id, t0: t, until: seconds > 0 ? t + seconds : Infinity };
+    const min = RUN_SHOT_OFFSETS[id]?.minSec ?? 0;
+    this.shot = { id, t0: t, until: seconds > 0 ? t + Math.max(seconds, min) : Infinity };
   }
 
   onEvent(e: GameEvent): void {
     const rm = this.ctx?.settings.reducedMotion;
     if (e.type === 'hit' && !rm) this.shake = 0.12;
     if (e.type === 'land') this.landT = 0;
-    if (e.type === 'segment') { this.shot = null; this.stillShot = null; this.standShot = null; }
+    if (e.type === 'segment') { this.shot = null; this.stillShot = null; this.standShot = null; this.stillCuts.clear(); }
     if (e.type === 'retry') { this.fallBlend = 0; this.shot = null; this.gazeBlend = 0; this.segBlend = 0; }
   }
 
@@ -125,13 +128,23 @@ export class CameraRig implements ViewSystem {
       const st = next.still;
       const key = st ? `${st.set}.${st.variant}` : 'placeholder';
       const id = this.stillShot ?? SET_DEFAULT_SHOT[key] ?? (st ? SET_DEFAULT_SHOT[st.set] : undefined) ?? 'deskFeet';
-      const sh = SET_SHOTS[id] ?? DEFAULT_SET_SHOT;
+      let sh: SetShot = SET_SHOTS[id] ?? DEFAULT_SET_SHOT;
+      if ((this.stillCuts.get(id) ?? 0) >= 2 && SET_SHOT_RETURN[id]) sh = SET_SHOT_RETURN[id] as SetShot;
       // 静场里 Actor 总会更新锚点（主角不显示时也一样，lead 集成）
       const M = WP5.stillAnchor;
       o.pos.set(sh.pos[0], sh.pos[1], sh.pos[2]).applyMatrix4(M);
       o.look.set(sh.look[0], sh.look[1], sh.look[2]).applyMatrix4(M);
       o.roll = 0;
-      o.fov = portrait ? Math.min(80, sh.fov * 1.3) : sh.fov;
+      let fov = sh.fov;
+      // 过了某个时刻慢慢推到近景（5-9 枕边的凹陷）；「减少晃动」时直接切
+      const late = SET_SHOT_LATE[id];
+      if (late && st && st.t >= late.after) {
+        const k = rm ? 1 : easeInOutSine(clamp((st.t - late.after) / late.blend, 0, 1));
+        _g.set(late.shot.pos[0], late.shot.pos[1], late.shot.pos[2]).applyMatrix4(M);
+        _gl.set(late.shot.look[0], late.shot.look[1], late.shot.look[2]).applyMatrix4(M);
+        o.pos.lerp(_g, k); o.look.lerp(_gl, k); fov = lerp(fov, late.shot.fov, k);
+      }
+      o.fov = portrait ? Math.min(80, fov * 1.3) : fov;
       this.fallBlend = 0; this.gazeBlend = 0; this.standBlend = 0;
       return o;
     }
@@ -189,7 +202,7 @@ export class CameraRig implements ViewSystem {
     const lb = N.lookBack;
     if (lb > 0) yaw = rm ? (lb > 0.5 ? 160 * DEG : 0) : lb * 160 * DEG;
     // —— 跑段临时机位 ——
-    let dyOff = 0, lookDyOff = 0, lookAhead = 0;
+    let dyOff = 0, lookDyOff = 0, lookAhead = 0, pan = 0, dxOff = 0, dzOff = 0;
     let mirrorClose = false;
     if (this.shot) {
       if (next.t > this.shot.until) this.shot = null;
@@ -200,7 +213,8 @@ export class CameraRig implements ViewSystem {
           const kin = rm ? 1 : clamp((next.t - this.shot.t0) / 0.3, 0, 1);
           const kout = rm ? 1 : clamp((this.shot.until - next.t) / 0.3, 0, 1);
           const k = easeInOutSine(Math.min(kin, kout));
-          yaw += (this.shot.id === 'turnBack' ? so.yaw : rm ? 0 : so.yaw) * (this.shot.id === 'turnBack' && rm ? 1 : k);
+          const ang = (this.shot.id === 'turnBack' ? so.yaw : rm ? 0 : so.yaw) * (this.shot.id === 'turnBack' && rm ? 1 : k);
+          if (so.pan) { pan += rm ? so.yaw : ang; dxOff = (so.dx ?? 0) * (rm ? 1 : k); dzOff = (so.dz ?? 0) * (rm ? 1 : k); } else yaw += ang;
           lookDyOff = so.lookDy * k; dyOff = so.dy * k; lookAhead = (so.lookAhead ?? 0) * k;
         }
       }
@@ -214,6 +228,12 @@ export class CameraRig implements ViewSystem {
       o.look.x = px + _off.x; o.look.z = pz + _off.z;
     }
     o.pos.y += dyOff; o.look.y += lookDyOff;
+    if (dxOff !== 0 || dzOff !== 0) { o.pos.x += dxOff; o.look.x += dxOff; o.pos.z += dzOff; o.look.z += dzOff; }
+    if (Math.abs(pan) > 1e-4) {
+      // 原地转头：注视点绕镜头转
+      _off.set(o.look.x - o.pos.x, 0, o.look.z - o.pos.z).applyAxisAngle(THREE.Object3D.DEFAULT_UP, pan);
+      o.look.x = o.pos.x + _off.x; o.look.z = o.pos.z + _off.z;
+    }
     // —— 停拍 / mirrorClose：看向镜中的替身 ——
     const f = WP5.focus;
     const wantGaze = !!f && f.weight > 0.05 && (N.mode === 'stop' || mirrorClose);
@@ -228,13 +248,26 @@ export class CameraRig implements ViewSystem {
         const standOff = clamp(D * 0.28, 2.4, 3.6);
         _g.copy(F).addScaledVector(_d, -standOff); _g.y = F.y + 0.3;
       } else if (f.kind === 'floor') {
-        _g.set(F.x, fy, F.z).addScaledVector(_d, -1.5); _g.y = fy + 1.25;
+        // 水洼（3-4，修复轮 U5）：绕到水洼另一侧回看。倒影在主角身下，从他身后看永远被他自己挡住；
+        // 从前方低处看回来，站起来的倒影映在主角和镜头之间的水面上
+        // 沿主角的前方（倒影站起来之后头就在他身下，F − 主角的方向不可靠）
+        const P = PUDDLE_GAZE;
+        _g.set(x, fy, -s - P.far); _g.y = fy + P.h;
+        _gl.set(x, fy, -s - P.lookAhead); _gl.y = fy + P.lookY;
       } else {
         _g.copy(o.pos).addScaledVector(_d, clamp((D - 2.5) * 0.3, 0, 2.5));
       }
-      _gl.copy(F);
-      const k = easeInOutSine(this.gazeBlend);
+      if (f.kind !== 'floor') _gl.copy(F);
+      // 水洼：镜头要绕到主角前面，直接切过去（插值会从他身体里穿过）
+      const k = f.kind === 'floor' ? (this.gazeBlend > 0.35 ? 1 : 0) : easeInOutSine(this.gazeBlend);
       o.pos.lerp(_g, k); o.look.lerp(_gl, k);
+    }
+    // —— 第三只手穿过玻璃（2-10）：切到侧面机位，你和镜中的它都在画面里 ——
+    const TG = THROUGH_GLASS_SHOT;
+    const through = !!f && f.weight > 0.05 && N.mode === 'stop' && f.through >= TG.from && f.through <= TG.to;
+    if (through) {
+      o.pos.set(x + TG.pos[0], fy + TG.pos[1], -s + TG.pos[2]);
+      o.look.set(x + TG.look[0], fy + TG.look[1], -s + TG.look[2]);
     }
     // —— 摔倒 ——
     const falling = N.mode === 'fall';
@@ -263,6 +296,7 @@ export class CameraRig implements ViewSystem {
     let base = portrait ? Math.min(FOLLOW.portrait.vMax, vFromH(FOLLOW.landscape.hfov, aspect)) : clamp(vFromH(FOLLOW.landscape.hfov, aspect), FOLLOW.landscape.vMin, FOLLOW.landscape.vMax);
     if (ss && segFov > 0) base = lerp(base, portrait ? Math.min(80, ss.fov * 1.3) : ss.fov, segFov);
     o.fov = portrait ? Math.min(FOLLOW.portrait.vMax, base + this.fovExtra * 0.5 + pulse) : base + this.fovExtra + pulse;
+    if (through) o.fov = portrait ? Math.min(80, TG.fov * 1.3) : TG.fov;
     return o;
   }
 }
