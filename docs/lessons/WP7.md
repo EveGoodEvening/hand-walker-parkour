@@ -41,3 +41,12 @@
 - **`requestIdleCallback` 的 timeout 每次重新请求都从头算**：空闲期不够就再请求一次的写法，在每帧都有一点空闲的游玩中永远等不到超时。自己记每件任务的入队时间，等够了就照做。
 - tsx 跑 scratchpad 里带顶层 await 的脚本要用 `.mts` 扩展名（`.ts` 会按 cjs 转换，报「Top-level await is currently not supported」）。
 - 量「修复前」的数字不必切分支或动工作区：`git archive HEAD src tests tsconfig.json package.json | tar -x -C <scratch>/old`，再把 `node_modules` 软链过去，用同一个场景脚本跑。
+
+## 2026-10-01（U3 修复轮：结尾卡床单声、回到标题、解锁重试）
+
+- **要在屏幕门之下照样响的声音，换一条不在门集合里的总线**（和「嘘」绕开静音段同一个办法）：第四章结尾卡的床单声（sfx `cloth`）平时走 npc 总线，结尾卡的屏幕门把它压到 −72 dB 以下。`SCREEN_EXEMPT_SFX` 在屏幕门期间改走 ui 总线（音量同样跟「音效」）。检查方法：看 `scheduled` 里那一条记录所在总线的门，而不是只看有没有排出来。
+- **判断「这次按键是不是被界面用掉了」**：界面（UI.ts）的 keydown 挂在 window 的冒泡阶段。声音包改在 **capture 阶段**监听（目标是 body 等元素时，window 的 capture 一定先于 window 的冒泡），记下一个只增不减的计数，再用 `setTimeout(0)` 等这次分发结束后看计数变没变。不能用 `queueMicrotask`：浏览器派发的可信事件在每个监听器之间都会跑一次微任务检查点，微任务会在界面的监听之前执行。也不要用「界面先注册」之类的注册顺序假设。happy-dom 里在 `document.body` 上派发 `bubbles: true` 的 keydown，capture / 冒泡顺序与浏览器一致（单元测试里把模拟界面的监听先注册，确认顺序不靠注册先后）。
+- **音频解锁要能重试**：Game 的 `unlock` 是 `once: true`，第一次 `resume()` 被拒（iOS 在 pointerdown 里不一定算用户激活）、来电打断（`interrupted`）、系统挂起之后就再也不会响。引擎自己在 window 上挂 pointerup / touchend / click / keydown（capture），每次手势里同步播 1 样本静音 buffer 再 `resume()`，确认 `running` 之后才摘掉；`ctx.onstatechange` 遇到 `interrupted` 或「不是自己要的」`suspended` 就重新挂上。自己暂停 / 失焦引起的 `suspended` 要靠「期望状态」区分（`this.suspended`），否则一暂停就挂监听。`resume()` 被拒不计入 errors。
+- **回到标题之后的第一个 segment 一律按「跳段」重建**：U4 回标题时同一章只用 `goto(1-1, 0)`，不发 `chapter:start`。引擎「按顺序进下一段」的路径只换地点的缺省环境音，不重建雨和掌声；所以进标题时设 `jump = true`、`segIndex = −1`，地点换成 key 不同于任何真实地点的 `TITLE_PLACE`，下一个 segment 必定走 `soundStateAt` 整体重建。之前的声音已经被屏幕门或失败门压住时（结尾卡、演职卡、失败卡）直接换掉，不要淡出：门打开（τ 0.1–0.3 s）比旧环境音淡出（τ 0.25 s）快，会冒出一截旧声音。
+- 离线测试里结尾卡、标题这些「模拟时间停住」的屏幕：离线模式的「现在」由模拟时间反推，测试里仍要推进快照的 `t` 才能让音频时间往前走（`onSfx` 不更新 `lastSnap`，只有 `frame` / `onEvent` 更新）。
+- 把一批改动按条目拆成几次提交又不想用交互式 `git add -p`：`git diff -U1 > full.patch`，用脚本删掉属于后面条目的 `+` 行、把对应的 `-` 行改成上下文行，再 `git apply --cached --recount` 应用到暂存区；`git checkout-index -a --prefix=<scratch>/stage/` 导出暂存区快照、软链 `node_modules`，在快照里跑 typecheck 和相关测试后再提交。下一条目先 `git reset -q <base> -- <file>` 把暂存区退回基线，再应用累积补丁。
