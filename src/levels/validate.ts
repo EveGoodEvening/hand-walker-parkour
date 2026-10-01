@@ -25,6 +25,8 @@
 //   · R12：暗色氛围（§5.2 标 dark 的 nightIndoor / rainNight / voidDark）的粉笔描边最低亮度 chalkMin ≥ 0.15，底亮度 ≥ 0.15
 //     只有 voidDark 由氛围保证，其余靠灯。
 //   · R10：休息窗 = [窗口开始, 窗口结束 + then 里最后一句字幕消失的时刻 + 0.8 s]，字幕停留按 §7.2（字数 × 90 ms + 800 ms）。
+//   · 必备节拍（附录 C）：rest / ask 窗口打开时（段内拍号 ≥ from）触发窗口 id，并播放 then（Sim.openWindows）；auto 回头窗口必定
+//     回头。非 auto 回头窗口的 id 与 then 只在玩家按 Q 时触发（可选行为），必备节拍挂在那里报 error。
 //   · 豁免：只认 lead 在 §10 书面批准的（WAIVERS.approval 逐字出现在 §10），工作包不得自行降级。
 //   · R13：站立段的实际时长 = max(duration, 第七步摔倒 + 最后一个按步事件)，不含起身前的等待。
 import { LANE_WIDTH, LIMITS, MIN_ACTION_GAP, TEXT, TICK_DT } from '../core/constants';
@@ -136,7 +138,7 @@ export function sAtTime(tl: Timeline, t: number): number {
 interface Win { a: number; b: number; rule: string; why: string }
 interface TEv { t: number; body: EventBody; id?: string; inWindow: boolean; tLate: number; win?: string }
 
-/** 段内所有「时刻」事件（秒）：按拍的事件、slow/stop 的 timeline、回头窗口 then（早：窗口开始；晚：窗口结束）。 */
+/** 段内所有「时刻」事件（秒）：按拍的事件、slow/stop 的 timeline、回头窗口 then（早：窗口开始；晚：窗口结束）、rest / ask 窗口 then（窗口开始）。 */
 function timedEvents(seg: CompiledSegment, tl: Timeline): TEv[] {
   const out: TEv[] = [];
   const tAtBeat = (b: number) => timeAtS(tl, seg.s0 + b * seg.stride);
@@ -159,9 +161,13 @@ function timedEvents(seg: CompiledSegment, tl: Timeline): TEv[] {
   for (const w of seg.windows) {
     if (w.to < fromBeat) continue;
     const a = tAtBeat(w.from), b = tAtBeat(w.to);
+    const look = w.type === 'lookBack';
     for (const x of w.then ?? []) {
       const { at, id, ...rest } = x as TimedEventDef & Record<string, unknown>;
-      const it: TEv = { t: a + at, body: rest as unknown as EventBody, inWindow: true, tLate: b + at, win: w.id ?? `@${w.from}` };
+      // 回头窗口的 then 在回头开始时播放（窗口里任何时刻）；rest / ask 窗口的 then 在窗口打开时播放（Sim.openWindows）
+      const it: TEv = look
+        ? { t: a + at, body: rest as unknown as EventBody, inWindow: true, tLate: b + at, win: w.id ?? `@${w.from}` }
+        : { t: a + at, body: rest as unknown as EventBody, inWindow: false, tLate: a + at };
       if (id !== undefined) it.id = id as string;
       out.push(it);
     }
@@ -563,9 +569,16 @@ export function validateChapter(def: ChapterDef, solver: SolverAPI, opts: { seed
   };
 }
 
-/** 静态检查：id、台词、纸条、变体、符号、时刻范围、必备节拍。 */
+/**
+ * 静态检查：id、台词、纸条、变体、符号、时刻范围、必备节拍。
+ * 必备节拍（附录 C）只能挂在**必定触发**的地方：事件（含 slow / stop 的 timeline）、静场与站立段的输入、结尾卡输入、
+ * rest / ask 窗口的 id 与 then（窗口打开时触发，Sim.openWindows）、auto 回头窗口的 id 与 then（玩家不按 Q 也会在窗口结束时自动回头）。
+ * 非 auto 回头窗口的 id 与 then 只在玩家按 Q 时触发，属于附录 C 明确不列入的可选行为（主动回头），挂在那里报 error。
+ */
 function staticChecks(def: ChapterDef, err: (r: string, m: string, s?: string) => void, warn: (r: string, m: string, s?: string) => void): void {
   const ids = new Set<string>();
+  /** 只挂在可选行为上的 id（非 auto 回头窗口的 id 与 then）：id → 窗口说明。 */
+  const optional = new Map<string, string>();
   const segIds = new Set<string>();
   const noteIds = new Set(def.notes.map((n) => n.id));
   const lineRefs: Array<{ id: string; seg?: string }> = [];
@@ -592,8 +605,15 @@ function staticChecks(def: ChapterDef, err: (r: string, m: string, s?: string) =
     if (sd.kind === 'run') {
       if (!(KIT_VARIANTS[sd.kit] ?? []).includes(sd.variant)) err('static', `unknown variant ${sd.kit}.${sd.variant}`, sid);
       for (const w of sd.windows ?? []) {
-        if (w.id) ids.add(w.id);
-        collectIds((w.then ?? []) as unknown as Array<Record<string, unknown>>, ids);
+        if (w.type === 'lookBack' && !w.auto) {
+          const opt = new Set<string>();
+          if (w.id) opt.add(w.id);
+          collectIds((w.then ?? []) as unknown as Array<Record<string, unknown>>, opt);
+          for (const id of opt) optional.set(id, `${sid} look-back window ${w.id ?? `@${w.from}`}`);
+        } else {
+          if (w.id) ids.add(w.id);
+          collectIds((w.then ?? []) as unknown as Array<Record<string, unknown>>, ids);
+        }
         for (const x of w.then ?? []) linesOfTimed(x, (id) => checkLine(id, sid));
         if (!(w.from < w.to) || w.from < 0 || w.to > sd.beats) err('static', `window ${w.id ?? ''} [${w.from}, ${w.to}] outside the segment or empty`, sid);
       }
@@ -628,7 +648,12 @@ function staticChecks(def: ChapterDef, err: (r: string, m: string, s?: string) =
     }
   }
   for (const r of lineRefs) if (!lineText(r.id)) err('static', `line "${r.id}" is not in lines.ts`, r.seg);
-  for (const rb of def.requiredBeats) if (!ids.has(rb)) err('static', `requiredBeat "${rb}" is not attached to any event/window/input id`);
+  for (const rb of def.requiredBeats) {
+    if (ids.has(rb)) continue;
+    const opt = optional.get(rb);
+    if (opt) err('static', `requiredBeat "${rb}" is only attached to the non-auto ${opt} (or its then): it fires only if the player presses Q, an optional action (Appendix C)`);
+    else err('static', `requiredBeat "${rb}" is not attached to any event/window/input id`);
+  }
 }
 
 function linesOfTimed(x: TimedEventDef, cb: (id: string) => void): void {

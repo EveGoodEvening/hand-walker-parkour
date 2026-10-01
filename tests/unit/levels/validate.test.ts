@@ -244,6 +244,24 @@ describe('静态检查', () => {
     const msgs = errors(bad).filter((i) => i.rule === 'static').map((i) => i.msg).join('\n');
     for (const frag of ['zz.none', 'variant corridor.nope', 'symbol W', 'checkpoint @50', 'ghost"', 'ghost2', 'requiredBeat "missing"', '4 notes']) expect(msgs).toContain(frag);
   });
+  it('必备节拍挂在窗口上（附录 C）：rest / ask 窗口与 auto 回头窗口必定触发；非 auto 回头窗口（及其 then）只在按 Q 时触发，报 error', () => {
+    const win = (look: { auto?: boolean }, required: string[]) => chapter([runSeg({
+      beats: 80, cadence: 4.6, crowd: true,
+      windows: [
+        { id: 'restBeat', from: 20, to: 30, type: 'rest', then: [{ at: 0.5, type: 'sfx', sfx: 'shush', id: 'restThen' }] },
+        { id: 'askBeat', from: 40, to: 50, type: 'ask' },
+        { id: 'lookBeat', from: 55, to: 65, type: 'lookBack', gain: 0, ...look, then: [{ at: 0.4, type: 'sfx', sfx: 'shush', id: 'lookThen' }] },
+      ],
+    })], { requiredBeats: required });
+    const staticMsgs = (d: ChapterDef) => errors(d).filter((i) => i.rule === 'static').map((i) => i.msg);
+    expect(staticMsgs(win({}, ['restBeat', 'restThen', 'askBeat']))).toEqual([]);
+    const opt = staticMsgs(win({}, ['restBeat', 'askBeat', 'lookBeat', 'lookThen']));
+    expect(opt.length).toBe(2);
+    expect(opt.join('\n')).toContain('requiredBeat "lookBeat" is only attached to the non-auto s1 look-back window lookBeat');
+    expect(opt.join('\n')).toContain('requiredBeat "lookThen"');
+    expect(opt.every((m) => m.includes('optional action'))).toBe(true);
+    expect(staticMsgs(win({ auto: true }, ['lookBeat', 'lookThen']))).toEqual([]);
+  });
   it('七步必须有起身输入', () => {
     expect(errors(chapter([{ ...SEVEN, input: undefined } as never, runSeg({ beats: 400 })])).map((i) => i.msg).join()).toContain('no rise input');
   });

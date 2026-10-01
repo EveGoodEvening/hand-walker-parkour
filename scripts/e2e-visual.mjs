@@ -5,6 +5,7 @@
 // （shot.mjs 也认 steps / eval / evalBefore / full，这里照样放行）。out 统一落在 shots/visual/<WP>/ 下：
 // 写成 "shots/visual/WP3/x.png" 或 "x.png"、"kits/x.png" 都行，绝对路径或含 .. 的路径报错。
 // 浏览器经 browser-lock（由 shot.mjs 负责：每个清单取一次锁，跑完立即释放）。每个清单跑完在 shots/visual/<WP>/index.json 写一份结果。
+// 失败条件：清单不合格、shot.mjs 非零退出（截图出错或页面报错），或任何一张图发出了外部请求（单文件产物必须零外部请求）。
 //   npm run e2e:visual -- --wp WP3          只跑 WP3（可写多个：--wp WP3 --wp WP5，或 --wp WP3,WP5）
 //   npm run e2e:visual -- --check           只校验清单格式，不开浏览器
 //   npm run e2e:visual                      全部清单
@@ -78,10 +79,13 @@ function main() {
     const r = spawnSync('node', ['scripts/shot.mjs', '--plan', tmp], { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     const lines = (r.stdout ?? '').split('\n').filter((l) => l.startsWith('{'));
     const results = lines.map((l) => { try { return JSON.parse(l); } catch { return { raw: l }; } });
-    for (const x of results) console.log(`  ${x.error ? '✖' : x.errors?.length ? '!' : '✔'} ${x.out}${x.error ? ` — ${x.error}` : ` (${x.screen} ${x.segment ?? ''} ${x.drawCalls ?? '?'} draw calls${x.errors?.length ? `, page errors: ${x.errors.length}` : ''})`}`);
+    for (const x of results) console.log(`  ${x.error || x.external?.length ? '✖' : x.errors?.length ? '!' : '✔'} ${x.out}${x.error ? ` — ${x.error}` : ` (${x.screen} ${x.segment ?? ''} ${x.drawCalls ?? '?'} draw calls${x.errors?.length ? `, page errors: ${x.errors.length}` : ''}${x.external?.length ? `, external requests: ${x.external.join(' ')}` : ''})`}`);
     if (r.stderr) process.stderr.write(r.stderr);
     writeFileSync(join(outDir, 'index.json'), JSON.stringify({ wp: name, wallSec: (Date.now() - t0) / 1000, exit: r.status, results }, null, 2));
     if (r.status !== 0) { console.error(`✖ ${name}: shot.mjs exited ${r.status}`); bad++; }
+    // 单文件产物运行时零外部请求（§8.1、§9.4）：shot.mjs 只记录不判失败，这里判
+    const ext = results.filter((x) => x.external?.length);
+    if (ext.length) { console.error(`✖ ${name}: ${ext.length} shot(s) made external requests`); bad++; }
   }
   if (!chosen.length) console.log('e2e:visual: no manifests');
   process.exit(bad ? 1 : 0);

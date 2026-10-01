@@ -2,7 +2,7 @@
 // 120 Hz 固定步长，确定性：只用 rng.sim（种子 = hash(chapter.seed, segment.id)）；机器人用 rng.bot（HumanBot.ts）。
 // 每 tick 的顺序（Solver 复刻了其中与运动有关的部分，改动时两边一起改）：
 //   输入 → 受击速度恢复 → 腿自主抬起 → 腿偏移 → Pace 前进（里程 s、段内时间）→ 竖直（撑跃 / 落地）→ 横向（换道）→ 伏低
-//   → 三段触地 → 段内事件（按拍）→ 回头窗口 → 「让一下」→ 碰撞 → 回稳 → 领跑者 → 追随者 → timeline（按秒）→ 检查点 → 段末。
+//   → 三段触地 → 段内事件（按拍）→ 窗口（rest / ask 打开，回头）→ 「让一下」→ 碰撞 → 回稳 → 领跑者 → 追随者 → timeline（按秒）→ 检查点 → 段末。
 // 各机制在自己的文件里：Twitch（腿自主抬起）、Drift（腿偏移）、LookBack（回头）、Ask（让一下）、Stand（七步与梦中站立）、
 // Leader（前方的它）、StillRunner（静场时间线）、Autopilot / HumanBot（自动驾驶）。
 import type { SimAPI, SolverAPI } from '../core/contracts';
@@ -97,6 +97,8 @@ export class Sim implements SimAPI {
   private slowOption = false;
   private invincible = false;
   private checkpoint = { segment: '', beat: 0 };
+  /** 到达当前检查点时「本章是否已经拿过回头收益」：重来回到检查点时的状态（否则重来后的回头收益与第一次不同）。 */
+  private cpLookGainUsed = false;
   private stats: RunStats = { timeMs: 0, falls: 0, stumbles: 0, crashes: 0, lookBacks: 0, notes: [] };
   private beatsFired: string[] = [];
   private firstLegHitDone = false;
@@ -122,6 +124,8 @@ export class Sim implements SimAPI {
   private prompt: { hint: HintId | null; look: boolean; ask: boolean } = { hint: null, look: false, ask: false };
   private promptForce = false;
   private trayLanes: number[] = [];
+  /** 本段 rest / ask 窗口是否已经打开（与 seg.windows 下标对应；lookBack 窗口由 LookBackRuntime 管，恒为 true）。 */
+  private winOpened: boolean[] = [];
   private hitCount = 0;
 
   constructor(private readonly solver: SolverAPI) {
@@ -351,6 +355,7 @@ export class Sim implements SimAPI {
         if (e.body.type === 'leader') { if (e.body.op === 'appear') leaderAppeared = true; else leaderReceded = true; }
       }
     }
+    if (isRetry) this.look.gainUsed = this.cpLookGainUsed;
     this.P.reset(0);
     this.gait.reset();
     this.follower.clearQueue();
@@ -373,6 +378,7 @@ export class Sim implements SimAPI {
     if (leaderReceded) this.leader.recede();
     this.leader.target(this.steady.value, true);
     this.checkpoint = { segment: seg.def.id, beat: b };
+    this.cpLookGainUsed = this.look.gainUsed;
     this.emit('steady', { value: this.steady.value, max: this.steady.max });
     this.emit('follower', this.followerSnap());
   }
@@ -387,6 +393,7 @@ export class Sim implements SimAPI {
     this.evCursor = 0;
     if (seg.kind === 'run') while (this.evCursor < seg.events.length && (seg.events[this.evCursor] as { at: number }).at < beat - 1e-9) this.evCursor++;
     this.look.enterSegment(seg, beat);
+    this.winOpened = seg.kind === 'run' ? seg.windows.map((w) => w.type === 'lookBack' || w.to < beat) : [];
     this.askRt.reset();
     this.track.reset();
     this.trayLanes = [];
@@ -403,6 +410,7 @@ export class Sim implements SimAPI {
       playerBox(s, this.P.x, this.P.y, this.P.duck, 0, this.prevBox);
       if (beat === 0) {
         this.checkpoint = { segment: seg.def.id, beat: 0 };
+        this.cpLookGainUsed = this.look.gainUsed;
         this.emit('checkpoint', { ...this.checkpoint });
       }
     } else if (seg.kind === 'stand') {
@@ -568,7 +576,8 @@ export class Sim implements SimAPI {
       const e = seg.events[this.evCursor++] as { at: number; id?: string; body: EventBody };
       this.fire(e.body, e.id, 'run');
     }
-    // 8. 回头窗口
+    // 8. 窗口：rest / ask 打开时记节拍、排 then；回头窗口
+    this.openWindows(beat);
     this.look.updateWindows(beat, (i) => this.startLookBack(i, true));
     if (this.look.update(TICK_DT)) this.emit('lookBack', { phase: 'end', gain: this.look.gain, auto: this.look.auto });
     // 9. 碰撞
@@ -584,6 +593,7 @@ export class Sim implements SimAPI {
     for (const cp of seg.checkpoints) {
       if (cp > 0 && beat >= cp && prevBeat < cp && !(this.checkpoint.segment === def.id && this.checkpoint.beat >= cp)) {
         this.checkpoint = { segment: def.id, beat: cp };
+        this.cpLookGainUsed = this.look.gainUsed;
         this.emit('checkpoint', { ...this.checkpoint });
       }
     }
@@ -699,7 +709,30 @@ export class Sim implements SimAPI {
     if (!auto) this.emit('action', { kind: 'look', crisp: false });
     this.emit('lookBack', { phase: 'start', gain: r.gain, auto });
     if (r.window.id) this.markBeat(r.window.id);
-    for (const te of r.window.then ?? []) {
+    this.scheduleThen(r.window.then);
+  }
+
+  /**
+   * rest / ask 窗口在段内拍号到达 from 时打开：窗口 id 记为已触发的节拍，then 按相对秒数排进 timeline（与校验器的口径一致：
+   * 附录 C 允许把必备节拍挂在窗口上，staticChecks 把 rest / ask 窗口的 id 与 then 里的 id 都算作「必定触发」）。
+   * 进段（或从检查点重来）时已经结束的窗口不再打开；正处在窗口里的，第一 tick 就打开。回头窗口只在回头开始时触发（startLookBack）。
+   */
+  private openWindows(beat: number): void {
+    const wins = this.seg.windows;
+    for (let i = 0; i < wins.length; i++) {
+      if (this.winOpened[i] !== false) continue;
+      const w = wins[i];
+      if (!w || beat < w.from - 1e-9) continue;
+      this.winOpened[i] = true;
+      if (w.id) this.markBeat(w.id);
+      this.scheduleThen(w.then);
+    }
+  }
+
+  /** 把一组相对此刻的 TimedEventDef 排进 timeline（回头的 then、rest / ask 窗口的 then）。 */
+  private scheduleThen(then: readonly TimedEventDef[] | undefined): void {
+    if (!then?.length) return;
+    for (const te of then) {
       const { at, id, ...rest } = te as TimedEventDef & Record<string, unknown>;
       const item: Timed = { t: this.t + at, seq: this.timedSeq++, body: rest as unknown as EventBody, fromStop: false };
       if (id !== undefined) item.id = id as string;

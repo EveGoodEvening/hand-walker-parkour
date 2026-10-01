@@ -6,7 +6,7 @@ import { compile } from '../../../src/levels/compile';
 import { LEADER_MIN, RECEDE_SPEED } from '../../../src/sim/Leader';
 import { solver } from '../../../src/sim/Solver';
 import { TUNING } from '../../../src/sim/tuning';
-import { chapter, Driver, MECH_RUN, runSeg } from './fixtures';
+import { chapter, Driver, MECH_RUN, perfectRun, runSeg } from './fixtures';
 
 describe('回头（§3、R10）', () => {
   const win = (o: { auto?: boolean; gain?: 0 | 1 } = {}) => ({ id: 'w', from: 20, to: 30, type: 'lookBack' as const, auto: o.auto ?? false, gain: o.gain ?? 1,
@@ -48,6 +48,63 @@ describe('回头（§3、R10）', () => {
     d2.until(() => d2.snap.player.beat >= 21, 120 * 20); d2.tap('look');
     d2.until(() => d2.snap.player.beat >= 61, 120 * 20); d2.tap('look');
     expect(d2.of('lookBack').filter((e) => e.data.phase === 'start').map((e) => e.data.gain)).toEqual([1, 0]);
+  });
+  it('重来回到检查点时的收益状态：检查点之前没拿过，重来后第一次回头仍然 +1；检查点之前拿过的，重来后仍是 0', () => {
+    const def = chapter([runSeg({ follower: { mode: 'behind', steady: 1 }, checkpoints: [40], windows: [win(), { ...win(), id: 'w2', from: 60, to: 70 }] })]);
+    const gains = (d: Driver) => d.of('lookBack').filter((e) => e.data.phase === 'start').map((e) => e.data.gain);
+    const a = new Driver(def);
+    a.until(() => a.snap.player.beat >= 21, 120 * 20); a.tap('look');
+    a.until(() => a.snap.player.beat >= 32, 120 * 20);
+    a.sim.retry();                                            // 回到段首（检查点 @0）：那时还没回过头
+    a.until(() => a.snap.player.beat >= 21, 120 * 20); a.tap('look');
+    expect(gains(a)).toEqual([1, 1]);
+    a.until(() => a.snap.player.beat >= 45, 120 * 20);       // 过了 @40 的检查点：此时已经拿过收益
+    a.sim.retry();
+    a.until(() => a.snap.player.beat >= 61, 120 * 20); a.tap('look');
+    expect(gains(a)).toEqual([1, 1, 0]);
+  });
+});
+
+describe('窗口上的必备节拍（附录 C：id 可以挂在窗口上）', () => {
+  const def = (look: { auto?: boolean } = {}) => chapter([runSeg({
+    beats: 80, cadence: 4.6, crowd: true,
+    windows: [
+      { id: 'restBeat', from: 20, to: 30, type: 'rest', then: [{ at: 0.5, type: 'sfx', sfx: 'shush', id: 'restThen' }] },
+      { id: 'askBeat', from: 40, to: 50, type: 'ask' },
+      { id: 'lookBeat', from: 55, to: 65, type: 'lookBack', gain: 0, ...look },
+    ],
+  })], { requiredBeats: ['restBeat', 'restThen', 'askBeat'] });
+  it('perfect 跑完：rest、ask 窗口的 id 与 rest 窗口 then 里的 id 都进 beatsFired', () => {
+    const r = perfectRun(def(), 1);
+    expect(r.ended).toBe(true);
+    expect(r.missing).toEqual([]);
+  });
+  it('不按任何键：rest / ask 窗口在段内拍号到达 from 时触发，then 按相对秒数；非 auto 回头窗口不触发，auto 的在窗口结束时触发', () => {
+    const d = new Driver(def());
+    d.until(() => d.snap.beatsFired.includes('restBeat'), 120 * 20);
+    expect(d.snap.player.beat).toBeGreaterThanOrEqual(20);
+    expect(d.snap.player.beat).toBeLessThan(20.1);
+    expect(d.snap.beatsFired).not.toContain('restThen');
+    const t0 = d.snap.t;
+    d.until(() => d.snap.beatsFired.includes('restThen'), 240);
+    expect(d.snap.t - t0).toBeCloseTo(0.5, 1);
+    d.until(() => d.snap.beatsFired.includes('askBeat'), 120 * 20);
+    expect(d.snap.player.beat).toBeGreaterThanOrEqual(40);
+    expect(d.snap.player.beat).toBeLessThan(40.1);
+    d.until(() => d.sim.isEnded, 120 * 30);
+    expect(d.snap.beatsFired).toEqual(['restBeat', 'restThen', 'askBeat']);
+    expect(d.of('beat').map((e) => e.data.id)).toEqual(['restBeat', 'restThen', 'askBeat']);
+    const a = new Driver(def({ auto: true }));
+    a.until(() => a.sim.isEnded, 120 * 60);
+    expect(a.snap.beatsFired).toEqual(['restBeat', 'restThen', 'askBeat', 'lookBeat']);
+  });
+  it('从检查点进段：已经结束的窗口不再触发；正处在窗口里的第一 tick 就触发', () => {
+    const past = new Driver(def(), { segment: 's1', beat: 35 });
+    past.until(() => past.snap.player.beat >= 38, 120 * 10);
+    expect(past.snap.beatsFired).toEqual([]);
+    const inside = new Driver(def(), { segment: 's1', beat: 45 });
+    inside.step(1);
+    expect(inside.snap.beatsFired).toEqual(['askBeat']);
   });
 });
 

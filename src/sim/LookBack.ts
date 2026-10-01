@@ -1,7 +1,7 @@
 // src/sim/LookBack.ts —— 回头（DESIGN.md §3「回头」、D7、§2.4 lookBack、§2.8 R10）。CORE 写在 Sim 里的初版，WP1 抽出并补全。
 // 情境动作：只在回头窗口（WindowDef type 'lookBack'）内可用，键盘 Q，触屏右下角情境按钮。
 // 镜头 0.25 s 转 160°，停 0.4 s，0.25 s 转回（期间照常前进，窗口保证安全）；追随者的声音停 1.2 s（WP7 读 lookBack 事件）。
-// 收益：窗口 gain = 1 且是本章第一次回头时稳度 +1，之后为 0。auto = true 的窗口在窗口结束时如果玩家还没回头，自动回头一次
+// 收益：窗口 gain = 1 且是本章第一次回头时稳度 +1，之后为 0（gainUsed；Sim 在每个检查点记下它，重来时恢复成到达检查点时的值）。auto = true 的窗口在窗口结束时如果玩家还没回头，自动回头一次
 // （1-5「到 @136 自动回头」）；auto 为假的窗口过了就过了（3-6 收益 0，不自动）。窗口的 then 在回头开始时按相对秒数排进 timeline。
 import type { CompiledSegment, CompiledWindow } from '../levels/schema';
 import { TUNING } from './tuning';

@@ -1,6 +1,6 @@
 // tests/unit/sim/fixtures.ts —— WP1 的合成章节与测试工具（DESIGN.md §8.10 WP1；lead 补充要求 6：
 // 第二到五章由 WP2 并行编写，这里用小型合成段落覆盖每一个新机制，严格按 §8.5 schema 与 §4 的描述）。
-// MECH_RUN：只含跑段的「机制章」，校验器必须零 error（腿自主抬起落在横档前 0.4 s、腿偏移、回头窗口、人群段与让一下、
+// MECH_RUN：只含跑段的「机制章」，校验器必须零 error（腿自主抬起落在横档前 0.4 s、腿偏移、回头窗口、rest / ask 窗口上的必备节拍、人群段与让一下、
 //   周期 / 移动 / 到点障碍、减速、停拍与自动爬行、段中换挡、楼梯、端盘、施压、lagOverride、前方的它、画面翻转、静音段）。
 // MECH_STILL：静场与站立段（hold + progress、tap、taps3、any、梦中站立、七步），只测模拟行为。
 import type { GameEvent } from '../../../src/core/events';
@@ -103,6 +103,8 @@ export const MECH_RUN: ChapterDef = chapter([
   runSeg({
     id: 'm-5', beats: 80, cadence: 5.0, follower: { mode: 'pressure', steady: 2, lagOverride: 1 },
     rows: [[20, 'L..'], [60, '..H']],
+    // rest 窗口：打开时触发窗口 id 并播放 then（附录 C 允许把必备节拍挂在窗口上）
+    windows: [{ id: 'restT', from: 46, to: 56, type: 'rest', then: [{ at: 0.3, type: 'sfx', sfx: 'shush', id: 'restThenT' }] }],
     events: [
       { at: 28, type: 'slow', speed: 1.5, seconds: 2, ramp: 0.4, timeline: [{ at: 0.5, type: 'text', line: 'c1.hey' }] },
       { at: 40, type: 'stop', seconds: 4, timeline: [{ at: 0.5, type: 'text', line: 'c1.noLag' }, { at: 1.5, type: 'autoCrawl', speed: 2, seconds: 1.5 }] },
@@ -122,7 +124,7 @@ export const MECH_RUN: ChapterDef = chapter([
       { at: 106, type: 'leader', op: 'recede' },
     ],
   }),
-], { id: 'test', seed: 99, notes: [{ id: 'nx', face: 'blank', front: null, back: null, folded: false, pickup: true }], requiredBeats: ['legHold', 'lookT', 'leaderOn', 'driftT'] });
+], { id: 'test', seed: 99, notes: [{ id: 'nx', face: 'blank', front: null, back: null, folded: false, pickup: true }], requiredBeats: ['legHold', 'lookT', 'askWin', 'restT', 'restThenT', 'leaderOn', 'driftT'] });
 
 /** 静场与站立段。 */
 export const MECH_STILL: ChapterDef = chapter([
