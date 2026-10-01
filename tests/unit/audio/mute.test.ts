@@ -10,7 +10,7 @@ import { getAudioFactory } from '../../../src/core/registry';
 import { DEFAULT_SETTINGS } from '../../../src/core/settings';
 import type { GameEvent } from '../../../src/core/events';
 import { createAudio } from '../../../src/audio/index';
-import { MiniContext } from './offline/mini';
+import { MiniContext, makeMiniOffline } from './offline/mini';
 import { ev, snap } from './scenarios';
 
 /** 计数用的构造器桩：真的造出一个最小 context（引擎建图要用），同时记下被 new 了几次。 */
@@ -281,5 +281,123 @@ describe('U3：第四章结尾卡上的 ↓ 是床单声，不是菜单的「移
       document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
       expect(a.cues(1)).toEqual(['ui:move']);
     } finally { window.removeEventListener('keydown', uiKey); }
+  }, 60_000);
+});
+
+describe('U3：音频解锁不只试一次（被拒、被打断、被系统挂起之后，下一次手势再 resume）', () => {
+  /** 假的实时 AudioContext：前 fail 次 resume 被拒（状态仍是 suspended）；状态变化时调 onstatechange（像浏览器那样）。 */
+  class FlakyContext extends MiniContext {
+    resumes = 0; suspends = 0; fail = 1;
+    onstatechange: ((ev: Event) => void) | null = null;
+    constructor() { super(2, 16000, 16000); }
+    setState(st: string): void {
+      if (st === this.state) return;
+      (this as unknown as { state: string }).state = st;
+      this.onstatechange?.(new Event('statechange'));
+    }
+    override resume(): Promise<void> {
+      this.resumes++;
+      if (this.fail > 0) { this.fail--; return Promise.reject(new DOMException('not allowed', 'NotAllowedError')); }
+      this.setState('running');
+      return Promise.resolve();
+    }
+    override suspend(): Promise<void> { this.suspends++; this.setState('suspended'); return Promise.resolve(); }
+    get silent(): number { return this.sources.filter((x) => (x as unknown as { buffer?: { length: number } | null }).buffer?.length === 1).length; }
+  }
+  /** 记下挂着的监听（按类型计数）。 */
+  class Target extends EventTarget {
+    private live = new Map<string, number>();
+    override addEventListener(type: string, cb: EventListenerOrEventListenerObject | null, o?: AddEventListenerOptions | boolean): void {
+      super.addEventListener(type, cb, o);
+      this.live.set(type, (this.live.get(type) ?? 0) + 1);
+    }
+    override removeEventListener(type: string, cb: EventListenerOrEventListenerObject | null, o?: EventListenerOptions | boolean): void {
+      super.removeEventListener(type, cb, o);
+      this.live.set(type, (this.live.get(type) ?? 0) - 1);
+    }
+    get armed(): string[] { return Array.from(this.live).filter(([, n]) => n > 0).map(([k, n]) => `${k}${n > 1 ? `×${n}` : ''}`).sort(); }
+  }
+  const ALL = ['click', 'keydown', 'pointerup', 'touchend'];
+  const boot = async () => {
+    const ctx = new FlakyContext();
+    const target = new Target();
+    const e = new AudioEngine({
+      createContext: () => ctx as unknown as BaseAudioContext, makeOffline: makeMiniOffline, seed: 3,
+      preload: { palms: new Map(), sfx: new Map() }, gestures: target,
+    });
+    return { e, ctx, target };
+  };
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('第一次 resume 被拒：手势监听挂上；下一次 pointerup 里再播静音 buffer、再 resume；running 之后全部摘掉', async () => {
+    const { e, ctx, target } = await boot();
+    await e.unlock();
+    expect(ctx.resumes).toBe(1);
+    expect(ctx.state).toBe('suspended');
+    expect(target.armed).toEqual(ALL);
+    expect(e.stats().errors).toBe(0);                                       // 被拒不算错误
+    target.dispatchEvent(new Event('pointerup'));
+    expect(ctx.resumes).toBe(2);                                            // 在手势里同步调用
+    expect(ctx.silent).toBe(2);                                             // 每次都先播一段静音 buffer（iOS）
+    expect(ctx.state).toBe('running');
+    await flush();
+    expect(target.armed).toEqual([]);
+    target.dispatchEvent(new Event('pointerup'));
+    target.dispatchEvent(new Event('keydown'));
+    expect(ctx.resumes).toBe(2);                                            // 摘掉了：不再 resume
+    await e.unlock();                                                       // Game 那次 unlock 之后再来也不重复
+    expect(ctx.resumes).toBe(2);
+  }, 60_000);
+
+  it('running 之后被打断（interrupted）或被系统挂起：监听重新挂上，下一次手势恢复；我们自己暂停时的 suspended 不算', async () => {
+    const { e, ctx, target } = await boot();
+    ctx.fail = 0;
+    await e.unlock();
+    await flush();
+    expect(ctx.state).toBe('running');
+    expect(target.armed).toEqual([]);
+    ctx.setState('interrupted');                                            // iOS：来电、别的 App 占用音频
+    expect(target.armed).toEqual(ALL);
+    target.dispatchEvent(new Event('keydown'));
+    expect(ctx.resumes).toBe(2);
+    expect(target.armed).toEqual([]);
+    // 我们自己的暂停：suspend 引起的 statechange 不挂监听；暂停期间手势也不恢复
+    e.suspend(true);
+    expect(ctx.state).toBe('suspended');
+    expect(target.armed).toEqual([]);
+    e.suspend(false);
+    expect(ctx.resumes).toBe(3);
+    expect(target.armed).toEqual([]);
+    // 系统意外挂起：挂上；Game 暂停期间的手势不恢复，继续游戏时由 suspend(false) 恢复
+    ctx.setState('suspended');
+    expect(target.armed).toEqual(ALL);
+    e.suspend(true);
+    target.dispatchEvent(new Event('touchend'));
+    expect(ctx.resumes).toBe(3);
+    expect(target.armed).toEqual(ALL);                                      // 没有重复挂
+    e.suspend(false);
+    expect(ctx.resumes).toBe(4);
+    expect(ctx.state).toBe('running');
+    expect(target.armed).toEqual([]);
+  }, 60_000);
+
+  it('失焦回来时 resume 被拒（失焦期间被打断）：挂上监听，下一次手势恢复', async () => {
+    const { e, ctx, target } = await boot();
+    ctx.fail = 0;
+    await e.unlock();
+    await flush();
+    e.background(true);
+    expect(ctx.state).toBe('suspended');
+    ctx.fail = 1;
+    e.background(false);
+    expect(ctx.resumes).toBe(2);
+    await flush();
+    expect(ctx.state).toBe('suspended');
+    expect(target.armed).toEqual(ALL);
+    target.dispatchEvent(new Event('click'));
+    expect(ctx.resumes).toBe(3);
+    expect(ctx.state).toBe('running');
+    expect(target.armed).toEqual([]);
+    expect(e.stats().errors).toBe(0);
   }, 60_000);
 });

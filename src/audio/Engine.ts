@@ -8,6 +8,8 @@
 //   crowd 的 applaud / crawlOvertake / normal → 梦中掌声对齐与否（锁存，dreamApplause 新建时立即应用）。
 //   bell / sfx / ambience / silence 四种 cue 由 index.ts 注册的处理器转到这里。
 // AudioContext 在第一次 pointerdown / keydown（Game 调 unlock）时才创建；之前只维护「期望状态」并记录 cue。
+// 解锁不只试一次（U3）：context 没在运行（第一次 resume 被拒、iOS 来电打断、系统意外挂起）时，引擎自己在 window 上挂
+// pointerup / touchend / click / keydown，每次手势里同步地播一段静音 buffer 并 resume()，确认 running 之后才摘掉。
 // 屏幕：结尾卡、演职卡淡出所有声音（第四章结尾卡的床单声例外，走界面总线）；回到标题时换成标题的底噪（U3）。
 // 挂起（§6.1「暂停和失焦时 ctx.suspend()」）有两个来源，任何一个成立就挂起，两个都清掉才恢复：
 //   Game 的暂停（suspend()；离开暂停 / 设置屏幕时也视为结束——Game 从暂停菜单「重来」「回到标题」时不调 suspend(false)）；
@@ -48,6 +50,8 @@ export interface EngineDeps {
   perfNow?: () => number;
   /** 已经渲染好的库（同一采样率）：跳过预渲染。测试里多个引擎共用一份；将来重建 AudioContext 时也可复用。 */
   preload?: { palms: Map<string, AudioBuffer[]>; sfx: Map<string, AudioBuffer[]> };
+  /** 解锁手势的监听目标（index.ts 传 window）。没有就只靠 Game 的那一次 unlock。 */
+  gestures?: Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 }
 
 /**
@@ -74,6 +78,8 @@ const SCREEN_EXEMPT_SFX = new Set<SfxId>(['cloth']);
 const TITLE_PLACE: Place = { key: 'title', reverb: 'corridor', ambience: 'room', ambLevel: 1, hum: false, rain: 'indoor' };
 /** 回到标题时，之前那一章的环境音、雨、底噪淡出用的时间（秒；τ = 1/3 这个值，1 s 时约 −35 dB，2 s 时约 −70 dB）。 */
 const TITLE_FADE = 0.75;
+/** 解锁手势（§6.1）：iOS 只在 touchend / click 这类手势里允许 resume，pointerdown 不一定算。capture，别人 stopPropagation 也收得到。 */
+const GESTURES = ['pointerup', 'touchend', 'click', 'keydown'] as const;
 /** 同一声膝盖闷响的去重窗口（秒）：GameEvent fall 与 sfx cue 两条路径共用。 */
 const KNEE_DEDUPE = 0.1;
 /** 梦中掌声「先散后齐」：一片掌声刚起来时先是散的，这么久之后才开始对齐（τ 0.6 s）。 */
@@ -130,6 +136,9 @@ export class AudioEngine implements AudioImpl, AudioAPI {
   private warm: Array<{ fn: () => void; urgent: boolean; since: number }> = [];
   private warmTimer: unknown = null;
   private errors = 0;
+  /** 解锁手势监听是否挂着（context 确认 running 之前一直挂着）。 */
+  private armed = false;
+  private readonly onGesture = (): void => { this.guard(() => { void this.wake(); }); };
 
   // 期望状态（没有 context 时也维护，建图时一次性应用）
   private place: Place | null = null;
@@ -184,15 +193,64 @@ export class AudioEngine implements AudioImpl, AudioAPI {
       if (!this.ctx) {
         this.ctx = this.deps.createContext();
         this.build();
+        this.watchState();
       }
       if (this.deps.offline) return;
-      const ctx = this.ctx as AudioContext;
-      // iOS：在触摸事件里先播放一段静音 buffer，再 resume（§6.1）
-      const b = ctx.createBuffer(1, 1, ctx.sampleRate);
-      const s = ctx.createBufferSource();
-      s.buffer = b; s.connect(ctx.destination); s.start(0);
-      if (!this.suspended && ctx.state !== 'running') await ctx.resume();
+      await this.wake();
     } catch (err) { this.error(err); }
+  }
+
+  /**
+   * 在手势里同步地播一段 1 样本的静音 buffer 再 resume()（iOS 只认手势里的这两步，§6.1）。Game 暂停或失焦时不恢复。
+   * context 确认 running 之前一直挂着手势监听：第一次 resume 被拒（或一直没有结果），下一次手势再试。
+   */
+  private wake(): Promise<void> {
+    const ctx = this.ctx as AudioContext | null;
+    if (!ctx || this.deps.offline) return Promise.resolve();
+    const st = ctx.state as string;
+    if (st === 'running' || st === 'closed') { this.disarm(); return Promise.resolve(); }
+    this.arm();
+    if (this.suspended) return Promise.resolve();
+    const b = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const s = ctx.createBufferSource();
+    s.buffer = b; s.connect(ctx.destination); s.start(0);
+    return this.resumeCtx(ctx);
+  }
+
+  /** resume()，失败不抛；确认 running 之后摘掉手势监听。 */
+  private resumeCtx(ctx: AudioContext): Promise<void> {
+    let p: Promise<void>;
+    try { p = ctx.resume(); } catch (err) { this.error(err); return Promise.resolve(); }
+    return Promise.resolve(p).then(() => { if ((ctx.state as string) === 'running') this.disarm(); }, () => undefined);
+  }
+
+  /**
+   * context 的状态变化：running → 摘掉手势监听；iOS 的 interrupted（来电、别的 App 占用音频）或不是我们要的 suspended
+   * （系统挂起；我们自己暂停 / 失焦时的 suspended 不算）→ 重新挂上，等下一次手势恢复。
+   */
+  private watchState(): void {
+    if (this.deps.offline || !this.ctx) return;
+    this.ctx.onstatechange = () => this.guard(() => this.onCtxState());
+  }
+
+  private onCtxState(): void {
+    const st = (this.ctx?.state ?? 'closed') as string;
+    if (st === 'running' || st === 'closed') this.disarm();
+    else if (st === 'interrupted' || (st === 'suspended' && !this.suspended)) this.arm();
+  }
+
+  private arm(): void {
+    const t = this.deps.gestures;
+    if (this.armed || !t) return;
+    this.armed = true;
+    for (const k of GESTURES) t.addEventListener(k, this.onGesture, { capture: true, passive: true });
+  }
+
+  private disarm(): void {
+    const t = this.deps.gestures;
+    if (!this.armed || !t) return;
+    this.armed = false;
+    for (const k of GESTURES) t.removeEventListener(k, this.onGesture, { capture: true });
   }
 
   onEvent(e: GameEvent, snap: SimSnapshot): void {
@@ -274,7 +332,12 @@ export class AudioEngine implements AudioImpl, AudioAPI {
     const ctx = this.ctx as AudioContext;
     try {
       if (on) void ctx.suspend().catch(() => undefined);
-      else { this.clock.reset(); this.crowd.restart(); void ctx.resume().catch(() => undefined); }
+      else {
+        this.clock.reset(); this.crowd.restart();
+        // 恢复不一定成功（失焦期间被系统打断时要等手势）：确认 running 之前挂着手势监听
+        if ((ctx.state as string) !== 'running') this.arm();
+        void this.resumeCtx(ctx);
+      }
     } catch (err) { this.error(err); }
   }
 
@@ -346,7 +409,7 @@ export class AudioEngine implements AudioImpl, AudioAPI {
       frames: this.frames, avgFrameMs: this.frames ? this.costTotal / this.frames : 0, maxFrameMs: this.costMax, maxFrameWhat: this.costMaxWhat,
       ambience: this.amb?.id ?? null, reverb: this.mixer?.reverb ?? null, place: this.place?.key ?? null,
       hush: this.hush, failing: this.failing, rain: this.wantRain, follower: this.folMix, makeup: this.mixer?.makeupDb ?? null,
-      suspended: this.suspended, crowd: this.crowd.count, applause: { ...this.applause }, errors: this.errors,
+      suspended: this.suspended, gestures: this.armed, crowd: this.crowd.count, applause: { ...this.applause }, errors: this.errors,
     };
   }
 
