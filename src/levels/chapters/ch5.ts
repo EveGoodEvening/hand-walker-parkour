@@ -265,23 +265,29 @@ export default {
         // WP6 的 specialOfGroup 按组 id 认出马老师（黑色运动裤、两侧白条），集成时补上。
         { id: 'teacherMa', kind: 'lineSides', from: 66, to: 66, side: 'L', density: 1, gaze: 'none' },
       ],
+      // 修复单元 A：马老师说话时要在画面里。以前 @2 / @12 说话时他在约 62 m 外的雾里。台词按原文顺序整体后移：前半段爬过跑道边
+      // （标志桶、放倒的栏架、最低档栏架、排队同学的腿），走近集合的队伍时他才开口——@40「今天测一千米。」（他在镜头前约 28 m，
+      // 低画质雾的可读距离 29 m 以内）→ @46「特殊情况可以申请免试。」（约 22 m）→ @51 陈默「你行吗？」→ @55「不跑。」→
+      // @59「但我今天有点想试试。」（字幕两行滚动，每行被挤掉之前都显示完）。
+      // 另一个办法（在 5-7 起点附近再放一个马老师组）不行：站立段 5-8 会显示 5-7 的全部组，WP6 的 upper.test 断言了这个清单。
       rows: [
         [8, ['.', '.', 'cone']],                     // 标志桶
-        [20, ['.', 'hurdleDown', '.']],              // 放倒的栏架
-        [24, ['legs', '.', '.']],                    // 排队同学的腿
-        [40, ['.', '.', 'hurdle']],                  // 最低档栏架
-        [44, ['.', 'cone', '.']],
+        [14, ['.', 'hurdleDown', '.']],              // 放倒的栏架
+        [19, ['cone', 'cone', '.']],
+        [24, ['legs', '.', '.']],                    // 排队同学的腿（本段只有两处，WP6 的 upper.test 按两处检查）
+        [27, ['.', 'hurdle', 'hurdle']],             // 最低档栏架
+        [31.5, ['hurdleDown', 'cone', '.']],
         [58, ['legs', '.', '.']],
       ],
       events: [
         { at: 0, type: 'sfx', sfx: 'whistle' },
         { at: 0, type: 'ambience', amb: 'field', level: 1, seconds: 1.5 },
-        { at: 2, type: 'text', line: 'c5.test1000', style: 'other', speaker: 'teacherMa' },
-        { at: 12, type: 'text', line: 'c5.exempt', style: 'other', speaker: 'teacherMa' },
-        { at: 16, type: 'hint', hint: 'duck' },
-        { at: 30, type: 'text', line: 'c5.canYou', style: 'other', speaker: 'chenMo' },
-        { at: 34, type: 'text', line: 'c5.noRun', style: 'self' },
-        { at: 52, type: 'text', line: 'c5.wantTry' },
+        { at: 12, type: 'hint', hint: 'duck' },
+        { at: 40, type: 'text', line: 'c5.test1000', style: 'other', speaker: 'teacherMa' },
+        { at: 46, type: 'text', line: 'c5.exempt', style: 'other', speaker: 'teacherMa' },
+        { at: 51, type: 'text', line: 'c5.canYou', style: 'other', speaker: 'chenMo' },
+        { at: 55, type: 'text', line: 'c5.noRun', style: 'self' },
+        { at: 59, type: 'text', line: 'c5.wantTry' },
       ],
     },
     /* 5-8 七步：按住 ↑ 三秒起身；脚自己迈步；第 2 步失衡；第 7 步摔倒（站立段） */

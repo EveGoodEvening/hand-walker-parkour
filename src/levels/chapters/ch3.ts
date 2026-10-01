@@ -48,8 +48,10 @@ export default {
       beats: 110, stride: 1.0, cadence: [4.8, 5.2],
       follower: { mode: 'absent', steady: 3 },
       // 班长：一个人抱着作业本同向走（WP6 specials 按组 id 'monitor' 认出来）；和 @4 的脚步声 monitorSteps（pan −0.4）在同一侧。
-      // 她走 1.35 m/s、玩家 4.8 m/s，约 0.6 s 就被超过：「渐远」现在只靠脚步声，画面上要 WP6 改她的走法（见 U1 报告）
-      npcs: [{ id: 'monitor', kind: 'walkers', from: 2, to: 2, side: 'L', density: 1, gaze: 'none' }],
+      // 她走 1.35 m/s（WP6 写死）、玩家 4.8 m/s，画面上不可能「渐远」。修复单元 A：她比玩家先走、走在前面 9 m（以前 2 m，约 0.6 s
+      // 就被超过）：@0「我关灯了。」时在镜头前约 11 m（低画质雾的可读距离 12 m 以内），到 @4 的脚步声都在画面左前方，约 2.6 s（@13）才被超过。
+      // 真正的「渐远」还要 WP6 让她走得比玩家快或在画面外淡出（见报告）
+      npcs: [{ id: 'monitor', kind: 'walkers', from: 9, to: 9, side: 'L', density: 1, gaze: 'none' }],
       rows: [
         [12, ['.', '.', 'bag']],                     // 书包
         [22, ['.', 'mopBucket', '.']],              // 拖把桶

@@ -11,7 +11,7 @@ import { lineText } from '../../../src/levels/lines';
 import { segmentEvents } from '../../../src/levels/lint';
 import { OBSTACLES } from '../../../src/levels/obstacles';
 import type { ChapterDef, CompiledSegment, RunSegmentDef, SegmentDef, StillSegmentDef } from '../../../src/levels/schema';
-import { nominalTimeline, timeAtS, validateChapter } from '../../../src/levels/validate';
+import { nominalTimeline, readDistance, timeAtS, validateChapter } from '../../../src/levels/validate';
 import { solver } from '../../../src/sim/Solver';
 import { Sim } from '../../../src/sim/Sim';
 import { advancePace, createPaceState, nominalCadence, paceEvents } from '../../../src/sim/Pace';
@@ -468,6 +468,34 @@ describe('评审修复 U1 的数据形状', () => {
     expect(out.filter((d) => d.group === gi)).toHaveLength(1);
     for (const id of IDS) for (const sg of compile(ch(id)).segments) {
       for (const o of sg.obstacles) expect(['monitor', 'teacherMa'].includes(String(o.params.itemId ?? '')), `${sg.def.id} ${o.kind}`).toBe(false);
+    }
+  });
+  // 修复单元 A（第 3 轮）：说话的人在画面里。马老师（5-7）与班长（3-1）是 npc 组里的一个人：他们的台词出字时，人在追尾镜头前方、
+  // 低画质雾的可读距离（R4 同一口径）以内，三条车道的横屏机位都在水平视角里。走动的人按「组的起点 + 速度 × 段内时间」算。
+  it('马老师、班长说话时人在画面里（镜头前方、可读距离以内、水平视角里）', () => {
+    const CAM_BACK = 2.35, HALF = (76 / 2) * (Math.PI / 180);
+    const cases: Array<[ChapterId, string, string]> = [['ch5', '5-7', 'teacherMa'], ['ch3', '3-1', 'monitor']];
+    for (const [id, sid, speaker] of cases) {
+      const c = compile(ch(id));
+      const seg = c.segments.find((x) => x.def.id === sid)!;
+      const out: Decor[] = [], info: GroupInfo[] = [];
+      expandSegment(c.seed, seg, out, info);
+      const gi = info.findIndex((g) => g.key === speaker);
+      const person = out.filter((d) => d.group === gi);
+      expect(person, `${sid} ${speaker}`).toHaveLength(1);
+      const p = person[0]!;
+      const tl = nominalTimeline(seg);
+      const rd = readDistance(seg.def.atmosphere);
+      const lines = (seg.def as RunSegmentDef).events!.filter((e) => e.type === 'text' && 'speaker' in e && e.speaker === speaker);
+      expect(lines.length, `${sid} ${speaker} lines`).toBeGreaterThan(0);
+      for (const e of lines) {
+        const sp = seg.s0 + e.at * seg.stride;
+        const sN = p.s + p.speed * timeAtS(tl, sp);
+        const ahead = sN - (sp - CAM_BACK);
+        expect(ahead, `${sid} @${e.at}: ${speaker} ahead of the camera`).toBeGreaterThan(CAM_BACK + 0.5);
+        expect(ahead, `${sid} @${e.at}: ${speaker} within the readable distance ${rd.toFixed(1)} m`).toBeLessThanOrEqual(rd);
+        for (const lane of [-1, 0, 1]) expect(Math.atan2(Math.abs(p.x - 0.7 * lane * LANE_WIDTH), ahead), `${sid} @${e.at} lane ${lane}`).toBeLessThanOrEqual(HALF);
+      }
     }
   });
   it('3-7：compound kit 在栏杆前只画门卫室，栏杆不能太靠后；「它在所有……」三句都在钻栏杆之前出字，红光那句在之后', () => {
