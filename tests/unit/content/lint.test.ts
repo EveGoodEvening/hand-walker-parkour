@@ -4,7 +4,18 @@ import { availableChapters, getChapter } from '../../../src/levels/chapters/inde
 import { charCount, lintChapter, lintContent, lintStrings, lintText } from '../../../src/levels/lint';
 import type { ChapterDef } from '../../../src/levels/schema';
 import { SOURCE_CHAPTERS } from '../../../src/levels/sourceQuotes';
-import { CHAPTER_NAMES, HINTS, SPEAKERS, STR } from '../../../src/ui/strings';
+import * as UI from '../../../src/ui/strings';
+
+/** ui/strings.ts（WP8）导出的全部文字表：对象、数组、字符串（函数与 Set / Map 不是文字）。按值收集，不按导出名取，
+ *  WP8 改名或新增导出时这里照样全覆盖，不会因为名字对不上而编译失败。 */
+function uiTables(): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(UI)) {
+    if (typeof v === 'string' || Array.isArray(v)) out[k] = v;
+    else if (v !== null && typeof v === 'object' && !(v instanceof Set) && !(v instanceof Map)) out[k] = v;
+  }
+  return out;
+}
 
 const rules = (t: string, o?: Parameters<typeof lintText>[2]) => lintText(t, 't', o).map((i) => i.rule);
 
@@ -45,7 +56,9 @@ describe('lintText（R14、附录 B.8）', () => {
     expect(lintStrings(['恭喜'], 'x').map((i) => i.rule)).toContain('B.8-word');
   });
   it('当前 ui/strings.ts 通过（附录 B.8 同时作用于 ui/strings.ts）', () => {
-    expect(lintStrings({ STR, HINTS, SPEAKERS, CHAPTER_NAMES })).toEqual([]);
+    const tables = uiTables();
+    expect(Object.keys(tables).length, 'ui/strings exports at least one text table').toBeGreaterThan(0);
+    expect(lintStrings(tables)).toEqual([]);
   });
 });
 

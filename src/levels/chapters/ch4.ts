@@ -110,12 +110,12 @@ export default {
         { at: 0.0, type: 'actor', clip: 'standUp', seconds: 1.2 },
         { at: 0.3, type: 'text', line: 'c4.iStand', id: 'dreamStand' },
         { at: 1.4, type: 'text', line: 'c4.easy' },
-        { at: 1.8, type: 'crowd', group: 'onlookers', op: 'applaud' },                  // 整齐的掌声
+        { at: 1.8, type: 'crowd', group: 'ring2', op: 'applaud' },                      // 整齐的掌声（4-2 围观的环）
         { at: 1.8, type: 'ambience', amb: 'dreamApplause', level: 1, seconds: 1.0 },
         { at: 2.6, type: 'sfx', sfx: 'heartbeat' },                                     // 咚咚
         { at: 3.2, type: 'double', spec: { id: 'dreamMirror', surface: 'world', source: 'script', clip: 'smile', anchor: { sAhead: 7, lane: 1, speed: 0 }, ttl: 3 } },
         { at: 4.4, type: 'ambience', amb: 'dream', level: 1, seconds: 0.4 },          // 掌声停了
-        { at: 4.4, type: 'crowd', group: 'onlookers', op: 'crawlOvertake' },
+        { at: 4.4, type: 'crowd', group: 'imitators', op: 'crawlOvertake' },            // 4-2 爬行的模仿者从两侧超过你
         { at: 5.0, type: 'follower', def: { mode: 'behind' } },                         // 身后传来一个人的三段落地
         { at: 5.5, type: 'text', line: 'c4.overtaken', id: 'overtaken' },
         { at: 7.4, type: 'shadow', mode: 'liesDown', seconds: 4.6 },                  // 影子趴下去，双手向前伸

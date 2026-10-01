@@ -6,7 +6,8 @@
 //     none、上限 3，玩家在 @44 之前感觉不到任何差别；这样 @44、@52 不会被 R6 当作另外两次「跟随者登场」。
 //   · 5-6 站着的「我」是一个 double（从走廊尽头迎面走来、避开你的车道）加**一个** doubleMod（在 5 m 处停下、指镜子、
 //     第三只手摸脖子）；手势 hold 结束后它自己继续走过你身边（约定见 docs/contract-requests/WP2.md）。
-//   · 停拍、静场略短于表格（5-1 7.5 s、5-3 停拍 2.0 s、5-5 8 s、5-8 11 s），让非跑动占比 ≤ 25%。
+//   · 停拍、静场略短于表格（5-1 7.5 s、5-3 停拍 2.0 s、5-5 8 s），让非跑动占比 ≤ 25%。5-8 取 13 s（表中 ≤ 15 s）：
+//     起身后每 0.9 s 一步，第 7 步之后 +3.0 s 的「不是。是它们在练习。」也要显示完（等输入的时间不计入 duration）。
 import type { ChapterDef } from '../schema';
 
 export default {
@@ -240,7 +241,7 @@ export default {
     },
     /* 5-8 七步：按住 ↑ 三秒起身；脚自己迈步；第 2 步失衡；第 7 步摔倒（站立段） */
     {
-      id: '5-8', kind: 'stand', kit: 'track', variant: 'default', script: 'sevenSteps', atmosphere: 'overcast', duration: 11,
+      id: '5-8', kind: 'stand', kit: 'track', variant: 'default', script: 'sevenSteps', atmosphere: 'overcast', duration: 13,
       follower: { mode: 'absent' },
       input: { at: 0.4, hint: 'rise', mode: 'hold', holdSeconds: 3, timeout: 12,   // 8 s 不按再提示一次，12 s 后腿自己站起来
         progress: [{ at: 1, line: 'c5.oneSec' }, { at: 2, line: 'c5.twoSec' }, { at: 3, line: 'c5.threeSec' }],

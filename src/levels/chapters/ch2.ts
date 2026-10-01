@@ -1,10 +1,16 @@
 // src/levels/chapters/ch2.ts —— 第二章 · 午饭（DESIGN.md §4.2、附录 B、附录 C）。归 WP2。
 // 台词全部来自 lines.ts（原文逐字）。只 import schema（§8.2 规则 2）。
-// 与 §4.2 表格的差异（都为了 R6 / 附录 A-11「任意 20 s 内最多一个主异常」，其余照表）：
-//   · 2-6 玻璃里的它加速提前到 @40（表中 @44），2-7 回声回来推迟到 @48（表中 @20），停拍 @62、检查点 @76、
-//     「不是回音。」@84、「回音不会在我停的时候停。」@90 随之后移：两次主异常相隔 ≥ 20 s。
-//   · 2-10 从 40 拍加长到 92 拍：@2 影子指向碎角镜，@89 停拍、第三只手穿过玻璃，两者相隔 ≥ 20 s；
-//     镜子放在走廊尽头 @92，停拍时掌心正好贴上镜面。纸条 n2-b 仍在 @16 左道。
+// 与 §4.2 表格的差异（为了附录 A-11「任意 20 s 内最多一个主异常」，按 Sim 时间轴算，静场里的异常也算；
+// tests/unit/content/anomalies.test.ts 检查。其余照表）：
+//   · 2-5 第三只手贴玻璃（静场 5.0 s）→ 2-6 加速 ≥ 20 s：2-6 从 90 拍加长到 110 拍，玻璃里的它 @52 出现、@66 加速
+//     （表中 @30、@44），「玻璃里的它走得比我快。」@74，@80 走出画面；窗墙 @40–92。
+//   · 2-6 加速 → 2-7 回声回来 ≥ 20 s：回声 @54（表中 @20），停拍 @68、检查点 @78、「不是回音。」@82、「回音不会在我停的时候停。」@88，
+//     之后的障碍整体前移 4 拍，段长 136 拍（表中 140）。
+//   · 2-9 黑板上的问题（静场 6.0 s）→ 2-10 影子指向碎角镜 ≥ 20 s → 第三只手穿过玻璃 ≥ 20 s：2-10 从 40 拍加长到 140 拍，
+//     影子 @56，碎角镜里的替身 @114，停拍 @137（第三只手在停拍 2.6 s，表中 2.2 s；冷色渐变、替身消失随之后移 0.4 s），镜子在 @140。
+//     纸条 n2-b 仍在 @16 左道。
+//   · 为了让全章合计不超过 §4.6 的 +15%：2-2 从 150 拍缩到 136 拍（第三道人墙 @124 之后只留两行），2-8 从 96 拍缩到 86 拍。
+//   · 2-2 加了一个走动的腿（@46 右道，1.2 m/s，约 @62 被追上），对应表中的「走动的腿」。
 import type { ChapterDef } from '../schema';
 
 export default {
@@ -43,11 +49,11 @@ export default {
     /* 2-2 腿的森林：人墙三次、让一下（人群段） */
     {
       id: '2-2', kind: 'run', kit: 'canteen', variant: 'forest', atmosphere: 'noon', surface: 'tile',
-      beats: 150, stride: 1.0, cadence: [4.6, 5.0], checkpoints: [80], crowd: true,
+      beats: 136, stride: 1.0, cadence: [4.6, 5.0], checkpoints: [80], crowd: true,
       follower: { mode: 'absent' },
       npcs: [
-        { id: 'tables', kind: 'seatedRow', from: 0, to: 150, side: 'both', density: 0.7, gaze: 'turnShoes' },
-        { id: 'standing', kind: 'standingCluster', from: 30, to: 140, side: 'both', density: 0.6, gaze: 'turnShoes' },
+        { id: 'tables', kind: 'seatedRow', from: 0, to: 136, side: 'both', density: 0.7, gaze: 'turnShoes' },
+        { id: 'standing', kind: 'standingCluster', from: 30, to: 136, side: 'both', density: 0.6, gaze: 'turnShoes' },
       ],
       rows: [
         [14, ['.', 'chairBar', '.']],               // 第一次伏低：椅子横档
@@ -66,11 +72,10 @@ export default {
         [113, ['chairBar', 'bag', '.']],
         [130, ['longTable', '.', 'legs']],
         [134, ['bag', '.', '.']],
-        [137, ['.', 'footOut', '.']],
-        [144, ['legs', 'chairBar', '.']],
       ],
       items: [
         { at: 40, lane: [0, 1], kind: 'legs', len: 2 },                                        // 人墙 1：缝一直开在左道
+        { at: 46, lane: 1, kind: 'legs', behavior: { type: 'walk', speed: 1.2 } },             // 走动的腿：端着餐盘往前走，约 @62 被追上
         { at: 100, lane: -1, kind: 'legs', len: 2 },                                           // 人墙 2：缝原本在中道……
         { at: 100, lane: 1, kind: 'legs', len: 2, behavior: { type: 'shift', atBeat: 94, toLane: 0 } },   // ……@94 中道合上、右道打开
         { at: 124, lane: 0, kind: 'legs', id: 'girlA', behavior: { type: 'askable', ignore: 'seeded' } },   // 人墙 3：两个女生
@@ -147,31 +152,33 @@ export default {
     /* 2-6 窗墙：玻璃里的它直立行走，然后走得比我快 */
     {
       id: '2-6', kind: 'run', kit: 'canteen', variant: 'windowWall', atmosphere: 'noon', surface: 'tile',
-      beats: 90, stride: 1.0, cadence: 4.6,
+      beats: 110, stride: 1.0, cadence: 4.6,
       follower: { mode: 'absent' },
-      npcs: [{ id: 'windowTables', kind: 'seatedRow', from: 0, to: 90, side: 'R', density: 0.4, gaze: 'none' }],
-      surfaces: [{ id: 'winWall', kind: 'window', side: 'L', from: 20, to: 72, y: [0.3, 2.4], backdrop: 'playground' }],
+      npcs: [{ id: 'windowTables', kind: 'seatedRow', from: 0, to: 110, side: 'R', density: 0.4, gaze: 'none' }],
+      surfaces: [{ id: 'winWall', kind: 'window', side: 'L', from: 40, to: 92, y: [0.3, 2.4], backdrop: 'playground' }],
       rows: [
         [10, ['.', '.', 'chairBar']],               // 拉出来的椅子
         [16, ['legs', '.', '.']],
         [22, ['.', 'bag', '.']],                     // 地上的餐盘和书包
-        [60, ['.', 'chairBar', '.']],
-        [66, ['legs', '.', '.']],
-        [72, ['.', '.', 'bag']],
-        [78, ['chairBar', '.', '.']],
-        [84, ['.', 'legs', '.']],
+        [30, ['.', '.', 'legs']],
+        [36, ['chairBar', '.', '.']],
+        [80, ['.', 'chairBar', '.']],
+        [86, ['legs', '.', '.']],
+        [92, ['.', '.', 'bag']],
+        [98, ['chairBar', '.', '.']],
+        [104, ['.', 'legs', '.']],
       ],
       events: [
-        { at: 30, type: 'double', spec: { id: 'winWalk', surface: 'winWall', source: 'script', clip: 'walkUpright' } },
-        { at: 40, type: 'doubleMod', target: 'winWalk', mod: { speedFactor: 1.3 }, id: 'reflectionWalksFaster' },
-        { at: 52, type: 'text', line: 'c2.faster' },
-        { at: 58, type: 'doubleEnd', target: 'winWalk', fade: 0.6 },
+        { at: 52, type: 'double', spec: { id: 'winWalk', surface: 'winWall', source: 'script', clip: 'walkUpright' } },
+        { at: 66, type: 'doubleMod', target: 'winWalk', mod: { speedFactor: 1.3 }, id: 'reflectionWalksFaster' },
+        { at: 74, type: 'text', line: 'c2.faster' },
+        { at: 80, type: 'doubleEnd', target: 'winWalk', fade: 0.6 },
       ],
     },
     /* 2-7 实验楼走廊：回声回来了；停拍——我停，它也停 */
     {
       id: '2-7', kind: 'run', kit: 'corridor', variant: 'labNorth', atmosphere: 'labNorth', surface: 'terrazzo',
-      beats: 140, stride: 1.0, cadence: [4.8, 5.2], checkpoints: [76],
+      beats: 136, stride: 1.0, cadence: [4.8, 5.2], checkpoints: [78],
       follower: { mode: 'absent' },
       rows: [
         [10, ['.', 'pipe', '.']],                    // 地面管线
@@ -181,39 +188,41 @@ export default {
         [34, ['.', '.', 'books']],
         [37, ['.', '.', 'cart']],
         [41, ['books', '.', '.']],
-        [98, ['mopAcross', 'locker', '.']],
-        [101, ['mopAcross', '.', '.']],
-        [105, ['mopAcross', 'mopAcross', '.']],
-        [108, ['cart', 'locker', '.']],
-        [112, ['.', 'cart', 'pipe']],
-        [115, ['locker', '.', '.']],
-        [119, ['pipe', 'pipe', '.']],
-        [122, ['cart', '.', '.']],
-        [126, ['.', '.', 'mopAcross']],
-        [129, ['mopAcross', '.', '.']],
-        [133, ['.', '.', 'cart']],
-        [136, ['cart', '.', '.']],
+        [46, ['.', '.', 'locker']],
+        [74, ['pipe', '.', '.']],
+        [94, ['mopAcross', 'locker', '.']],
+        [97, ['mopAcross', '.', '.']],
+        [101, ['mopAcross', 'mopAcross', '.']],
+        [104, ['cart', 'locker', '.']],
+        [108, ['.', 'cart', 'pipe']],
+        [111, ['locker', '.', '.']],
+        [115, ['pipe', 'pipe', '.']],
+        [118, ['cart', '.', '.']],
+        [122, ['.', '.', 'mopAcross']],
+        [125, ['mopAcross', '.', '.']],
+        [129, ['.', '.', 'cart']],
+        [132, ['cart', '.', '.']],
       ],
       events: [
         { at: 0, type: 'ambience', amb: 'labWind', level: 1, seconds: 2 },
-        { at: 48, type: 'follower', def: { mode: 'behind', steady: 3 }, id: 'echoReturns' },
-        { at: 48, type: 'hud', op: 'show' },
-        { at: 48, type: 'text', line: 'c2.sameRoute' },
-        { at: 62, type: 'stop', seconds: 2.4, timeline: [
+        { at: 54, type: 'follower', def: { mode: 'behind', steady: 3 }, id: 'echoReturns' },
+        { at: 54, type: 'hud', op: 'show' },
+        { at: 54, type: 'text', line: 'c2.sameRoute' },
+        { at: 68, type: 'stop', seconds: 2.4, timeline: [
           { at: 0.2, type: 'text', line: 'c2.iStop' },
           { at: 0.9, type: 'text', line: 'c2.echoStops', id: 'echoStops' },
           { at: 1.7, type: 'text', line: 'c2.iStep' },
           { at: 1.7, type: 'autoCrawl', speed: 2.0, seconds: 0.5 },
           { at: 2.2, type: 'text', line: 'c2.echoSteps' },
         ] },
-        { at: 84, type: 'text', line: 'c2.notEcho' },
-        { at: 90, type: 'text', line: 'c2.echoRule' },
+        { at: 82, type: 'text', line: 'c2.notEcho' },
+        { at: 88, type: 'text', line: 'c2.echoRule' },
       ],
     },
     /* 2-8 化学教室：灰色的森林；腿自主抬起，一次 ↓ 同时按住和伏低（R9） */
     {
       id: '2-8', kind: 'run', kit: 'labRoom', variant: 'default', atmosphere: 'labNorth', surface: 'tile',
-      beats: 96, stride: 1.0, cadence: 4.6,
+      beats: 86, stride: 1.0, cadence: 4.6,
       follower: { mode: 'behind' },
       rows: [
         [11, ['.', 'pipe', '.']],
@@ -230,8 +239,6 @@ export default {
         [74, 'HHH', 0.8],
         [78, ['.', 'cart', '.']],
         [82, ['pipe', '.', '.']],
-        [86, ['locker', 'pipe', '.']],
-        [90, ['.', '.', 'cart']],
       ],
       events: [
         { at: 20, type: 'hint', hint: 'hold' },
@@ -266,9 +273,9 @@ export default {
     /* 2-10 碎角镜：影子指路；掌心贴掌心；第三只手穿过玻璃；脚步声从前方传来 */
     {
       id: '2-10', kind: 'run', kit: 'corridor', variant: 'labNorth', atmosphere: 'labNorth', surface: 'terrazzo',
-      beats: 92, stride: 1.0, cadence: 4.6,
+      beats: 140, stride: 1.0, cadence: 4.6,
       follower: { mode: 'behind' },
-      surfaces: [{ id: 'chipMirror', kind: 'endMirror', side: 'end', from: 92, to: 92, y: [0.1, 1.9], chipped: true, backdrop: 'darkRoom' }],
+      surfaces: [{ id: 'chipMirror', kind: 'endMirror', side: 'end', from: 140, to: 140, y: [0.1, 1.9], chipped: true, backdrop: 'darkRoom' }],
       rows: [
         [10, ['.', '.', 'cart']],
         [14, ['locker', '.', 'cart']],
@@ -282,24 +289,32 @@ export default {
         [42, ['mopAcross', '.', '.']],
         [46, ['books', 'cart', '.']],
         [49, ['mopAcross', 'locker', '.']],
-        [53, ['.', 'locker', 'pipe']],
-        [56, ['books', '.', '.']],
-        [60, ['cart', '.', '.']],
-        [78, ['.', '.', 'locker']],
-        [82, ['mopAcross', '.', '.']],
+        [70, ['.', '.', 'cart']],
+        [74, ['locker', '.', 'cart']],
+        [78, ['mopAcross', 'mopAcross', '.']],
+        [81, ['locker', '.', '.']],
+        [85, ['cart', 'mopAcross', '.']],
+        [88, ['.', 'locker', 'pipe']],
+        [92, ['.', 'books', 'locker']],
+        [95, ['mopAcross', '.', '.']],
+        [99, ['books', '.', '.']],
+        [102, ['mopAcross', '.', '.']],
+        [106, ['books', 'cart', '.']],
+        [126, ['.', '.', 'locker']],
+        [130, ['mopAcross', '.', '.']],
       ],
       notes: [{ at: 16, lane: -1, note: 'n2-b' }],
       events: [
         { at: 0, type: 'ambience', amb: 'labWind', level: 1, seconds: 1.5 },
-        { at: 2, type: 'shadow', mode: 'pointMirror', seconds: 18 },
-        { at: 66, type: 'double', spec: { id: 'chip', surface: 'chipMirror', source: 'history', delay: 0 } },
-        { at: 89, type: 'stop', seconds: 8, timeline: [
+        { at: 56, type: 'shadow', mode: 'pointMirror', seconds: 18 },
+        { at: 114, type: 'double', spec: { id: 'chip', surface: 'chipMirror', source: 'history', delay: 0 } },
+        { at: 137, type: 'stop', seconds: 8, timeline: [
           { at: 0.0, type: 'camera', shot: 'mirrorClose', seconds: 1.0 },
           { at: 0.3, type: 'actor', clip: 'palmToGlass', seconds: 4.0 },
           { at: 1.2, type: 'text', line: 'c2.whatTell', style: 'self' },
-          { at: 2.2, type: 'doubleMod', target: 'chip', mod: { thirdHand: { gesture: 'forehead', at: 0, hold: 2.0 } }, id: 'handThroughGlass' },
-          { at: 4.2, type: 'overlay', op: 'coldFade', seconds: 0.8 },
-          { at: 4.8, type: 'doubleEnd', target: 'chip', fade: 0.3 },
+          { at: 2.6, type: 'doubleMod', target: 'chip', mod: { thirdHand: { gesture: 'forehead', at: 0, hold: 2.0 } }, id: 'handThroughGlass' },
+          { at: 4.6, type: 'overlay', op: 'coldFade', seconds: 0.8 },
+          { at: 5.2, type: 'doubleEnd', target: 'chip', fade: 0.3 },
           { at: 5.6, type: 'follower', def: { from: 'front' }, id: 'approachingFront' },
           { at: 6.0, type: 'text', line: 'c2.approach' },
           { at: 8.0, type: 'end' },

@@ -218,6 +218,28 @@ describe('标志性段落的数据形状（§4）', () => {
     const flips = IDS.flatMap((id) => ch(id).segments.flatMap((s) => segmentEvents(s).filter((e) => e.type === 'flip').map(() => s.id)));
     expect(flips).toEqual(['5-11']);
   });
+  it('crowd 事件指向存在的 NPC 组：跑段用本段的组；站立段用紧挨着的前一个跑段的组（WP6 把它保留到站立段）', () => {
+    const problems: string[] = [];
+    const used: string[] = [];
+    for (const id of IDS) {
+      const segs = ch(id).segments;
+      segs.forEach((s, i) => {
+        const crowd = segmentEvents(s).filter((e) => e.type === 'crowd');
+        if (!crowd.length) return;
+        let groups: readonly { id?: string }[] = [];
+        if (s.kind === 'run') groups = s.npcs ?? [];
+        else if (s.kind === 'stand') { const prev = segs[i - 1]; groups = prev?.kind === 'run' ? (prev.npcs ?? []) : []; }
+        const ids = new Set(groups.map((g) => g.id));
+        for (const e of crowd) {
+          if (e.type !== 'crowd') continue;
+          used.push(`${s.id}:${e.group}:${e.op}`);
+          if (!ids.has(e.group)) problems.push(`${s.id} crowd ${e.op} → '${e.group}' (available: ${[...ids].join(', ') || 'none'})`);
+        }
+      });
+    }
+    expect(problems).toEqual([]);
+    expect(used).toEqual(['4-3:ring2:applaud', '4-3:imitators:crawlOvertake', '5-6:recessSides:centerShoes', '5-8:class5:turnShoes']);
+  });
   it('搭肩的第三只手只在 3-10 卫生间镜子与 5-4 厕所镜子（附录 A-12）', () => {
     const where: string[] = [];
     for (const id of IDS) for (const s of ch(id).segments) for (const e of segmentEvents(s)) {
