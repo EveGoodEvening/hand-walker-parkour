@@ -1,6 +1,6 @@
 // tests/unit/content/chapters.test.ts —— 五章数据（DESIGN.md §4、§8.10 WP2 验收 1–4、6，附录 B.1、B.3、附录 C）。归 WP2。
 import { describe, expect, it } from 'vitest';
-import { CORRIDOR_WIDTH, LANE_WIDTH, LIMITS, TEXT, TICK_DT } from '../../../src/core/constants';
+import { CORRIDOR_WIDTH, LANE_WIDTH, LIMITS, MIN_ACTION_GAP, TEXT, TICK_DT } from '../../../src/core/constants';
 import { FALLBACK_ATMOSPHERES } from '../../../src/core/fallbacks';
 import { QUALITY } from '../../../src/core/quality';
 import type { ChapterId, ObstacleClass } from '../../../src/core/types';
@@ -11,13 +11,14 @@ import { lineText } from '../../../src/levels/lines';
 import { segmentEvents } from '../../../src/levels/lint';
 import { OBSTACLES } from '../../../src/levels/obstacles';
 import type { ChapterDef, CompiledSegment, RunSegmentDef, SegmentDef, StillSegmentDef } from '../../../src/levels/schema';
-import { nominalTimeline, timeAtS, validateChapter } from '../../../src/levels/validate';
+import { nominalTimeline, readDistance, segmentDensity, timeAtS, validateChapter } from '../../../src/levels/validate';
 import { solver } from '../../../src/sim/Solver';
 import { Sim } from '../../../src/sim/Sim';
 import { advancePace, createPaceState, nominalCadence, paceEvents } from '../../../src/sim/Pace';
 import { expandSegment, type Decor, type GroupInfo } from '../../../src/render/npc/crowds';
 import { specialById, specialOfGroup } from '../../../src/render/npc/specials';
 import { NOTE_OPEN } from '../../../src/ui/hud/Hud';
+import { FOLLOW } from '../../../src/render/camera/shots';
 
 const IDS = ['ch1', 'ch2', 'ch3', 'ch4', 'ch5'] as const;
 const ch = (id: ChapterId) => getChapter(id) as ChapterDef;
@@ -336,6 +337,25 @@ describe('§2.8 难度曲线：最后一个跑段是减速的叙事收束，不�
     expect(inputs('ch3', '3-6')).toBeGreaterThanOrEqual(inputs('ch3', '3-4'));
     expect(inputs('ch4', '4-5')).toBeGreaterThanOrEqual(inputs('ch4', '4-1'));
   });
+  // 修复单元 A（第 3 轮复验）：行的 20 拍峰值只数行，看不出「最密的一小段要按几次」。按 bot:difficulty 的口径
+  // （segmentDensity：去掉纸条、本章最小间隔下求解器的最少输入）数任意 20 拍里的必需输入，最后一个跑段必须**严格**低于高潮。
+  // 第五章：5-3 的步频 5.8 时 0.6 s 最小间隔约 3.5 拍，20 拍最多 6 次（3.0），5-11 也排到 6 次就和高潮打平（§4.5「不是 boss 关」）。
+  it.each(IDS)('%s：最后一个跑段最密的 20 拍（必需输入）低于技巧高潮', (id) => {
+    const runs = compile(ch(id)).segments.filter((s) => s.kind === 'run');
+    const last = runs[runs.length - 1]!;
+    const climaxIds = id === 'ch4' ? [] : id === 'ch5' ? ['5-3'] : runs.slice(-3, -1).map((s) => s.def.id);
+    if (!climaxIds.length) return;   // 第四章的高潮就是最后的 4-5
+    const peak = (seg: CompiledSegment) => {
+      const d = segmentDensity(seg, MIN_ACTION_GAP[id], solver)!;
+      expect(d, seg.def.id).not.toBeNull();
+      const at = d.route.split(' ').filter(Boolean).map((x) => Number(x.slice(1)));
+      let best = 0;
+      for (let a = 0; a + 20 <= (seg.def as RunSegmentDef).beats; a += 0.5) best = Math.max(best, at.filter((x) => x >= a && x < a + 20).length);
+      return best;
+    };
+    const top = Math.max(...runs.filter((s) => climaxIds.includes(s.def.id)).map(peak));
+    expect(peak(last), `${last.def.id} vs ${climaxIds.join('/')}`).toBeLessThan(top);
+  });
 });
 
 describe('5-11 门牌（§4.5「@208 画面水平翻转（门牌成了反字）」）', () => {
@@ -468,6 +488,43 @@ describe('评审修复 U1 的数据形状', () => {
     expect(out.filter((d) => d.group === gi)).toHaveLength(1);
     for (const id of IDS) for (const sg of compile(ch(id)).segments) {
       for (const o of sg.obstacles) expect(['monitor', 'teacherMa'].includes(String(o.params.itemId ?? '')), `${sg.def.id} ${o.kind}`).toBe(false);
+    }
+  });
+  // 修复单元 A（第 3 轮）：说话的人在画面里。马老师（5-7）与班长（3-1）是 npc 组里的一个人：他们的台词出字时，人在追尾镜头前方、
+  // 低画质雾的可读距离（R4 同一口径）以内，三条车道的机位都在水平视角里。横屏、竖屏两种追尾机位都查（render/camera/shots.ts 的
+  // FOLLOW：横屏在身后 2.8 m、水平视角 76°；竖屏在身后 3.8 m、竖直视角 80°，按 9:16 换成水平视角约 50.6°）。
+  // 走动的人按「组的起点 + 速度 × 段内时间」算。
+  it('马老师、班长说话时人在画面里（横屏、竖屏镜头前方、可读距离以内、水平视角里）', () => {
+    const rad = Math.PI / 180;
+    const cams = [
+      { name: 'landscape', back: FOLLOW.landscape.back, k: FOLLOW.landscape.k, half: (FOLLOW.landscape.hfov / 2) * rad },
+      { name: 'portrait', back: FOLLOW.portrait.back, k: FOLLOW.portrait.k, half: Math.atan(Math.tan((FOLLOW.portrait.vMax / 2) * rad) * (9 / 16)) },
+    ];
+    const cases: Array<[ChapterId, string, string]> = [['ch5', '5-7', 'teacherMa'], ['ch3', '3-1', 'monitor']];
+    for (const [id, sid, speaker] of cases) {
+      const c = compile(ch(id));
+      const seg = c.segments.find((x) => x.def.id === sid)!;
+      const out: Decor[] = [], info: GroupInfo[] = [];
+      expandSegment(c.seed, seg, out, info);
+      const gi = info.findIndex((g) => g.key === speaker);
+      const person = out.filter((d) => d.group === gi);
+      expect(person, `${sid} ${speaker}`).toHaveLength(1);
+      const p = person[0]!;
+      const tl = nominalTimeline(seg);
+      const rd = readDistance(seg.def.atmosphere);
+      const lines = (seg.def as RunSegmentDef).events!.filter((e) => e.type === 'text' && 'speaker' in e && e.speaker === speaker);
+      expect(lines.length, `${sid} ${speaker} lines`).toBeGreaterThan(0);
+      for (const e of lines) {
+        const sp = seg.s0 + e.at * seg.stride;
+        const sN = p.s + p.speed * timeAtS(tl, sp);
+        for (const cam of cams) {
+          const ahead = sN - (sp - cam.back);
+          const at = `${sid} @${e.at} ${cam.name}`;
+          expect(ahead, `${at}: ${speaker} ahead of the player`).toBeGreaterThan(cam.back + 0.5);
+          expect(ahead, `${at}: ${speaker} within the readable distance ${rd.toFixed(1)} m`).toBeLessThanOrEqual(rd);
+          for (const lane of [-1, 0, 1]) expect(Math.atan2(Math.abs(p.x - cam.k * lane * LANE_WIDTH), ahead), `${at} lane ${lane}`).toBeLessThanOrEqual(cam.half);
+        }
+      }
     }
   });
   it('3-7：compound kit 在栏杆前只画门卫室，栏杆不能太靠后；「它在所有……」三句都在钻栏杆之前出字，红光那句在之后', () => {

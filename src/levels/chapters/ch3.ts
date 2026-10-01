@@ -23,6 +23,14 @@
 //     没有前文，读不出「盖」指什么；@58 是前两行显示完之后，R5 窗口在 @55.4 的伏低之后）。
 //   · 结尾卡在「它们在练习。」之前加原文「然后我的右脚动了。」（代替 fidelity 提的 3-11 静场：那会让非跑动超出 R13 的 25%）。
 //   · 3-1 加一个 npc 组 'monitor'（班长同向走，和 @4 的脚步声 pan −0.4 同侧），WP6 的 specials 按组 id 认出来；她很快被超过，「渐远」只靠脚步声。
+//   · 第二轮加密（修复单元 A，第 3 轮，第二次重排；取代上面 3-6「1.0 次 / 10 拍」）：3-6 是本章高潮，按 §4.3 的部件轮流来——
+//     横跨三道的路沿（撑跃）、半开的卷帘门（伏低，全段 4 道）、只留一条缝的电动车和垃圾桶；「挤一下」4 处（停成一排的电动车挡住
+//     你那条车道 3 拍，车尾之后 1.5 拍只有那条车道有缝）。倒地的自行车（bikeDown，3-4 的同一种，低矮）只作点缀，全段 4 处（偏离 §4.3 的部件表，
+//     建议 lead 写进 §10.4）。求解器按 0.65 s 最小间隔 1.07 → 1.67 次 / 10 拍（25 次）。为了腾出检查点之后的跑动，回头窗口 @86–94 → @79–87
+//     （提示 @84 → @77，紧接检查点 @76 的 1.6 s 喘息），「我已经知道回头没用。」@100 → @88（窗口结束之后）。
+//     3-4 前半段约每 7 拍一个、车棚之后约每 4 拍一个（0.95 → 1.55，低于 3-6）。human 机器人 200 次：3-6 15.0% / 15.0%（施压，上限 2）；
+//     3-4 3.0% / 0.5%：behind 稳度 3，即使把可跑的拍子全部排成最小间隔的撑跃链也只有 6%，到不了 §2.8 的 9%（见修复报告）。
+//   · 3-1 班长（monitor 组）从 @2 挪到 @4：她先走、走在前面，说话时在画面里，@14 跟随者登场之前已经出画（见 3-1 段内注释）。
 import type { ChapterDef } from '../schema';
 
 export default {
@@ -44,8 +52,12 @@ export default {
       beats: 110, stride: 1.0, cadence: [4.8, 5.2],
       follower: { mode: 'absent', steady: 3 },
       // 班长：一个人抱着作业本同向走（WP6 specials 按组 id 'monitor' 认出来）；和 @4 的脚步声 monitorSteps（pan −0.4）在同一侧。
-      // 她走 1.35 m/s、玩家 4.8 m/s，约 0.6 s 就被超过：「渐远」现在只靠脚步声，画面上要 WP6 改她的走法（见 U1 报告）
-      npcs: [{ id: 'monitor', kind: 'walkers', from: 2, to: 2, side: 'L', density: 1, gaze: 'none' }],
+      // 她走 1.35 m/s（WP6 写死）、玩家 4.8 m/s，画面上不可能「渐远」，只能靠脚步声。修复单元 A（第 3 轮）：她在玩家前方 4 m 起步
+      // （第一次是 2 m，约 0.6 s 就被超过；第二次是 9 m，@12.5 才被超过，@14「另一串脚步声」之前 0.3 s 还在画面左沿）。
+      // 现在 @0「我关灯了。」时她在横屏镜头前 6.8 m、竖屏 7.8 m（低画质雾的可读距离 12.3 m 以内），「嗯。」时正从左边被超过（约 @5.6），
+      // 从中道看约 1.3–1.4 s（@6–7）出画，从左道看约 1.7 s（@8）出画；@14 的跟随者登场前 1 s（1.9 s）画面里已经没有人。
+      // @4 起「先轻后重」的脚步声留在身后、越来越远。她真的走得比玩家远，要 WP6 给她单独的速度（见修复报告）。
+      npcs: [{ id: 'monitor', kind: 'walkers', from: 4, to: 4, side: 'L', density: 1, gaze: 'none' }],
       rows: [
         [12, ['.', '.', 'bag']],                     // 书包
         [22, ['.', 'mopBucket', '.']],              // 拖把桶
@@ -135,55 +147,48 @@ export default {
       follower: { mode: 'behind' },
       surfaces: [{ id: 'bigPuddle', kind: 'puddle', side: 'floor', from: 111, to: 114, lane: 0 }],
       rows: [
-        [12, ['.', '.', 'puddle']],
-        [15, ['bikeDown', '.', '.']],
-        [19, ['bikeRack', '.', '.']],
-        [22, ['bikeRack', '.', '.']],
-        [26, ['.', '.', 'bin']],
-        [29, ['bikeRack', '.', '.']],
-        [33, ['.', '.', 'bikeRack']],
-        [36, ['bin', '.', '.']],
-        [40, ['.', 'puddle', '.']],
-        [47, ['.', '.', 'puddle']],
-        [56, ['.', 'bikeRack', 'puddle']],
-        [61, ['.', '.', 'curb']],
-        [64, ['bikeRack', 'bin', '.']],
-        [68, ['bikeDown', '.', '.']],
-        [71, ['.', 'bin', 'bikeDown']],
-        [75, ['bikeRack', '.', 'bikeDown']],
-        [78, ['.', '.', 'bikeRack']],
-        [82, ['bollard', 'bollard', '.']],
-        [85, ['.', '.', 'bikeRack']],
-        [90, ['puddle', '.', 'bollard']],
-        [96, ['bollard', '.', '.']],
-        [99, ['.', '.', 'bikeRack']],
-        [103, ['bikeRack', '.', 'bikeDown']],
+        // 第二轮加密（第 3 轮重排）：倒地的自行车（撑跃）、车棚铁架（伏低）、只留一条缝的路桩和垃圾桶轮流来，前半段约每 7 拍一个，
+        // 车棚之后约每 4 拍一个；检查点之后同样由疏到密。「挤一下」：一排垃圾桶挡住你那条车道 3 拍，尾巴之后 1.5 拍只有那条车道有缝。
+        // 求解器最少输入 1.55 次 / 10 拍，低于本章高潮 3-6。
+        [12, ['.', 'bin', 'bin']],                       // 垃圾桶只留一条缝
+        [13, ['.', '.', 'puddle']],                      // 水洼（软，里面有倒影）
+        [19, ['bikeDown', 'bikeDown', 'bikeDown']],      // 倒地的自行车（撑跃）
+        [26, ['bikeRack', 'bikeRack', 'bikeRack']],      // 车棚铁架（伏低）
+        [33, ['bollard', '.', 'bollard']],               // 路桩第一次出现：这一行只有它（R7）
+        [40, ['.', 'puddle', '.']],                      // 车棚（@40–@80）：铁皮顶雨声很响
+        [46, ['bollard', 'bollard', '.']],
+        [47, ['puddle', '.', '.']],
+        [50, ['bikeRack', 'bikeRack', 'bikeRack']],
+        [53.5, ['bin', '.', 'bin']],                     // 「但今天它没有盖。」（@58）之前最后一个动作
+        [65, ['bikeDown', 'bikeDown', 'bikeDown']],
+        [69, ['.', 'bin', '.'], 3],                      // 一排垃圾桶挡住中道 3 拍……
+        [73.5, ['bollard', '.', 'bollard']],             // ……尾巴之后 1.5 拍只有中道有缝（挤一下）
+        [77.5, ['bikeDown', 'bikeDown', 'bikeDown']],
+        [81, ['bikeDown', 'bikeDown', 'bikeDown']],
+        [85, ['bin', 'bin', '.']],
+        [89, ['bikeDown', 'bikeDown', 'bikeDown']],
+        [90, ['puddle', '.', '.']],
+        [93, ['bollard', '.', 'bin']],
+        [97, ['bikeDown', 'bikeDown', 'bikeDown']],      // 检查点（@104）之前最后一个动作
         [106, ['puddle', '.', '.']],
-        [119, ['.', 'bikeRack', 'bikeRack']],       // 静音段里的三个必需动作（只能靠眼睛读）
-        [123, ['bollard', 'bollard', '.']],
-        [127, ['.', 'curb', 'curb']],
-        [130, ['curb', '.', '.']],
+        [119, ['.', 'bikeRack', 'bikeRack']],            // 静音段里的三个必需动作（只能靠眼睛读）
+        [123, ['bollard', '.', 'bollard']],
+        [127, ['bikeDown', 'bikeDown', 'bikeDown']],
+        [131.5, ['.', 'bin', 'bin']],
         [133, ['.', '.', 'puddle']],
-        [134, ['curb', '.', '.']],
-        [137, ['bikeRack', '.', 'bollard']],
-        [141, ['.', 'bin', 'bin']],
-        [144, ['.', '.', 'bollard']],
-        [148, ['bikeRack', 'bikeDown', '.']],             // 右道留给被雨泡过的纸条 n3-b
-        [151, ['bikeRack', 'curb', '.']],
-        [155, ['bikeDown', '.', 'curb']],
-        [158, ['.', '.', 'bikeDown']],
+        [135.5, ['bikeDown', 'bikeDown', 'bikeDown']],
+        [140, ['bollard', '.', 'bin']],
+        [148, ['bin', 'bin', '.']],                      // 右道 @150 是被雨泡过的纸条 n3-b
+        [152, ['bikeDown', 'bikeDown', 'bikeDown']],
+        [156, ['bin', '.', 'bollard']],
         [160, ['.', 'puddle', '.']],
-        [162, ['bikeRack', 'curb', '.']],
-        [166, ['curb', '.', 'puddle']],
-        [169, ['.', 'bollard', 'bikeRack']],
-        [172, ['bikeRack', '.', 'bikeDown']],
-        [176, ['bin', '.', '.']],
-        [179, ['.', 'curb', 'curb']],
-        [182, ['.', '.', 'puddle']],
-        [183, ['bin', '.', '.']],
-        [186, ['bollard', '.', 'bikeDown']],
-        [190, ['.', 'bollard', '.']],
-        [193, ['bikeRack', 'bikeDown', '.']],
+        [162, ['.', 'bin', '.'], 3],                     // 挤一下
+        [166.5, ['bollard', '.', 'bin']],
+        [170.5, ['bikeDown', 'bikeDown', 'bikeDown']],
+        [174.5, ['bikeDown', 'bikeDown', 'bikeDown']],
+        [178.5, ['bin', 'bin', '.']],
+        [182.5, ['bikeDown', 'bikeDown', 'bikeDown']],
+        [190.5, ['bollard', '.', 'bin']],
       ],
       items: [
         { at: 110, lane: 0, kind: 'puddle', len: 3 },                                     // 中道那个大水洼
@@ -238,47 +243,44 @@ export default {
       // 每个乐句都要有一个中道的部件（只占边道的行对中道的玩家是被动的）；后半段「它不在我身后。」那几句挪到 3-7 之后，
       // @104 起再补几个乐句（见文件头）
       rows: [
-        [13, ['.', '.', 'shutterHalf']],
-        [16, ['scooter', '.', '.']],
-        [20, ['curb', 'bin', 'curb']],
-        [23, ['shutterHalf', '.', 'bin']],
-        [27, ['.', 'bin', 'scooter']],
-        [33, ['.', 'curb', 'puddle']],
-        [37, ['curb', '.', 'curb']],
-        [41, ['curb', 'curb', '.']],
-        [44, ['.', 'bin', 'bin']],
-        [48, ['.', 'curb', 'curb']],
-        [51, ['shutterHalf', 'curb', '.']],
-        [55, ['scooter', '.', 'scooter']],
-        [58, ['shutterHalf', '.', 'bin']],
-        [62, ['shutterHalf', 'curb', '.']],
-        [67, ['.', 'puddle', '.']],
-        [72, ['curb', 'bin', '.']],
-        [84, ['.', '.', 'curb']],
-        [88, ['shutterHalf', '.', '.']],
-        [92, ['shutterHalf', '.', '.']],
-        [96, ['.', '.', 'shutterHalf']],
-        [100, ['.', '.', 'shutterHalf']],
-        [108, ['.', 'curb', 'bin']],
-        [112, ['bin', '.', 'shutterHalf']],
-        [115, ['curb', 'shutterHalf', '.']],
-        [118, ['shutterHalf', 'curb', '.']],
-        [121, ['curb', 'bin', '.']],
-        [125, ['shutterHalf', '.', '.']],
-        [128, ['.', 'curb', 'bin']],
-        [132, ['shutterHalf', '.', 'curb']],
-        [135, ['shutterHalf', 'curb', '.']],
-        [139, ['shutterHalf', '.', 'bin']],
-        [142, ['curb', 'curb', 'bin']],
+        // 第二轮加密（第 3 轮重排，取代上一轮几乎全是倒地自行车的版本）：§4.3 的部件轮流来——横跨三道的路沿（撑跃）、半开的卷帘门
+        // （伏低，约每 16–20 拍一道，全段 4 道）、只留一条缝的电动车和垃圾桶（换道）。前半段约每 5 拍一个、后半段约每 4 拍一个。
+        // 「挤一下」：停成一排的电动车挡住你那条车道 3 拍，车尾之后 1.5 拍只有那条车道有缝（全段 4 处）。
+        [12, ['curb', 'curb', 'curb']],                  // 路沿（撑跃）
+        [17.5, ['scooter', 'scooter', '.']],             // 电动车第一次出现：这一行只有它（R7）
+        [23, ['.', '.', 'scooter'], 3],                  // 停成一排的电动车挡住右道 3 拍……
+        [27.5, ['scooter', 'bin', '.']],                 // ……车尾之后 1.5 拍只有右道有缝（挤一下）
+        [33, ['shutterHalf', 'shutterHalf', 'shutterHalf']], // 半开的卷帘门（伏低）
+        [39, ['bin', '.', 'scooter']],                   // 左道 @40 是纸条 n3-c
+        [43, ['.', 'scooter', '.'], 3],                  // 挤一下
+        [47.5, ['bin', '.', 'scooter']],
+        [51.5, ['curb', 'curb', 'curb']],
+        [55.5, ['shutterHalf', 'shutterHalf', 'shutterHalf']],
+        [59, ['curb', 'curb', 'curb']],                  // 「五根手指朝着地面……」（@64）之前最后一个动作
+        [61, ['.', 'puddle', '.']],                      // 水洼（软）
+        [71.5, ['scooter', 'bikeDown', 'bin']],          // 电动车和垃圾桶之间倒着一辆自行车：只能从中道撑过去
+        [75, ['curb', 'curb', 'curb']],                  // 检查点（@76）之前
+        [95.5, ['curb', 'curb', 'curb']],                // 回头窗口、「我已经知道回头没用。」之后
+        [99.5, ['.', 'scooter', '.'], 3],                // 挤一下
+        [104, ['bin', '.', 'scooter']],
+        [108, ['shutterHalf', 'shutterHalf', 'shutterHalf']],
+        [111.5, ['bikeDown', 'bikeDown', 'bikeDown']],   // 倒地的自行车（bikeDown，低矮，点缀：全段 4 处）
+        [115.5, ['.', 'scooter', '.'], 3],               // 挤一下
+        [120, ['bin', '.', 'scooter']],
+        [124, ['shutterHalf', 'shutterHalf', 'shutterHalf']],
+        [128, ['curb', 'curb', 'curb']],                 // 最后一段：路沿和倒地的自行车交替
+        [132, ['bikeDown', 'bikeDown', 'bikeDown']],
+        [136, ['curb', 'curb', 'curb']],
+        [140, ['bikeDown', 'bikeDown', 'bikeDown']],     // 最后一排：之后「它不在我身后。」（@145）
       ],
-      windows: [{ id: 'lookUseless', from: 86, to: 94, type: 'lookBack', gain: 0 }],
+      windows: [{ id: 'lookUseless', from: 79, to: 87, type: 'lookBack', gain: 0 }],
       notes: [{ at: 40, lane: -1, note: 'n3-c' }],
       events: [
         { at: 4, type: 'text', line: 'c3.closer', id: 'closerNow' },
         { at: 64, type: 'text', line: 'c3.fingersDown', id: 'graffitiHand' },
-        { at: 84, type: 'hint', hint: 'look' },
-        { at: 100, type: 'text', line: 'c3.useless', id: 'uselessLookBack' },
-        // 原文紧接「我已经知道回头没用。」：最后一排（@142）之后、卷帘门和水洼还在两边的时候出字
+        { at: 77, type: 'hint', hint: 'look' },
+        { at: 88, type: 'text', line: 'c3.useless', id: 'uselessLookBack' },
+        // 原文紧接「我已经知道回头没用。」：最后一排（@140）之后、卷帘门和水洼还在两边的时候出字
         { at: 145, type: 'text', line: 'c3.notBehind' },
       ],
     },
