@@ -82,3 +82,6 @@
   - 先在 Node 里把能算的都算完（kit 逐变体 build、姿势用软件光栅器、人群路径间距、声音离线渲染），浏览器只用来确认「看上去对」。截图清单里的数值验收要在同一页里自带断言（条件不满足就 `throw`）。
   - 等重命令（verify、e2e、截图）：经 heavy-gate 用 `run_in_background` 启动、把输出写进日志并在末尾追加 `EXIT $?`，再用 Monitor 的 `until grep -q '^EXIT' log; do sleep 3; done` 等（前台长 sleep 会被拦截）。截图一律写成 `shot.mjs --plan` 清单，一个浏览器拍完一批，再用 PIL 拼成网格图一次查看。
   - 量「修复前」的数字不必切分支：`git archive HEAD src tests tsconfig.json package.json | tar -x -C <scratch>/old`，再软链 `node_modules`。
+- **第三次整体被杀的原因（2026-10-01 11:22，内核日志 `Out of memory: Killed process … (MainThread) anon-rss:11151488kB`）**：Node 24 的进程名是 `MainThread`。某个 agent 为了跑 scratchpad 里的临时测试，执行了 `npx vitest run --root / <file>`。vitest/vite 以 `/` 为根扫描整个文件系统，Node 进程涨到 11 GB，全局 OOM 把整个 tmux scope 连同会话一起杀掉。规则：
+  - **永远不要**给 vitest/vite 传 `--root /` 或任何 worktree 之外的大目录。临时测试文件放进 worktree 的 `tests/unit/<包>/tmp-*.test.ts` 跑，提交前删掉；或者 `npx vitest run <file> --root <worktree>`。
+  - 仓库根的 `.npmrc` 设了 `node-options=--max-old-space-size=4096`，`npm run`、`npx`、`npm exec` 都会继承，失控时只会报 heap OOM，不会拖垮整台机器。直接 `node`/`tsx` 跑的临时脚本不经过 npm，要自己加 `NODE_OPTIONS=--max-old-space-size=4096`。可能吃大内存的临时命令（整章求解、全量扫描）用 `systemd-run --user --scope -q -p MemoryMax=4G -p MemorySwapMax=0 -- <命令>` 包起来，失控时只杀它自己（已验证可用）。
