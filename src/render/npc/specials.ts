@@ -12,7 +12,7 @@ import { reducedPulse } from './behaviors';
 import type { KitId } from '../../core/types';
 import type { CompiledObstacle, NpcGroupDef } from '../../levels/schema';
 import { C } from './colors';
-import { propHex } from '../wallTone';
+import { tonedHex } from './tone';
 
 export type SpecialId = 'chenMo' | 'directorZhou' | 'teacherMa' | 'monitor' | 'dreamBoy';
 
@@ -101,8 +101,9 @@ export function lookFor(crowd: Crowd, seed: number, salt: string): Look {
   const skirt = crowd === 'teacher' && r.next() < 0.3;
   const stripes = crowd === 'track' && r.next() < 0.5;
   return {
-    // lead 集成：深色衣物按「画面上的颜色」反推反照率（WP3 的 propHex；亮色原样），抽取顺序不变
-    pants: propHex(r.pick(p.pants)), shirt: propHex(r.pick(p.shirt)), shoes: propHex(r.pick(p.shoes)), skin: C.skin,
+    // lead 集成：深色衣物按「画面上的颜色」反推反照率（WP3 的 propHex；亮色原样），抽取顺序不变。
+    // tonedHex 同时记下色板原值，户外段按那个氛围重新反推（tone.ts，U6）
+    pants: tonedHex(r.pick(p.pants)), shirt: tonedHex(r.pick(p.shirt)), shoes: tonedHex(r.pick(p.shoes)), skin: C.skin,
     hips: skirt ? HIPS.skirt : stripes ? HIPS.trackPants : HIPS.trousers,
     legs: skirt ? LEGV.bare : stripes ? LEGV.stripe : LEGV.plain,
     shoe: skirt ? 1 : 0, hair: r.next() < 0.45 ? 1 : 0, upper: crowd === 'dream', ember: false,

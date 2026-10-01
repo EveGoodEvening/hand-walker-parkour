@@ -18,6 +18,7 @@ import { InstPool } from './InstPool';
 import { applyNpcPatch, PartBuilder } from './material';
 import { C } from './colors';
 import { HIPS, LEGV, type HipsVariant, type Look } from './specials';
+import { NpcTone } from './tone';
 
 /** 骨架尺寸（米）。站立时髋关节高 0.905，腰带在 1.03–1.07。 */
 export const BODY = { thigh: 0.43, shin: 0.4, ankle: 0.075, stance: 0.115, belt: 0.14 } as const;
@@ -39,6 +40,8 @@ export interface Person {
   upper: boolean;
   /** 离玩家近（U6）：0..1，> 0 时也画躯干和头（竖直按这个比例从腰里长出来）；低画质只看这一项。 */
   near: number;
+  /** 站在户外 kit（street、plaza、track）里：衣服颜色的受光补偿不算灯（tone.ts，U6）。 */
+  outdoor: boolean;
   /** 鼓掌：0 不鼓掌，1 张开，2 合上。 */
   clap: 0 | 1 | 2;
   /** 自发光（烟头）。 */
@@ -55,7 +58,7 @@ export function newPerson(look: Look): Person {
   return {
     x: 0, y: 0, z: 0, yaw: 0, hipH: STAND_HIP, stance: BODY.stance,
     hipL: 0, hipR: 0, kneeL: 0, kneeR: 0, legYawL: 0, legYawR: 0, footYawL: 0, footYawR: 0,
-    lean: 0, roll: 0, dx: 0, bob: 0, turn: 0, look, upper: false, near: 0, clap: 0, glow: 0, targetL: null, seated: false, squat: false, arms: false,
+    lean: 0, roll: 0, dx: 0, bob: 0, turn: 0, look, upper: false, near: 0, outdoor: false, clap: 0, glow: 0, targetL: null, seated: false, squat: false, arms: false,
   };
 }
 
@@ -311,6 +314,8 @@ const TIGHTS = 0x2a3136;
 
 export class LegForest {
   readonly group = new THREE.Group();
+  /** 衣服颜色的受光补偿（随段的氛围变，ObstacleView 每帧更新；U6）。 */
+  readonly tone = new NpcTone();
   private parts = new Map<PartId, InstPool>();
   /** 各部件（init 之后；热路径里不查 Map）。 */
   private p!: Record<PartId, InstPool>;
@@ -375,8 +380,9 @@ export class LegForest {
     _q.setFromAxisAngle(_v.set(0, 1, 0), p.yaw);
     _root.compose(_w.set(p.x, p.y, p.z), _q, _one);
     const look = p.look;
-    _col.setHex(look.legs === LEGV.bare ? TIGHTS : look.pants);
-    _col2.setHex(look.shoes);
+    const tone = this.tone, out = p.outdoor;
+    tone.color(look.legs === LEGV.bare ? TIGHTS : look.pants, out, _col);
+    tone.color(look.shoes, out, _col2);
     const legV = low ? 0 : look.legs;
     for (const s of SIDES) {
       const hip = s < 0 ? p.hipL : p.hipR, knee = s < 0 ? p.kneeL : p.kneeR;
@@ -429,15 +435,15 @@ export class LegForest {
     const armsOn = p.arms && !(upperOn && p.clap > 0);
     if (low) {
       const [sp, v] = LOW_SLOT[look.hips] ?? [false, 0];
-      (sp ? P.special : P.hipsLow).push(_a, v, p.glow, _col.setHex(hipsHex));
-      if (armsOn) P.hipsLow.push(_a, LOW_ARMS, 0, _col.setHex(look.shirt));
-      if (upperOn) P.upperLow.push(this.grown(upperK), 0, 0, _col.setHex(look.shirt));
+      (sp ? P.special : P.hipsLow).push(_a, v, p.glow, tone.color(hipsHex, out, _col));
+      if (armsOn) P.hipsLow.push(_a, LOW_ARMS, 0, tone.color(look.shirt, out, _col));
+      if (upperOn) P.upperLow.push(this.grown(upperK), 0, 0, tone.color(look.shirt, out, _col));
       return;
     }
-    P.hips.push(_a, look.hips === HIPS.noHands ? HIPS.trousers : look.hips, p.glow, _col.setHex(hipsHex));
-    if (armsOn) P.hips.push(_a, HIPS.arms, 0, _col.setHex(look.shirt));
+    P.hips.push(_a, look.hips === HIPS.noHands ? HIPS.trousers : look.hips, p.glow, tone.color(hipsHex, out, _col));
+    if (armsOn) P.hips.push(_a, HIPS.arms, 0, tone.color(look.shirt, out, _col));
     if (upperOn) {
-      _col.setHex(look.shirt);
+      tone.color(look.shirt, out, _col);
       const m = this.grown(upperK);
       if (this.tier === 'high') {
         P.torso.push(m, p.clap, 0, _col);

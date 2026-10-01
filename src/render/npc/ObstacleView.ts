@@ -20,7 +20,7 @@ import { LANE_WIDTH } from '../../core/constants';
 import type { GameEvent } from '../../core/events';
 import { clamp01, easeInOutSine, lerp, smoothstep } from '../../core/math';
 import { createRng } from '../../core/rng';
-import type { AABB, ChapterId, CrowdOp, KitId, SimSnapshot } from '../../core/types';
+import type { AABB, AtmosphereId, ChapterId, CrowdOp, KitId, SimSnapshot } from '../../core/types';
 import { urlParams } from '../../core/urlParams';
 import { OBSTACLES } from '../../levels/obstacles';
 import type { CompiledChapter, CompiledObstacle, CompiledSegment, RunSegmentDef } from '../../levels/schema';
@@ -39,6 +39,7 @@ import { footSeat } from './archetypes/footOut';
 import { MAX_EXPAND } from './archetype';
 import { obstacleState, type ObstacleState } from './simBridge';
 import { HIPS, crowdOfKit, emberGlow, itemIdOf, lookFor, specialLook, specialOfObstacle, type Look, type SpecialId } from './specials';
+import { OUTDOOR_KITS } from './tone';
 
 const DEG = Math.PI / 180;
 /**
@@ -289,6 +290,7 @@ export class ObstacleView implements ViewSystem {
 
   onReset(snap: SimSnapshot): void {
     this.resetState();
+    this.forest.tone.snap(this.atmosphereId(snap.segIndex));
     const segs = this.chapter?.segments ?? [];
     const i0 = snap.segIndex;
     const seg = segs[i0];
@@ -303,6 +305,11 @@ export class ObstacleView implements ViewSystem {
       this.segStart[i] = (this.segStart[i + 1] as number) - dur;
     }
     for (let i = i0 + 1; i < segs.length; i++) this.segStart[i] = Number.NaN;
+  }
+
+  /** 当前氛围：WP3 的 World 挂在 ctx 上的插值器目标（含 atmosphere cue）；没有时按段的数据。 */
+  private atmosphereId(segIndex: number): AtmosphereId {
+    return this.ctx?.atmosphere?.id ?? this.chapter?.segments[segIndex]?.def.atmosphere ?? 'morning';
   }
 
   /** 第 i 段此刻的段内时间（秒，模拟时钟 t）。还没开始的段为 0。 */
@@ -399,6 +406,7 @@ export class ObstacleView implements ViewSystem {
     const bps = next.segKind === 'run' ? Math.max(0.5, N.cadence || speed / Math.max(0.3, N.stride)) : 4.8;
     this.lastT = t;
     this.pruneGazeMemo(t);
+    this.forest.tone.update(this.atmosphereId(next.segIndex), t);
     const fog = this.ctx.scene.fog as THREE.Fog | null;
     const fogFar = fog && 'far' in fog ? fog.far : 60;
     const ahead = Math.min(this.ctx.quality.chunksAhead * 12 + 6, fogFar + 4);
@@ -597,6 +605,7 @@ export class ObstacleView implements ViewSystem {
       this.applyGaze(p, o.id * 8 + i, (o.s0 + o.s1) / 2 + st.ds, f, 'turnShoes', -1, b.type === 'walk', OBSTACLE_GAZE_MAX, 0);
       p.upper = look.upper || f.stand;
       p.near = nearUpper(p.x, -p.z, f);
+      p.outdoor = OUTDOOR_KITS.has(kit);
       if (p.upper && this.globalOp.applaud >= 0) p.clap = clapClosed(f.tAnim, hash01(o.id + i)) ? 2 : 1;
       if (sp === 'directorZhou') p.glow = emberGlow(f.t, this.reducedFlicker);
       this.forest.add(p);
@@ -654,7 +663,7 @@ export class ObstacleView implements ViewSystem {
   private resetPerson(p: Person, look: Look): void {
     p.look = look; p.yaw = 0; p.hipH = STAND_HIP; p.stance = BODY.stance;
     p.hipL = p.hipR = p.kneeL = p.kneeR = 0; p.legYawL = p.legYawR = 0; p.footYawL = p.footYawR = 0;
-    p.lean = 0; p.roll = 0; p.dx = 0; p.bob = 0; p.turn = 0; p.upper = false; p.near = 0; p.clap = 0; p.glow = 0; p.targetL = null; p.seated = false; p.squat = false;
+    p.lean = 0; p.roll = 0; p.dx = 0; p.bob = 0; p.turn = 0; p.upper = false; p.near = 0; p.outdoor = false; p.clap = 0; p.glow = 0; p.targetL = null; p.seated = false; p.squat = false;
     p.arms = false;
   }
 
@@ -772,6 +781,7 @@ export class ObstacleView implements ViewSystem {
       const kit = groups[gi]?.kit;
       p.upper = d.look.upper || f.stand || kit === 'plaza';
       p.near = nearUpper(p.x, sN, f);
+      p.outdoor = kit !== undefined && OUTDOOR_KITS.has(kit);
       const applaud = (gs && gs.applaud >= 0) || this.globalOp.applaud >= 0;
       if (applaud && p.upper) p.clap = clapClosed(f.tAnim, d.phase) ? 2 : 1;
       this.forest.add(p);
