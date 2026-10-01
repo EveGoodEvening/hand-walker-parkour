@@ -24,14 +24,19 @@ import { SetBuild, crawlerFigure } from './lib/setkit';
 export const WATER_EDGE_Z = 0.2;
 /**
  * 水里站着的「我」（WP5 的替身，反射之前站的位置）与围着它爬的人群中心（修复轮 U5）。4-6 的镜头在主角眼睛里、
- * 从水边俯看（约 −60°）：倒影里站着的「我」在画面中间约 1/3 高，画面下沿是按进水里的双手，岸边的灰带出画。
+ * 从水边斜着往下看（约 −36°，camera/shots.ts 的 waterDown）：倒影是倒着的，脚在上、头在下，正面朝着镜头，
+ * 低头看着镜头，脸在画面中间偏下；画面下沿是按进水里的双手和手边的涟漪，岸边的灰带出画。
+ * 修复轮 U5 第二轮：−0.6 → −2.1（§10.2 是 −1.9）。替身离镜头太近时只能从正上方看，倒影先露出两只鞋底，头藏在肩膀后面。
  */
-export const WATER_DOUBLE_Z = -0.6;
+export const WATER_DOUBLE_Z = -2.1;
 /** 双手按进水里的位置（相对 STILL_ORIGIN，与 WP5 handsInWater 的手一致）：开场的涟漪从这两点扩散。 */
 export const WATER_HAND_X = 0.3, WATER_HAND_Z = -0.07;
 /** 水面范围 [x0, z0, x1, z1]（y = 0 平面，z0 < z1）。 */
 export const WATER_RECT: readonly [number, number, number, number] = [-40, -60, 40, WATER_EDGE_Z];
-const RINGS = 4, RING_SEG = 28;
+/** 涟漪：前 RINGS 圈是双手按下去时的大圈（几秒后水面重新变平；碎开时从中间炸开），后 HAND_RINGS 圈是手边一直有的小圈。 */
+const RINGS = 4, HAND_RINGS = 4, RING_SEG = 28;
+/** 涟漪的亮度（加法混合的顶点色；修复轮 U5 第二轮：0.07 在浅灰的水面上看不出来）。 */
+export const RIPPLE_GAIN = { big: 0.2, hand: 0.15 } as const;
 
 /** 碎开时倒影沉下去的深度（米，倒影在水面以下，往下移就是沉得更深）。 */
 const SINK = 1.6;
@@ -137,7 +142,7 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   // 水花与涟漪（加法）：RINGS 个圈 + 一些水滴，顶点每帧按时间重算（不建几何体）
   const fg = new OGeo();
   // 每个环段 2 个三角形（6 个顶点），位置在 animate() 里按时间写
-  for (let r = 0; r < RINGS * RING_SEG; r++) {
+  for (let r = 0; r < (RINGS + HAND_RINGS) * RING_SEG; r++) {
     fg.gtri([0, 0, 0], [1, 0, 0], [0, 0, 1], 0, 0, 0);
     fg.gtri([0, 0, 0], [1, 0, 0], [0, 0, 1], 0, 0, 0);
   }
@@ -187,15 +192,17 @@ function animate(a: WaterAnim, t: number, snap: SimSnapshot | null): void {
   let v = 0;
   // 涟漪：从双手按下的两点（±0.18, z −0.25）扩散；碎开时从中间炸开、更多更快
   const burst = k > 0;
-  for (let r = 0; r < RINGS; r++) {
-    const ph = burst ? Math.min(1, k * (1 + r * 0.3)) : ((t * 0.45 + r / RINGS) % 1);
+  for (let r = 0; r < RINGS + HAND_RINGS; r++) {
+    const small = r >= RINGS;
+    const ph = burst ? Math.min(1, k * (1 + (r % RINGS) * 0.3)) : small ? ((t * 0.6 + Math.floor((r - RINGS) / 2) / (HAND_RINGS / 2)) % 1) : ((t * 0.45 + r / RINGS) % 1);
     const cx = burst ? 0 : (r % 2 === 0 ? -WATER_HAND_X : WATER_HAND_X), cz = burst ? WATER_DOUBLE_Z : WATER_HAND_Z;
-    const R = burst ? 0.2 + ph * (2 + r * 0.8) : 0.05 + ph * 1.6;
-    const wdt = 0.006 + ph * 0.012;
+    const R = burst ? 0.2 + ph * (2 + (r % RINGS) * 0.8) : small ? 0.06 + ph * 0.3 : 0.05 + ph * 1.6;
+    const wdt = small ? 0.005 + ph * 0.006 : 0.006 + ph * 0.012;
     const ri = R - wdt, ro = R + wdt;
-    // 双手按进水里的那几秒有涟漪，之后水面重新变平（「水面很平」）；碎开时再炸开
-    const settle = burst ? 1 : Math.max(0, 1 - Math.max(0, t - 1.5) / 1.5);
-    const bright = (burst ? 1 - ph * 0.6 : 1 - ph) * (t < 0.2 && !burst ? t / 0.2 : 1) * settle;
+    // 双手按进水里的那几秒有大圈的涟漪，之后水面重新变平（「水面很平」），只有手边一圈圈的小涟漪；碎开时再炸开
+    const settle = burst ? (small ? 0 : 1) : small ? 1 : Math.max(0, 1 - Math.max(0, t - 1.5) / 1.5);
+    const gain = small ? RIPPLE_GAIN.hand : RIPPLE_GAIN.big;
+    const bright = (burst ? 1 - ph * 0.6 : 1 - ph) * (t < 0.2 && !burst ? t / 0.2 : 1) * settle * gain / 0.07;
     for (let i = 0; i < RING_SEG; i++) {
       const a0 = (i / RING_SEG) * Math.PI * 2, a1 = ((i + 1) / RING_SEG) * Math.PI * 2;
       const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);

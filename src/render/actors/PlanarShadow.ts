@@ -54,6 +54,18 @@ export function readableLight(dir: THREE.Vector3, out: THREE.Vector3): THREE.Vec
  */
 export const SHADOW_EVENT = { tip: 2.5, liesDownTip: 3.9, ratioMin: 3, liesDownRatioMin: 1.2, ratioMax: 8, longRatio: 5, blendSec: 0.5, defaultDir: [0.5, -0.866] as const } as const;
 /**
+ * 4-3 趴下的影子（修复轮 U5 第二轮）：脚在你脚前 feetGap 米（影子连着你的脚，以前根放在 2.3 m 外，看起来和你断开），
+ * 整个影子沿光线方向拉长到伸出的手落在 SHADOW_EVENT.liesDownTip 处（低角度的光把影子拉长；只拉长度，不加宽），
+ * 站立机位看得见的地面从你前方约 1.3 m 起：趴着的头、肩和向前伸的双手都在画面里。拉长倍数限制在 [1, maxStretch]。
+ */
+export const LIES_DOWN = { feetGap: 0.1, maxStretch: 2.6 } as const;
+/** 沿水平单位方向 (dx, dz) 以点 (px, pz) 为中心拉长 k 倍的矩阵（y 不变）。 */
+export function stretchMatrix(px: number, pz: number, dx: number, dz: number, k: number, out = new THREE.Matrix4()): THREE.Matrix4 {
+  const e = k - 1;
+  const a11 = 1 + e * dx * dx, a13 = e * dx * dz, a33 = 1 + e * dz * dz;
+  return out.set(a11, 0, a13, px - (a11 * px + a13 * pz), 0, 1, 0, 0, a13, 0, a33, pz - (a13 * px + a33 * pz), 0, 0, 0, 1);
+}
+/**
  * 事件期间影子的水平方向（单位向量 x、z）：氛围的方向在前右 25°–60° 之间就沿用，否则用缺省的前右 30°。
  * 正前方（梦 dream 的 (0.1, −0.9)）不行：拉长的影子在追尾 / 站立机位里被压缩成主角身后的一团灰影。
  */
@@ -66,7 +78,7 @@ export function eventHeading(dir: THREE.Vector3, out: THREE.Vector2): THREE.Vect
 export function lightFrom(hx: number, hz: number, r: number, out: THREE.Vector3): THREE.Vector3 { return out.set(hx * r, -1, hz * r).normalize(); }
 
 const _L = new THREE.Vector3(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _d = new THREE.Vector3(), _E = new THREE.Vector3(), _L2 = new THREE.Vector3();
-const _h = new THREE.Vector2(), _r = new THREE.Vector3();
+const _h = new THREE.Vector2(), _r = new THREE.Vector3(), _S = new THREE.Matrix4();
 const DOWN = new THREE.Vector3(0, -1, 0), FWD = new THREE.Vector3(0, 0, -1);
 const TIP_JOINTS = ['head', 'padL', 'padR', 'palmL', 'palmR', 'chest', 'pelvis', 'footL', 'footR', 'shinL', 'shinR', 'foreArmL', 'foreArmR', 'arm3Hand'] as const;
 
@@ -99,7 +111,9 @@ export class PlanarShadowSystem implements ViewSystem {
   private readonly pose2 = createPose();
   private readonly crawl: CrawlInput = { s: 0, x: 0, y: 0, floorY: 0, beat: 0, stride: 1, cadence: 4.8, speed: 4.8, duck: 0, air: false, airT: 0, mode: 'crawl', modeT: 0, laneTarget: 0, twitch: 0, drift: 0, lookBack: 0 };
   /** 调试：本帧是否画了平面投影 / 暗斑；事件光线的水平 / 竖直比与权重。 */
-  state = { planar: false, blob: false, second: false, stencil: true, ratio: 0, eventK: 0 };
+  state = { planar: false, blob: false, second: false, stencil: true, ratio: 0, eventK: 0, stretch: 1 };
+  /** 4-3 趴下的影子沿光线拉长的倍数（shadowPose 按姿势算，frame 按事件权重用）。 */
+  private lieStretch = 1;
   /** 本帧主影子用的光线方向（测试用）。 */
   readonly light = new THREE.Vector3();
 
@@ -198,9 +212,9 @@ export class PlanarShadowSystem implements ViewSystem {
       if (this.eventK > 0) {
         // 事件光线：前右方，按姿势算水平 / 竖直比，影子的尖落在根前右方约 2.5 m
         const hd = eventHeading(this.dir, _h);
-        // 趴下的影子（4-3）本身就沿着光线躺在地上，只需要很小的比例
+        // 趴下的影子（4-3）本身就躺在地上，靠拉长（LIES_DOWN）伸到前右方，光线用最小的比例
         const r = mode === 'long' ? SHADOW_EVENT.longRatio
-          : mode === 'liesDown' ? this.tipRatio(hd, still, h - 0.004, SHADOW_EVENT.liesDownTip, SHADOW_EVENT.liesDownRatioMin)
+          : mode === 'liesDown' ? SHADOW_EVENT.liesDownRatioMin
           : this.tipRatio(hd, still, h - 0.004, SHADOW_EVENT.tip);
         lightFrom(hd.x, hd.y, r, _E);
         L.lerp(_E, easeInOutSine(this.eventK)).normalize();
@@ -209,6 +223,13 @@ export class PlanarShadowSystem implements ViewSystem {
       this.state.eventK = this.eventK;
       this.light.copy(L);
       shadowMatrix(L, h, this.main.mesh.matrixWorld);
+      // 趴下的影子：以你的脚为中心沿光线拉长（先拉长、再投影）
+      const k = mode === 'liesDown' ? lerp(1, this.lieStretch, easeInOutSine(this.eventK)) : 1;
+      this.state.stretch = k;
+      if (k > 1 + 1e-6) {
+        const hd = eventHeading(this.dir, _h);
+        this.main.mesh.matrixWorld.multiply(stretchMatrix(WP5.playerRoot.x, WP5.playerRoot.z, hd.x, hd.y, k, _S));
+      }
       if (this.main.mesh.material !== mat) this.main.mesh.material = mat;
     }
     // —— 第二个影子（5-3 chase）：身后按 follower.distance 追来；不透明度 0.5，头歪着一点；
@@ -308,24 +329,35 @@ export class PlanarShadowSystem implements ViewSystem {
         return b.finish();
       }
       case 'liesDown': {
-        // 你站着，影子趴下去，双手向前伸（4-3「它选择了另一个方向」）：它沿着前右方的光线趴在地上，脚在你脚边，手伸向前右方
+        // 你站着，影子趴下去，双手向前伸（4-3「它选择了另一个方向」）：它沿着前右方的光线趴在地上，脚在你脚边，手伸向前右方。
+        // 修复轮 U5 第二轮：根不再放在 2.3 m 外；脚放在你脚前 LIES_DOWN.feetGap 米，再在 frame() 里沿光线拉长（lieStretch）
         const I = this.crawl, N = next.player;
-        const x = N.x + (N.stand?.x ?? 0);
+        const x = N.x + (N.stand?.x ?? 0), rz = -N.s;
         const hd = eventHeading(this.dir, _h);
-        const yaw = Math.atan2(-hd.x, -hd.y);                 // 角色的前方（−z）转到 hd
-        const back = 2.3;                                      // 根离你的脚 2.3 m：站立机位看得到的地面从你前方约 1.6 m 起
-        I.s = N.s - hd.y * back; I.x = x + hd.x * back; I.floorY = N.floorY; I.beat = 0.2; I.stride = 1; I.duck = 0.8; I.laneTarget = I.x / 1.1; I.speed = 0;
-        crawlPose(I, b);
-        I.duck = 0;
-        const p = b.finish();
-        p.root[3] = yaw;
-        b.load(p);
-        for (const side of ['L', 'R'] as const) {
-          b.toWorld(_v.set(side === 'L' ? -0.2 : 0.2, 0, -0.95), _w); _w.y = N.floorY + 0.03;
-          armTo(b, side, _w, 0.6);
-        }
-        b.fkAll();
-        return b.finish();
+        const hx = hd.x, hz = hd.y;
+        const yaw = Math.atan2(-hx, -hz);                     // 角色的前方（−z）转到 hd
+        const along = (j: number): number => { b.toWorld(b.wp[j] as THREE.Vector3, _v); return (_v.x - x) * hx + (_v.z - rz) * hz; };
+        const lie = (back: number): Pose => {
+          I.s = N.s - hz * back; I.x = x + hx * back; I.floorY = N.floorY; I.beat = 0.2; I.stride = 1; I.duck = 0.8; I.laneTarget = I.x / 1.1; I.speed = 0;
+          crawlPose(I, b);
+          I.duck = 0;
+          const p = b.finish();
+          p.root[3] = yaw;
+          b.load(p);
+          for (const side of ['L', 'R'] as const) {
+            b.toWorld(_v.set(side === 'L' ? -0.2 : 0.2, 0, -0.95), _w); _w.y = N.floorY + 0.03;
+            armTo(b, side, _w, 0.6);
+          }
+          b.fkAll();
+          return b.finish();
+        };
+        lie(0);
+        const feet = Math.min(along(BONE_INDEX.footL), along(BONE_INDEX.footR));
+        const out = lie(LIES_DOWN.feetGap - feet);
+        let tip = 0;
+        for (const j of TIP_JOINTS) if (j !== 'arm3Hand') tip = Math.max(tip, along(BONE_INDEX[j]));
+        this.lieStretch = clamp(SHADOW_EVENT.liesDownTip / Math.max(0.3, tip), 1, LIES_DOWN.maxStretch);
+        return out;
       }
       case 'reversed': {
         // 头朝反方向（小区门口）

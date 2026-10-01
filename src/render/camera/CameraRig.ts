@@ -29,6 +29,8 @@ const POSE_CAMS: Record<string, [number, number, number, number, number, number,
 
 const _off = new THREE.Vector3(), _g = new THREE.Vector3(), _gl = new THREE.Vector3(), _d = new THREE.Vector3(), _a = new THREE.Vector3();
 const _sp: [number, number] = [0, 0];
+/** 镜头绕玩家转（回头）或原地转头（glanceLeft）超过这个角度就不算追尾机位（WP5.chaseCam）。 */
+const CHASE_MAX_TURN = 10 * DEG;
 
 export function vFromH(hDeg: number, aspect: number): number {
   return (2 * Math.atan(Math.tan((hDeg * DEG) / 2) / aspect)) / DEG;
@@ -112,6 +114,8 @@ export class CameraRig implements ViewSystem {
     const bdt = simDt;                                   // 过渡与计时：不截断
     const step = Math.min(0.1, simDt);                   // 弹簧与平滑：截断
     const snap = simDt > 0.25;
+    // 追尾机位标记（上半身淡出用）：先清掉，只有跑段的追尾 / 段内追尾机位在最后置位
+    WP5.chaseCam = false;
     // —— 调试 / poseTest 机位 ——
     const dbg = WP5.debugCam;
     if (dbg) { o.pos.copy(dbg.pos); o.look.copy(dbg.look); o.roll = 0; o.fov = dbg.fov; return o; }
@@ -185,7 +189,7 @@ export class CameraRig implements ViewSystem {
     }
     o.pos.set(L.k * this.sx, fy + camY, -s + L.back);
     o.look.set(L.lookK * this.sx, fy + L.ly + 0.2 * y + lookDy, -s + L.lz);
-    // —— 段内专门追尾机位（5-3 @30–@140：身后追来的影子）——
+    // —— 段内专门追尾机位（5-3 @30–@212：身后追来的影子）——
     const ss = SEGMENT_SHOTS[next.segment];
     const inSeg = !!ss && next.segBeat >= ss.from && next.segBeat < ss.to;
     this.segBlend = rm || snap ? (inSeg ? 1 : 0) : clamp(this.segBlend + (inSeg ? bdt : -bdt) / (ss?.blend ?? 1), 0, 1);
@@ -265,9 +269,12 @@ export class CameraRig implements ViewSystem {
     // —— 第三只手穿过玻璃（2-10）：切到侧面机位，你和镜中的它都在画面里 ——
     const TG = THROUGH_GLASS_SHOT;
     const through = !!f && f.weight > 0.05 && N.mode === 'stop' && f.through >= TG.from && f.through <= TG.to;
-    if (through) {
-      o.pos.set(x + TG.pos[0], fy + TG.pos[1], -s + TG.pos[2]);
-      o.look.set(x + TG.look[0], fy + TG.look[1], -s + TG.look[2]);
+    if (through && f) {
+      _a.copy(WP5.playerHead).add(f.point).multiplyScalar(0.5);
+      // 镜头放在走廊中线那一侧（接触点偏右时从左边看），不贴着侧墙，视线从镜子开口的中间穿过去
+      const sx = _a.x > 0.15 ? -1 : 1;
+      o.pos.set(_a.x + sx * TG.pos[0], _a.y + TG.pos[1], _a.z + TG.pos[2]);
+      o.look.set(_a.x + sx * TG.look[0], _a.y + TG.look[1], _a.z + TG.look[2]);
     }
     // —— 摔倒 ——
     const falling = N.mode === 'fall';
@@ -297,6 +304,10 @@ export class CameraRig implements ViewSystem {
     if (ss && segFov > 0) base = lerp(base, portrait ? Math.min(80, ss.fov * 1.3) : ss.fov, segFov);
     o.fov = portrait ? Math.min(FOLLOW.portrait.vMax, base + this.fovExtra * 0.5 + pulse) : base + this.fovExtra + pulse;
     if (through) o.fov = portrait ? Math.min(80, TG.fov * 1.3) : TG.fov;
+    // 镜头还在主角身后（追尾、竖屏追尾、5-3 段内追尾）：上半身淡出有用。回头、转头、停拍看替身、穿玻璃侧拍、摔倒时没有用
+    // （修复轮 U5 第二轮：以前停拍看水洼时他也淡成半透明）
+    WP5.chaseCam = !through && !mirrorClose && this.gazeBlend < 0.5 && this.fallBlend < 0.5
+      && Math.abs(yaw) < CHASE_MAX_TURN && Math.abs(pan) < CHASE_MAX_TURN;
     return o;
   }
 }

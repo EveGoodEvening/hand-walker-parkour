@@ -35,6 +35,9 @@ export const SET_DEFAULT_CLIP: Partial<Record<string, AnyClip | null>> = {
 export const WATER_HANDS: readonly [number, number, number] = [0.3, -0.05, -0.62];
 const _hv = new THREE.Vector3(), _hw = new THREE.Vector3();
 
+/** palmToGlass（2-10）：躯干前倾（度）、右手掌心的高度与在骨盆前方的距离（米）。 */
+export const PALM_GLASS_POSE = { lean: 15, y: 1.0, z: 0.55 };
+
 /** smile：抬头的角度（弧度，局部 x）。 */
 export const SMILE_HEAD_UP = 0.22;
 
@@ -112,8 +115,12 @@ function posture(id: AnyClip, t: number): Posture | null {
       return P;
     }
     case 'palmToGlass': {
-      // 跪着，右手掌心贴在身前的竖直玻璃上（2-5 替身 / 2-10 掌心贴掌心）
-      return kneeling({ lean: 8, R: armUp(1, 0.95, PELVIS_Z - 0.62, [0, 1, 0], [0, 0, -1]) });
+      // 跪着，右手掌心贴在身前的竖直玻璃上（2-10 掌心贴掌心）。修复轮 U5 第二轮：身子朝镜子探过去、肘弯着，脸离玻璃近
+      // （镜中的它也一样近），第三只手从它胸口穿过玻璃才够得到额头；头抬着，目光和镜中的它平齐
+      const G = PALM_GLASS_POSE;
+      const P = kneeling({ lean: G.lean, R: armUp(1, G.y, PELVIS_Z - G.z, [0, 1, 0], [0, 0, -1]) });
+      P.neck = [G.lean * DEG * 0.5, 0, 0]; P.head = [G.lean * DEG * 0.4, 0, 0];
+      return P;
     }
     case 'pointMirror': {
       const P = standing({ knee: 5 });

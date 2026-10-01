@@ -33,8 +33,18 @@ export const WP5 = {
   debugCam: null as { pos: THREE.Vector3; look: THREE.Vector3; fov: number } | null,
   /** 镜头焦点（停拍时看向镜中替身等）。 */
   focus: null as CameraFocus | null,
-  /** 镜头要求藏起主角（0..1；3-4 绕到水洼另一侧回看时）。CameraRig 写，下一帧 Actor 读。 */
-  hidePlayer: 0,
+  /** 主角的头心（世界坐标，本帧；Actor 写）。2-10 侧面机位按它和镜中替身的头取景。 */
+  playerHead: new THREE.Vector3(),
+  /**
+   * 2-10 掌心贴掌心（0..1；Actor 写）：主角在 palmToGlass 里爬近端墙镜、掌心贴到玻璃上的程度。
+   * 替身按它从「压缩的镜中深度」过渡到真正的镜像（离玻璃的距离 = 主角离玻璃的距离），两只手掌在玻璃两侧对上。
+   */
+  palmGlass: 0,
+  /**
+   * 镜头是不是普通的追尾机位（CameraRig 写，下一帧 Actor 读）：回头、停拍看替身、段内专门机位、摔倒时为 false。
+   * 上半身淡出（readability.ts）只在追尾机位下爬行时用。
+   */
+  chaseCam: true,
   /** 主角的「行走相位」读数（测试用）：左右手腕的世界坐标。 */
   debug: { wristL: new THREE.Vector3(), wristR: new THREE.Vector3() },
 };

@@ -12,6 +12,8 @@ import { PAL } from '../../palette';
 import { emiGeo, emissiveMesh, lambertMesh, propGeo, schoolWallX, schoolWallZ, setEnv, setWallTone, wallZ } from './common';
 
 export const BOARD_Z = -3.2;
+/** 主角背靠的那张实验台的中线 x（钢架腿在 x − 0.4，就在他身旁）。 */
+export const BENCH_X = 1.05;
 const BX = 1.8, BY0 = 0.85, BY1 = 2.1;
 const XL = -3.6, XR = 3.6, ZB = 3.0, H = 3.4;
 
@@ -49,8 +51,8 @@ function build(ctx: ViewContext): THREE.Object3D {
     stat.box([XL + 0.03, 2.25, z], [0.04, 1.5, 0.05], 0x9aa4a7, { faces: '+x+z-z' });
   }
   // 实验台：主角靠着的那张在右手边（钢架腿就在身旁），左边一张，两侧各一列；镜头从台与台之间看见黑板
-  bench(stat, e, 1.5, -0.6, 2.4);                  // 修复轮 U5：以前在 x = 1.05，从 labBoard 机位看过去挡住黑板右半边
-  bench(stat, e, -1.45, -0.2, 2.4);
+  bench(stat, e, BENCH_X, -0.6, 2.4);              // 修复轮 U5 第二轮：放回 x = 1.05（镜头改到他左后方，不再挡黑板）
+  bench(stat, e, -1.7, -0.2, 2.4);                 // 修复轮 U5 第二轮：−1.45 → −1.7，从左后方的 labBoard 机位看过去不挡黑板左端
   for (const [x, s] of [[-2.9, -0.2], [2.9, -0.2], [-2.9, 2.2], [2.9, 2.2], [-2.9, -2.4], [2.9, -2.4]] as const) {
     bench(stat, e, x, s, 2.0);
     stool(stat, e, x + (x < 0 ? 0.62 : -0.62), -s + 0.4);

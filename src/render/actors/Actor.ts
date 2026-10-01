@@ -9,7 +9,7 @@ import { STILL_ORIGIN } from '../../core/constants';
 import type { GameEvent } from '../../core/events';
 import { clamp, lerp, smoothstep } from '../../core/math';
 import { getSet } from '../../core/registry';
-import { copyPose, createPose, type Pose } from '../../core/rig';
+import { BONE_INDEX, copyPose, createPose, type Pose } from '../../core/rig';
 import type { PoseClipId, SimSnapshot } from '../../core/types';
 import type { CompiledChapter, CompiledSegment } from '../../levels/schema';
 import { clipPose, SET_DEFAULT_CLIP } from './clips';
@@ -27,6 +27,16 @@ const _m = new THREE.Matrix4();
  * 4-6 看水：画面下沿伸进来按在水里的双手，身体其余部分不画（否则挡满画面）。
  */
 export const EYE_GROUPS: Readonly<Record<string, readonly [number, number, number, number]>> = { water: [0, 1, 1, 0] };
+
+/**
+ * 2-10「我抬起右手，贴在镜面上」（修复轮 U5 第二轮）：停拍停在端墙镜前约 1 m，palmToGlass 的手够不到玻璃（差 0.66 m），
+ * 第三只手也够不到额头。渲染端让主角在 advanceSec 秒内朝镜子爬近，掌心停在玻璃前 gap 米，横向收进镜子的开口（|x| ≤ maxX）；
+ * 停拍没结束就一直贴着（cue 的 4 s 之后不松手，不往回滑）。只在前方 look 米内有端墙镜时这样做。
+ */
+export const PALM_GLASS = { gap: 0.03, maxX: 0.4, advanceSec: 0.9, look: 3.0 } as const;
+/** 上半身淡出只在这些动作里用（停拍、摔倒、回头时镜头不在他身后，淡出没有用处）。 */
+const FADE_MODES: ReadonlySet<string> = new Set(['crawl', 'air', 'duck', 'halfStand', 'stumble']);
+const _hv = new THREE.Vector3(), _hq = new THREE.Vector3();
 
 function crawlInputFrom(prev: SimSnapshot, next: SimSnapshot, a: number, out: CrawlInput): CrawlInput {
   const P = prev.player, N = next.player;
@@ -58,6 +68,9 @@ export class PlayerActor implements ViewSystem {
   private readonly mix = createPose();
   /** actor cue：脚本姿势覆盖。 */
   private clip: { id: PoseClipId; t0: number; until: number } | null = null;
+  /** palmToGlass 爬近镜子的距离（米，clip 开始时按端墙镜算一次；null = 还没算或前方没有镜子）。 */
+  private palmAdv: { ds: number; x: number } | null = null;
+  private palmAdvClip: { id: PoseClipId; t0: number; until: number } | null = null;
   private clipWeight = 0;
   private lastFrameT = 0;
   /** 站立段摔倒的时刻（模拟时钟；−1 = 没有摔倒）。 */
@@ -107,8 +120,8 @@ export class PlayerActor implements ViewSystem {
     const t = lerp(prev.t, next.t, a);
     const rig = this.rig;
     const hist = this.factory.history;
-    // 脚本姿势的权重（0.3 s 淡入淡出）
-    const clipOn = !!this.clip && t < this.clip.until;
+    // 脚本姿势的权重（0.3 s 淡入淡出）。palmToGlass 在停拍没结束时一直贴着玻璃（PALM_GLASS）
+    const clipOn = !!this.clip && (t < this.clip.until || (this.clip.id === 'palmToGlass' && next.segKind === 'run' && next.player.mode === 'stop'));
     let sdt = t - this.lastFrameT;
     if (!(sdt >= 0) || sdt > 60) sdt = 0;
     this.lastFrameT = t;
@@ -118,24 +131,29 @@ export class PlayerActor implements ViewSystem {
     rig.root.position.set(0, 0, 0); rig.root.quaternion.identity(); rig.root.scale.set(1, 1, 1);
 
     if (next.segKind !== 'run' || WP5.poseTest) { this.fadeW = 0; this.groupU.value.set(1, 1, 1, 1); }
+    WP5.palmGlass = 0;
     if (next.segKind === 'run') {
       crawlInputFrom(prev, next, a, this.inp);
       this.backfill(next);
       if (!WP5.poseTest) {
-        // 本车道前方有必需障碍：上半身淡到 40%（回头时不淡，镜头在他前面）
+        // 本车道前方有必需障碍：上半身淡到 40%。只在追尾机位下爬行时（修复轮 U5 第二轮：停拍看水洼、5-3 的高机位、
+        // 回头、摔倒时镜头不在他身后，淡出没有用处，反而让他变成半透明的人）
         const seg = this.chapter?.segments[next.segIndex];
         const N = next.player;
-        const want = !!seg && seg.kind === 'run' && N.lookBack < 0.3 && N.mode !== 'fall'
+        const want = !!seg && seg.kind === 'run' && N.lookBack < 0.3 && FADE_MODES.has(N.mode) && WP5.chaseCam
           && upperFadeWanted(seg.obstacles, this.inp.s, N.lane, N.laneTarget, N.speed);
         this.fadeW = stepUpperFade(this.fadeW, want, sdt);
         const ua = upperAlpha(this.fadeW);
-        // 停拍里镜头绕到水洼另一侧回看（3-4）：主角整个藏起来（影子还在），水里的倒影不被他挡住
-        const hide = WP5.hidePlayer;
-        this.groupU.value.set(1 - hide, 1 - hide, ua * (1 - hide), ua * (1 - hide));
+        this.groupU.value.set(1, 1, ua, ua);
       }
       let pose = WP5.poseTest ? this.testPose(WP5.poseTest, t) : this.anim.update(this.inp, dt, this.b);
       if (this.clip && this.clipWeight > 0) {
-        clipPose(this.clip.id, t - this.clip.t0, this.b2, this.clipOut, { x: this.inp.x, y: this.inp.floorY, s: this.inp.s, yaw: pose.root[3] ?? 0 });
+        const at = { x: this.inp.x, y: this.inp.floorY, s: this.inp.s, yaw: pose.root[3] ?? 0 };
+        if (this.clip.id === 'palmToGlass') {
+          const k = this.palmToward(at, t, this.chapter?.segments[next.segIndex]);
+          WP5.palmGlass = k * smoothstep(0, 1, this.clipWeight);
+        }
+        clipPose(this.clip.id, t - this.clip.t0, this.b2, this.clipOut, at);
         pose = blendPoses(pose, this.clipOut, smoothstep(0, 1, this.clipWeight), this.mix);
       }
       rig.apply(pose);
@@ -144,6 +162,7 @@ export class PlayerActor implements ViewSystem {
       copyPose(WP5.playerPose, pose);
       WP5.playerVisible = true;
       WP5.playerRoot.set(this.inp.x, this.inp.floorY, -this.inp.s);
+      this.headWorld(pose, null);
       hist.push(t, pose);
       this.remember(next);
       return;
@@ -158,6 +177,7 @@ export class PlayerActor implements ViewSystem {
       copyPose(WP5.playerPose, pose);
       WP5.playerVisible = true;
       WP5.playerRoot.set(pose.root[0] as number, next.player.floorY, -(pose.root[2] as number));
+      this.headWorld(pose, null);
       hist.push(t, pose);
       this.lastTick = -1;
       return;
@@ -192,8 +212,40 @@ export class PlayerActor implements ViewSystem {
     copyPose(WP5.playerPose, pose);
     WP5.playerVisible = true;
     WP5.playerRoot.setFromMatrixPosition(rig.root.matrix);
+    this.headWorld(pose, rig.root.matrix);
     hist.push(t, pose);
     this.lastTick = -1;
+  }
+
+  /** 头心的世界坐标（头骨关节沿头的朝向上移 0.1 m）写进 WP5.playerHead。M：静场的锚点矩阵。 */
+  private headWorld(pose: Pose, M: THREE.Matrix4 | null): void {
+    const b = this.b2.load(pose);
+    const hi = BONE_INDEX.head;
+    b.toWorld(_hv.set(0, 0.1, 0).applyQuaternion(b.wq[hi] as THREE.Quaternion).add(b.wp[hi] as THREE.Vector3), WP5.playerHead);
+    if (M) WP5.playerHead.applyMatrix4(M);
+  }
+
+  /**
+   * palmToGlass（2-10）：朝前方的端墙镜爬近，掌心停在玻璃前 PALM_GLASS.gap 米（修改 at 的 s、x）。返回爬近的程度 0..1。
+   * 距离在 clip 开始时按姿势里右手腕的位置算一次（停拍里主角的里程不变）。
+   */
+  private palmToward(at: { x: number; y: number; s: number; yaw: number }, t: number, seg: CompiledSegment | undefined): number {
+    const c = this.clip;
+    if (!c) return 0;
+    if (this.palmAdvClip !== c) {
+      this.palmAdvClip = c; this.palmAdv = null;
+      const g = seg?.surfaces.filter((q) => q.kind === 'endMirror' && q.s0 >= at.s && q.s0 - at.s <= PALM_GLASS.look).sort((a, b) => a.s0 - b.s0)[0];
+      if (g) {
+        clipPose('palmToGlass', 0, this.b2, this.clipOut, at);
+        const wrist = this.b2.jointWorld('palmR', _hq);
+        this.palmAdv = { ds: clamp(g.s0 - PALM_GLASS.gap - -wrist.z, 0, 1.2), x: clamp(at.x, -PALM_GLASS.maxX, PALM_GLASS.maxX) };
+      }
+    }
+    const A = this.palmAdv;
+    if (!A) return 0;
+    const k = smoothstep(0, PALM_GLASS.advanceSec, t - c.t0);
+    at.s += A.ds * k; at.x = lerp(at.x, A.x, k);
+    return k;
   }
 
   /** poseTest（§8.8）：在玩家当前位置冻结一个展示姿势。 */

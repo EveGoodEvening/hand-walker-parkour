@@ -703,6 +703,9 @@
     "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
    },
    {
+    "eval": "(()=>{const U=window.U5;U.rootOf=(k)=>{const sc=__game.ext.wp5Scene();return k==='player'?sc.getObjectByName('player'):sc.getObjectByName('double'+U.dbl(k).slot)};U.tris=(root,skip)=>{const c=U.cam();const out=[];const buf=[];U.skin(root,(v,b)=>{buf.push({q:v.clone().project(c),b})});for(let i=0;i+2<buf.length;i+=3){const a=buf[i],b=buf[i+1],e=buf[i+2];if(skip&&skip.includes(a.b))continue;if(a.q.z>1||b.q.z>1||e.q.z>1||a.q.z<-1||b.q.z<-1||e.q.z<-1)continue;out.push([a.q,b.q,e.q])}return out};U.vis=(id,bones,occ)=>{const c=U.cam();const tris=[];for(const o of occ){const r=U.rootOf(o.id);if(r&&r.visible)tris.push(...U.tris(r,o.skip))}let n=0,vis=0;U.skin(U.rootOf(id),(v,b)=>{if(!bones.includes(b))return;n++;const p=v.clone().project(c);if(Math.abs(p.x)>1||Math.abs(p.y)>1||p.z>1)return;for(const t of tris){const A=t[0],B=t[1],C=t[2];const d=(B.x-A.x)*(C.y-A.y)-(C.x-A.x)*(B.y-A.y);if(Math.abs(d)<1e-12)continue;const wa=((B.x-p.x)*(C.y-p.y)-(C.x-p.x)*(B.y-p.y))/d,wb=((C.x-p.x)*(A.y-p.y)-(A.x-p.x)*(C.y-p.y))/d,wc=1-wa-wb;if(wa<0||wb<0||wc<0)continue;if(wa*A.z+wb*B.z+wc*C.z<p.z-1e-4)return}vis++});return {n,vis:n?+(vis/n).toFixed(2):0}};U.inFrame=(id,bones)=>{const c=U.cam();let n=0,k=0;U.skin(U.rootOf(id),(v,b)=>{if(bones&&!bones.includes(b))return;n++;const q=v.clone().project(c);if(Math.abs(q.x)<1&&Math.abs(q.y)<1&&q.z<1)k++});return n?+(k/n).toFixed(2):0};return 'vis ready'})()"
+   },
+   {
     "steps": 1308
    },
    {
@@ -713,6 +716,9 @@
    },
    {
     "eval": "(()=>{const e=U5.ext('bathBehind',[26]);if(!(e.n>0&&e.ndc[0]>-1&&e.ndc[2]<1&&e.ndc[1]>-1&&e.ndc[3]<1))throw new Error('U5: shoulder hand out of frame '+JSON.stringify(e));const f=U5.ext('bathBehind',[20,23]),h=U5.ext('bath2',[20,23]);return {hand:e,feetBehind:f,feetHost:h}})()"
+   },
+   {
+    "eval": "(()=>{const r=U5.vis('bathBehind',[26],[{id:'player'},{id:'bath2'},{id:'bathBehind',skip:[24,25,26]}]);if(!(r.n>0&&r.vis>=0.5))throw new Error('U5: shoulder hand hidden '+JSON.stringify(r));const sc=__game.ext.wp5Scene(),V=U5.V();const host=U5.rootOf('bath2'),fig=U5.rootOf('bathBehind');host.updateMatrixWorld(true);fig.updateMatrixWorld(true);const w=new V();fig.getObjectByName('arm3Hand').getWorldPosition(w);const sh=['upperArmL','upperArmR'].map(n=>{const v=new V();host.getObjectByName(n).getWorldPosition(v);return +v.distanceTo(w).toFixed(3)});if(!(Math.min(...sh)<0.16))throw new Error('U5: hand not on the shoulder '+JSON.stringify(sh));return {hand:r,wristToShoulder:sh}})()"
    }
   ]
  },
@@ -743,6 +749,35 @@
   ]
  },
  {
+  "out": "shots/visual/WP5/u5-2-10-touch-3.9s.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch2&seg=2-10&beat=110",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "(()=>{const U=window.U5;U.rootOf=(k)=>{const sc=__game.ext.wp5Scene();return k==='player'?sc.getObjectByName('player'):sc.getObjectByName('double'+U.dbl(k).slot)};U.tris=(root,skip)=>{const c=U.cam();const out=[];const buf=[];U.skin(root,(v,b)=>{buf.push({q:v.clone().project(c),b})});for(let i=0;i+2<buf.length;i+=3){const a=buf[i],b=buf[i+1],e=buf[i+2];if(skip&&skip.includes(a.b))continue;if(a.q.z>1||b.q.z>1||e.q.z>1||a.q.z<-1||b.q.z<-1||e.q.z<-1)continue;out.push([a.q,b.q,e.q])}return out};U.vis=(id,bones,occ)=>{const c=U.cam();const tris=[];for(const o of occ){const r=U.rootOf(o.id);if(r&&r.visible)tris.push(...U.tris(r,o.skip))}let n=0,vis=0;U.skin(U.rootOf(id),(v,b)=>{if(!bones.includes(b))return;n++;const p=v.clone().project(c);if(Math.abs(p.x)>1||Math.abs(p.y)>1||p.z>1)return;for(const t of tris){const A=t[0],B=t[1],C=t[2];const d=(B.x-A.x)*(C.y-A.y)-(C.x-A.x)*(B.y-A.y);if(Math.abs(d)<1e-12)continue;const wa=((B.x-p.x)*(C.y-p.y)-(C.x-p.x)*(B.y-p.y))/d,wb=((C.x-p.x)*(A.y-p.y)-(A.x-p.x)*(C.y-p.y))/d,wc=1-wa-wb;if(wa<0||wb<0||wc<0)continue;if(wa*A.z+wb*B.z+wc*C.z<p.z-1e-4)return}vis++});return {n,vis:n?+(vis/n).toFixed(2):0}};U.inFrame=(id,bones)=>{const c=U.cam();let n=0,k=0;U.skin(U.rootOf(id),(v,b)=>{if(bones&&!bones.includes(b))return;n++;const q=v.clone().project(c);if(Math.abs(q.x)<1&&Math.abs(q.y)<1&&q.z<1)k++});return n?+(k/n).toFixed(2):0};return 'vis ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.getState().beat>=139)"
+   },
+   {
+    "steps": 420
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const r=__game.ext.wp5Scene().getObjectByName('wp5.glassRipple');if(!r.visible)throw new Error('U5: no glass ripple');return {ripple:r.position.toArray().map(x=>+x.toFixed(2))}})()"
+   },
+   {
+    "eval": "(()=>{const U=U5,V=U.V();const d=U.dbl('chip');const box=U.rootOf('chip');box.updateMatrixWorld(true);const up=new V();box.getObjectByName('arm3Upper').getWorldPosition(up);let tip=null,far=-1;U.skin(box,(v,b)=>{if(b===26){const r=v.distanceTo(up);if(r>far){far=r;tip=v.clone()}}});const head=[];U.skin(U.rootOf('player'),(v,b)=>{if(b===5)head.push(v.clone())});let near=1e9;for(const v of head)near=Math.min(near,v.distanceTo(tip));const hc=head.reduce((a,v)=>a.add(v),new V()).multiplyScalar(1/head.length);const hn=U.ndc(hc.toArray()),dn=U.ndc(d.head);const r={t:+__game.getState().t.toFixed(2),near:+near.toFixed(3),myHead:[+hn.x.toFixed(2),+hn.y.toFixed(2)],itsHead:[+dn.x.toFixed(2),+dn.y.toFixed(2)],palmGlass:__game.ext.wp5State().palmGlass};if(!(near<0.1&&Math.abs(hn.x)<0.9&&Math.abs(hn.y)<0.9&&Math.abs(dn.x)<0.9&&Math.abs(dn.y)<0.9))throw new Error('U5: fingertip/head '+JSON.stringify(r));return r})()"
+   }
+  ]
+ },
+ {
   "out": "shots/visual/WP5/u5-2-10-ripple.png",
   "q": "low",
   "size": "640x360",
@@ -750,6 +785,9 @@
   "ops": [
    {
     "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "(()=>{const U=window.U5;U.rootOf=(k)=>{const sc=__game.ext.wp5Scene();return k==='player'?sc.getObjectByName('player'):sc.getObjectByName('double'+U.dbl(k).slot)};U.tris=(root,skip)=>{const c=U.cam();const out=[];const buf=[];U.skin(root,(v,b)=>{buf.push({q:v.clone().project(c),b})});for(let i=0;i+2<buf.length;i+=3){const a=buf[i],b=buf[i+1],e=buf[i+2];if(skip&&skip.includes(a.b))continue;if(a.q.z>1||b.q.z>1||e.q.z>1||a.q.z<-1||b.q.z<-1||e.q.z<-1)continue;out.push([a.q,b.q,e.q])}return out};U.vis=(id,bones,occ)=>{const c=U.cam();const tris=[];for(const o of occ){const r=U.rootOf(o.id);if(r&&r.visible)tris.push(...U.tris(r,o.skip))}let n=0,vis=0;U.skin(U.rootOf(id),(v,b)=>{if(!bones.includes(b))return;n++;const p=v.clone().project(c);if(Math.abs(p.x)>1||Math.abs(p.y)>1||p.z>1)return;for(const t of tris){const A=t[0],B=t[1],C=t[2];const d=(B.x-A.x)*(C.y-A.y)-(C.x-A.x)*(B.y-A.y);if(Math.abs(d)<1e-12)continue;const wa=((B.x-p.x)*(C.y-p.y)-(C.x-p.x)*(B.y-p.y))/d,wb=((C.x-p.x)*(A.y-p.y)-(A.x-p.x)*(C.y-p.y))/d,wc=1-wa-wb;if(wa<0||wb<0||wc<0)continue;if(wa*A.z+wb*B.z+wc*C.z<p.z-1e-4)return}vis++});return {n,vis:n?+(vis/n).toFixed(2):0}};U.inFrame=(id,bones)=>{const c=U.cam();let n=0,k=0;U.skin(U.rootOf(id),(v,b)=>{if(bones&&!bones.includes(b))return;n++;const q=v.clone().project(c);if(Math.abs(q.x)<1&&Math.abs(q.y)<1&&q.z<1)k++});return n?+(k/n).toFixed(2):0};return 'vis ready'})()"
    },
    {
     "eval": "U5.until(()=>__game.getState().beat>=139)"
@@ -762,6 +800,9 @@
    },
    {
     "eval": "(()=>{const r=__game.ext.wp5Scene().getObjectByName('wp5.glassRipple');if(!r.visible)throw new Error('U5: no glass ripple');return {ripple:r.position.toArray().map(x=>+x.toFixed(2))}})()"
+   },
+   {
+    "eval": "(()=>{const U=U5,V=U.V();const d=U.dbl('chip');const box=U.rootOf('chip');box.updateMatrixWorld(true);const up=new V();box.getObjectByName('arm3Upper').getWorldPosition(up);let tip=null,far=-1;U.skin(box,(v,b)=>{if(b===26){const r=v.distanceTo(up);if(r>far){far=r;tip=v.clone()}}});const head=[];U.skin(U.rootOf('player'),(v,b)=>{if(b===5)head.push(v.clone())});let near=1e9;for(const v of head)near=Math.min(near,v.distanceTo(tip));const hc=head.reduce((a,v)=>a.add(v),new V()).multiplyScalar(1/head.length);const hn=U.ndc(hc.toArray()),dn=U.ndc(d.head);const r={t:+__game.getState().t.toFixed(2),near:+near.toFixed(3),myHead:[+hn.x.toFixed(2),+hn.y.toFixed(2)],itsHead:[+dn.x.toFixed(2),+dn.y.toFixed(2)],palmGlass:__game.ext.wp5State().palmGlass};if(!(near<0.1&&Math.abs(hn.x)<0.9&&Math.abs(hn.y)<0.9&&Math.abs(dn.x)<0.9&&Math.abs(dn.y)<0.9))throw new Error('U5: fingertip/head '+JSON.stringify(r));return r})()"
    }
   ]
  },
@@ -785,6 +826,9 @@
    },
    {
     "eval": "U5.readable('puddle')"
+   },
+   {
+    "eval": "(()=>{const s=__game.ext.wp5State();if(!(s.upperAlpha>0.99&&!s.chaseCam))throw new Error('U5: faded in the puddle shot '+s.upperAlpha+' '+s.chaseCam);return {upperAlpha:s.upperAlpha,chaseCam:s.chaseCam}})()"
    }
   ]
  },
@@ -872,6 +916,9 @@
     "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
    },
    {
+    "eval": "(()=>{const U=window.U5;U.rootOf=(k)=>{const sc=__game.ext.wp5Scene();return k==='player'?sc.getObjectByName('player'):sc.getObjectByName('double'+U.dbl(k).slot)};U.tris=(root,skip)=>{const c=U.cam();const out=[];const buf=[];U.skin(root,(v,b)=>{buf.push({q:v.clone().project(c),b})});for(let i=0;i+2<buf.length;i+=3){const a=buf[i],b=buf[i+1],e=buf[i+2];if(skip&&skip.includes(a.b))continue;if(a.q.z>1||b.q.z>1||e.q.z>1||a.q.z<-1||b.q.z<-1||e.q.z<-1)continue;out.push([a.q,b.q,e.q])}return out};U.vis=(id,bones,occ)=>{const c=U.cam();const tris=[];for(const o of occ){const r=U.rootOf(o.id);if(r&&r.visible)tris.push(...U.tris(r,o.skip))}let n=0,vis=0;U.skin(U.rootOf(id),(v,b)=>{if(!bones.includes(b))return;n++;const p=v.clone().project(c);if(Math.abs(p.x)>1||Math.abs(p.y)>1||p.z>1)return;for(const t of tris){const A=t[0],B=t[1],C=t[2];const d=(B.x-A.x)*(C.y-A.y)-(C.x-A.x)*(B.y-A.y);if(Math.abs(d)<1e-12)continue;const wa=((B.x-p.x)*(C.y-p.y)-(C.x-p.x)*(B.y-p.y))/d,wb=((C.x-p.x)*(A.y-p.y)-(A.x-p.x)*(C.y-p.y))/d,wc=1-wa-wb;if(wa<0||wb<0||wc<0)continue;if(wa*A.z+wb*B.z+wc*C.z<p.z-1e-4)return}vis++});return {n,vis:n?+(vis/n).toFixed(2):0}};U.inFrame=(id,bones)=>{const c=U.cam();let n=0,k=0;U.skin(U.rootOf(id),(v,b)=>{if(bones&&!bones.includes(b))return;n++;const q=v.clone().project(c);if(Math.abs(q.x)<1&&Math.abs(q.y)<1&&q.z<1)k++});return n?+(k/n).toFixed(2):0};return 'vis ready'})()"
+   },
+   {
     "steps": 312
    },
    {
@@ -879,6 +926,9 @@
    },
    {
     "eval": "(()=>{const e=U5.ext('waterMe');const hgt=(e.ndc[3]-e.ndc[1])/2;if(!(hgt>=0.25))throw new Error('U5: water me only '+hgt);return {frac:+hgt.toFixed(2),ext:e}})()"
+   },
+   {
+    "eval": "(()=>{const U=U5;const d=U.dbl('waterMe');const h=U.ndc(d.head);const r=U.vis('waterMe',[5],[{id:'player',skip:[0,1,2,3,4,5,18,19,20,21,22,23]},{id:'waterMe',skip:[5]}]);const res={head:[+h.x.toFixed(2),+h.y.toFixed(2)],headVis:r};if(!(Math.abs(h.x)<0.3&&h.y>-0.3&&h.y<0.5&&r.vis>=0.6))throw new Error('U5: water me head '+JSON.stringify(res));return res})()"
    }
   ]
  },
@@ -915,6 +965,9 @@
     "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
    },
    {
+    "eval": "(()=>{const U=window.U5;U.rootOf=(k)=>{const sc=__game.ext.wp5Scene();return k==='player'?sc.getObjectByName('player'):sc.getObjectByName('double'+U.dbl(k).slot)};U.tris=(root,skip)=>{const c=U.cam();const out=[];const buf=[];U.skin(root,(v,b)=>{buf.push({q:v.clone().project(c),b})});for(let i=0;i+2<buf.length;i+=3){const a=buf[i],b=buf[i+1],e=buf[i+2];if(skip&&skip.includes(a.b))continue;if(a.q.z>1||b.q.z>1||e.q.z>1||a.q.z<-1||b.q.z<-1||e.q.z<-1)continue;out.push([a.q,b.q,e.q])}return out};U.vis=(id,bones,occ)=>{const c=U.cam();const tris=[];for(const o of occ){const r=U.rootOf(o.id);if(r&&r.visible)tris.push(...U.tris(r,o.skip))}let n=0,vis=0;U.skin(U.rootOf(id),(v,b)=>{if(!bones.includes(b))return;n++;const p=v.clone().project(c);if(Math.abs(p.x)>1||Math.abs(p.y)>1||p.z>1)return;for(const t of tris){const A=t[0],B=t[1],C=t[2];const d=(B.x-A.x)*(C.y-A.y)-(C.x-A.x)*(B.y-A.y);if(Math.abs(d)<1e-12)continue;const wa=((B.x-p.x)*(C.y-p.y)-(C.x-p.x)*(B.y-p.y))/d,wb=((C.x-p.x)*(A.y-p.y)-(A.x-p.x)*(C.y-p.y))/d,wc=1-wa-wb;if(wa<0||wb<0||wc<0)continue;if(wa*A.z+wb*B.z+wc*C.z<p.z-1e-4)return}vis++});return {n,vis:n?+(vis/n).toFixed(2):0}};U.inFrame=(id,bones)=>{const c=U.cam();let n=0,k=0;U.skin(U.rootOf(id),(v,b)=>{if(bones&&!bones.includes(b))return;n++;const q=v.clone().project(c);if(Math.abs(q.x)<1&&Math.abs(q.y)<1&&q.z<1)k++});return n?+(k/n).toFixed(2):0};return 'vis ready'})()"
+   },
+   {
     "steps": 984
    },
    {
@@ -922,6 +975,9 @@
    },
    {
     "eval": "(()=>{const q=U5.ndc([-0.52,-200+0.57,-2.16]);if(!(Math.abs(q.x)<0.3&&Math.abs(q.y)<0.3))throw new Error('U5: dent at '+q.x+','+q.y);return {dent:[+q.x.toFixed(2),+q.y.toFixed(2)]}})()"
+   },
+   {
+    "eval": "(()=>{const U=U5;const r={legs:U.inFrame('player',[0,1,18,19,20,21,22,23]),arms:U.inFrame('player',[6,7,8,9,10,11,12,13,14,15,16,17]),headTorso:U.inFrame('player',[2,3,4,5])};if(!(r.legs<=0.1&&r.arms<=0.1&&r.headTorso<=0.15))throw new Error('U5: body still in the dent shot '+JSON.stringify(r));return r})()"
    }
   ]
  },
@@ -1004,7 +1060,7 @@
     "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
    },
    {
-    "eval": "(()=>{const s=__game.ext.wp5State().shadow;if(!(s.planar&&s.eventK>0.99&&s.ratio>=3))throw new Error('U5: shadow event light '+JSON.stringify(s));return s})()"
+    "eval": "(()=>{const s=__game.ext.wp5State().shadow;if(!(s.planar&&s.eventK>0.99&&s.mode==='liesDown'&&s.stretch>=1.3))throw new Error('U5: shadow event light '+JSON.stringify(s));return s})()"
    }
   ]
  },
@@ -1029,6 +1085,49 @@
   ]
  },
  {
+  "out": "shots/visual/WP5/u5-shadow-5-3-chase-170.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch5&seg=5-3&beat=150",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "eval": "U5.until(()=>__game.getState().beat>=170)"
+   },
+   {
+    "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.ext.wp5State().shadow;if(!(s.second&&s.planar))throw new Error('U5: no chasing shadow '+JSON.stringify(s));return s})()"
+   },
+   {
+    "eval": "(()=>{const c=U5.cam();const s=__game.ext.wp5State();const y=c.position.y-s.player[1];if(!(y>1.6))throw new Error('U5: not the 5-3 segment camera after @140 '+y);return {camHeight:+y.toFixed(2)}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/u5-4-3-mirror-empty-2.0s.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch4&seg=4-3",
+  "ops": [
+   {
+    "eval": "(()=>{const g=__game;const U={};U.cam=()=>{const sc=g.ext.wp5Scene();let c=null;sc.traverse(o=>{if(o.isPerspectiveCamera)c=o});c.updateMatrixWorld();return c};\nU.V=()=>U.cam().position.constructor;\nU.ndc=(p)=>{const c=U.cam();const V=U.V();return new V(p[0],p[1],p[2]).project(c)};\nU.skin=(root,each)=>{root.updateMatrixWorld(true);let m=null;root.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o});if(!m)return;const pos=m.geometry.getAttribute('position'),si=m.geometry.getAttribute('skinIndex');const V=U.V();const v=new V();const third=(m.skeleton.bones[24]?m.skeleton.bones[24].scale.x:0)>0.01;for(let i=0;i<pos.count;i++){const b=si.getX(i);if(b>=27||(b>=24&&!third))continue;v.fromBufferAttribute(pos,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);each(v,b)}};\nU.box=()=>{const sc=g.ext.wp5Scene();const p=sc.getObjectByName('player');const c=U.cam();const b=[9,9,-9,-9];if(!p||!p.visible)return b;U.skin(p,(v)=>{const q=v.clone().project(c);if(q.z>1)return;b[0]=Math.min(b[0],q.x);b[1]=Math.min(b[1],q.y);b[2]=Math.max(b[2],q.x);b[3]=Math.max(b[3],q.y)});return b.map(x=>+x.toFixed(3))};\nU.dbl=(id)=>{const d=g.ext.wp5State().doubles.find(q=>q.id===id);if(!d)throw new Error('U5: no double '+id+' '+JSON.stringify(g.ext.wp5State().doubles.map(q=>q.id)));return d};\nU.ext=(id,bones)=>{const d=U.dbl(id);const sc=g.ext.wp5Scene();const box=sc.getObjectByName('double'+d.slot);const c=U.cam();const r=[9,9,-9,-9];let n=0;U.skin(box,(v,b)=>{if(bones&&!bones.includes(b))return;const q=v.clone().project(c);n++;r[0]=Math.min(r[0],q.x);r[1]=Math.min(r[1],q.y);r[2]=Math.max(r[2],q.x);r[3]=Math.max(r[3],q.y)});return {n,ndc:r.map(x=>+x.toFixed(3))}};\nU.readable=(id)=>{const d=U.dbl(id);const h=U.ndc(d.head);const b=U.box();const inBox=h.x>b[0]&&h.x<b[2]&&h.y>b[1]&&h.y<b[3];const r={id,ndc:[+h.x.toFixed(2),+h.y.toFixed(2)],box:b,inBox,visible:d.visible,alpha:+d.alpha.toFixed(2)};if(!(Math.abs(h.x)<0.8&&Math.abs(h.y)<0.8&&!inBox&&d.visible))throw new Error('U5: '+id+' not readable '+JSON.stringify(r));return r};\nU.until=(pred,max)=>{let n=0;while(!pred()&&n<(max||4000)){g.step(1);n++}return n};\nU.frames=(k)=>{for(let i=0;i<(k||24);i++)g.step(2,{render:true})};\nwindow.U5=U;return 'U5 ready'})()"
+   },
+   {
+    "steps": 192
+   },
+   {
+    "eval": "(()=>{U5.frames(12);const s=__game.getState();return {seg:s.segment,t:+s.t.toFixed(2),mode:s.mode}})()"
+   },
+   {
+    "eval": "(()=>{const st=__game.ext.wp5State();const m=st.standMirror;if(!(m.visible&&m.opacity>0.99))throw new Error('U5: mirror not standing yet '+JSON.stringify(m));return {mirror:m,doubles:st.doubles.map(q=>q.id)}})()"
+   }
+  ]
+ },
+ {
   "out": "shots/visual/WP5/u5-4-3-mirror-3.8s.png",
   "q": "low",
   "size": "640x360",
@@ -1044,7 +1143,7 @@
     "eval": "(()=>{U5.frames(24);const s=__game.getState();return {seg:s.segment,beat:+s.beat.toFixed(2),t:+s.t.toFixed(2),mode:s.mode,lane:s.lane,text:s.text,upper:__game.ext.wp5State().upperAlpha}})()"
    },
    {
-    "eval": "(()=>{const d=U5.dbl('dreamMirror');if(!(d.framed&&d.visible))throw new Error('U5: no mirror frame '+JSON.stringify(d));const h=U5.ndc(d.head);return {framed:d.framed,head:[+h.x.toFixed(2),+h.y.toFixed(2)],yaw:+d.yaw.toFixed(2)}})()"
+    "eval": "(()=>{const d=U5.dbl('dreamMirror');const m=__game.ext.wp5State().standMirror;if(!(d.mirror&&d.visible&&m.visible&&m.opacity>0.99&&m.pos[0]>1.7))throw new Error('U5: no standing mirror '+JSON.stringify({d,m}));const h=U5.ndc(d.head);return {mirror:m,head:[+h.x.toFixed(2),+h.y.toFixed(2)],yaw:+d.yaw.toFixed(2)}})()"
    }
   ]
  },

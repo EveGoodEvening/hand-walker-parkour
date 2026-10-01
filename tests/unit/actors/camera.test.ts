@@ -108,7 +108,7 @@ describe('CameraRig (§5.4)', () => {
   });
 });
 
-describe('segment chase shot (U5): 5-3 @30–@140 pulls back so the shadow crawling after you is in frame', () => {
+describe('segment chase shot (U5): 5-3 @30–@212 pulls back so the shadow crawling after you is in frame', () => {
   const run = (segBeatOf: (i: number) => number, frames: number) => {
     const rig = new CameraRig();
     const settings = { ...DEFAULT_SETTINGS, reducedMotion: false };
@@ -133,7 +133,11 @@ describe('segment chase shot (U5): 5-3 @30–@140 pulls back so the shadow crawl
     apply(cam, inside.o, 16 / 9);
     const behind = new THREE.Vector3(0, 0, -inside.last.player.s + 2).project(cam);
     expect(Math.abs(behind.x)).toBeLessThan(1); expect(Math.abs(behind.y)).toBeLessThan(1);
-    const outside = run((i) => 141 + i * 0.08, 120);
+    const late = run((i) => 150 + i * 0.08, 120);                                     // 「我开始跑。」之后照样
+    expect(late.o.pos.y).toBeCloseTo(sh.h, 1);
+    const outside = run((i) => 213 + i * 0.08, 120);
     expect(outside.o.pos.y).toBeCloseTo(FOLLOW.landscape.h, 1);
+    const before = run((i) => 10 + i * 0.08, 120);
+    expect(before.o.pos.y).toBeCloseTo(FOLLOW.landscape.h, 1);
   });
 });

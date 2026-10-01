@@ -130,9 +130,15 @@ describe('shadow anomalies are cast long and front-right (U5)', () => {
         const hx = L.x / Math.hypot(L.x, L.z), hz = L.z / Math.hypot(L.x, L.z);
         const pts = projected(m.rigs[0] as THREE.Object3D);
         const rx = s.player.x, rz = -s.player.s;
-        let tip = -Infinity, cx = 0, cz = 0;
-        for (const p of pts) { tip = Math.max(tip, (p.x - rx) * hx + (p.z - rz) * hz); cx += p.x - rx; cz += p.z - rz; }
+        let tip = -Infinity, near = Infinity, cx = 0, cz = 0;
+        for (const p of pts) { const f = (p.x - rx) * hx + (p.z - rz) * hz; tip = Math.max(tip, f); near = Math.min(near, f); cx += p.x - rx; cz += p.z - rz; }
         expect(tip).toBeGreaterThanOrEqual(2);
+        if (mode === 'liesDown') {
+          // 趴下的影子连着你的脚（修复轮 U5 第二轮：以前根在 2.3 m 外，和你断开），伸出的手落在约 3.9 m 处
+          expect(near).toBeLessThanOrEqual(0.4);
+          expect(tip).toBeGreaterThanOrEqual(3.2);
+          expect(m.sh.state.stretch).toBeGreaterThan(1.2);
+        }
         if (mode !== 'long') expect(tip).toBeLessThanOrEqual(mode === 'liesDown' ? 4.8 : 4.0);           // 关节伸出约 2.5 m（鞋尖、发梢再远一点），不是一条拖到画面外的长带
         expect(cx / pts.length).toBeGreaterThan(0);
         expect(cz / pts.length).toBeLessThan(0);

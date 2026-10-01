@@ -9,7 +9,8 @@ import type { ChapterDef, CompiledChapter, CompiledSegment } from '../../../src/
 import { PlayerActor } from '../../../src/render/actors/Actor';
 import { DoubleSystem } from '../../../src/render/actors/Doubles';
 import { PlanarShadowSystem } from '../../../src/render/actors/PlanarShadow';
-import { ActorRigFactory } from '../../../src/render/actors/rigBuild';
+import { ActorRigFactory, RIG_COLORS } from '../../../src/render/actors/rigBuild';
+import { boneGroup } from '../../../src/render/actors/readability';
 import { WP5 } from '../../../src/render/actors/shared';
 import { ReflectSurfaces } from '../../../src/render/actors/surfaces';
 import { CameraRig } from '../../../src/render/camera/CameraRig';
@@ -81,6 +82,10 @@ export function frame(w: Scene, prev: SimSnapshot, next: SimSnapshot, dt = 1 / 6
   c.aspect = ASPECT; c.fov = o.fov; c.position.copy(o.pos); c.up.set(0, 1, 0); c.lookAt(o.look);
   if (o.roll) c.rotateZ(o.roll);
   c.updateProjectionMatrix(); c.updateMatrixWorld(true);
+  // 游戏里 CameraRig.frame 写 ctx.camera（下一帧的替身读它）：这里同步过去
+  const g = w.ctx.camera as THREE.PerspectiveCamera;
+  g.position.copy(c.position); g.quaternion.copy(c.quaternion); g.fov = c.fov; g.aspect = c.aspect;
+  g.updateProjectionMatrix(); g.updateMatrixWorld(true);
 }
 
 /** 按静场数据从 0 跑到 tEnd（60 fps），途中按时刻发出 WP5 的 cue。返回最后一份快照。 */
@@ -149,6 +154,40 @@ export function doubleVerts(w: Scene, id: string, each: (v: THREE.Vector3, bone:
   return true;
 }
 
+/** 替身（按 id）眼睛的世界顶点（按顶点色 RIG_COLORS.eye 找）。 */
+export function doubleEyes(w: Scene, id: string): THREE.Vector3[] {
+  const i = w.dbl.slotIndexOf(id);
+  const box = i >= 0 ? w.ctx.scene.getObjectByName(`double${i}`) : undefined;
+  const out: THREE.Vector3[] = [];
+  if (!box) return out;
+  box.updateMatrixWorld(true);
+  let mesh: THREE.SkinnedMesh | null = null;
+  box.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh && !mesh) mesh = o as THREE.SkinnedMesh; });
+  if (!mesh) return out;
+  const m = mesh as THREE.SkinnedMesh;
+  const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute, col = m.geometry.getAttribute('color') as THREE.BufferAttribute;
+  const eye = new THREE.Color().setHex(RIG_COLORS.eye);
+  for (let k = 0; k < pos.count; k++) {
+    if (Math.abs(col.getX(k) - eye.r) > 0.004 || Math.abs(col.getY(k) - eye.g) > 0.004 || Math.abs(col.getZ(k) - eye.b) > 0.004) continue;
+    const v = new THREE.Vector3().fromBufferAttribute(pos, k);
+    m.applyBoneTransform(k, v); v.applyMatrix4(m.matrixWorld);
+    out.push(v);
+  }
+  return out;
+}
+
+/** 一组世界点里有多少比例在画面内、没有被深度图里的东西挡住（点稍微朝镜头挪 1 mm，免得和自己所在的面打架）。 */
+export function pointsVisible(w: Scene, pts: readonly THREE.Vector3[], depth: Float32Array, W = 320, H = 180): number {
+  let vis = 0;
+  for (const v of pts) {
+    const p = v.clone().lerp(w.camera.position, 0.001 / Math.max(1e-3, v.distanceTo(w.camera.position))).project(w.camera);
+    if (Math.abs(p.x) > 1 || Math.abs(p.y) > 1 || p.z > 1) continue;
+    const x = Math.min(W - 1, Math.floor((p.x * 0.5 + 0.5) * W)), y = Math.min(H - 1, Math.floor((1 - (p.y * 0.5 + 0.5)) * H));
+    if (p.z <= (depth[y * W + x] as number) + 1e-4) vis++;
+  }
+  return pts.length ? vis / pts.length : 0;
+}
+
 /** 替身头部 NDC。 */
 export function headNdc(w: Scene, id: string): THREE.Vector3 | null {
   const d = w.dbl.active().find((q) => q.id === id);
@@ -159,18 +198,12 @@ export function inBox(p: THREE.Vector3, b: readonly number[]): boolean {
   return p.x > (b[0] as number) && p.x < (b[2] as number) && p.y > (b[1] as number) && p.y < (b[3] as number);
 }
 
-/** 主角网格的软件光栅化深度图（W×H，NDC z；没有覆盖的像素为 +∞）。只用来判断替身的某些顶点是否被主角挡住。 */
-export function playerDepth(w: Scene, W = 320, H = 180): Float32Array {
-  const depth = new Float32Array(W * H).fill(Infinity);
-  if (!w.actor.rig.root.visible) return depth;
-  const tris: THREE.Vector3[] = [];
-  skinnedOf(w.actor.rig.root, (v) => { tris.push(v.clone().project(w.camera)); });
-  // skinnedOf 跳过了道具等顶点，三角形按顺序三个一组：只在三个顶点都保留时才成立（被跳过的骨骼整块跳过，顺序不乱）
-  for (let i = 0; i + 2 < tris.length; i += 3) {
-    const a = tris[i]!, b = tris[i + 1]!, c = tris[i + 2]!;
-    if (a.z > 1 || b.z > 1 || c.z > 1 || a.z < -1 || b.z < -1 || c.z < -1) continue;
-    const P = [a, b, c].map((p) => [(p.x * 0.5 + 0.5) * W, (1 - (p.y * 0.5 + 0.5)) * H, p.z] as [number, number, number]);
-    const [p0, p1, p2] = P as [[number, number, number], [number, number, number], [number, number, number]];
+/** 把一串世界顶点（三个一组成三角形）光栅化进深度图（W×H，NDC z；取最近）。 */
+function rasterInto(w: Scene, verts: readonly THREE.Vector3[], depth: Float32Array, W: number, H: number): void {
+  const P: Array<[number, number, number]> = verts.map((v) => { const p = v.clone().project(w.camera); return [(p.x * 0.5 + 0.5) * W, (1 - (p.y * 0.5 + 0.5)) * H, p.z]; });
+  for (let i = 0; i + 2 < P.length; i += 3) {
+    const p0 = P[i]!, p1 = P[i + 1]!, p2 = P[i + 2]!;
+    if (p0[2] > 1 || p1[2] > 1 || p2[2] > 1 || p0[2] < -1 || p1[2] < -1 || p2[2] < -1) continue;
     const x0 = Math.max(0, Math.floor(Math.min(p0[0], p1[0], p2[0]))), x1 = Math.min(W - 1, Math.ceil(Math.max(p0[0], p1[0], p2[0])));
     const y0 = Math.max(0, Math.floor(Math.min(p0[1], p1[1], p2[1]))), y1 = Math.min(H - 1, Math.ceil(Math.max(p0[1], p1[1], p2[1])));
     const area = (p1[0] - p0[0]) * (p2[1] - p0[1]) - (p2[0] - p0[0]) * (p1[1] - p0[1]);
@@ -186,12 +219,37 @@ export function playerDepth(w: Scene, W = 320, H = 180): Float32Array {
       if (z < (depth[k] as number)) depth[k] = z;
     }
   }
+}
+
+/** 主角网格的软件光栅化深度图（W×H，NDC z；没有覆盖的像素为 +∞）。只用来判断替身的某些顶点是否被主角挡住。 */
+export function playerDepth(w: Scene, W = 320, H = 180): Float32Array {
+  return occluderDepth(w, { player: true }, W, H);
+}
+
+/**
+ * 遮挡物的深度图：主角（player）与若干替身（doubles，skip 里的骨骼不算，例如替身自己的第三只手）。
+ * skinnedOf 跳过了道具等顶点，三角形按顺序三个一组：刚性蒙皮下一个三角形只属于一根骨骼，按骨骼整块跳过，顺序不乱。
+ */
+export function occluderDepth(w: Scene, o: { player?: boolean; doubles?: ReadonlyArray<{ id: string; skip?: readonly number[] }> }, W = 320, H = 180): Float32Array {
+  const depth = new Float32Array(W * H).fill(Infinity);
+  if (o.player && w.actor.rig.root.visible) {
+    // 主角按分组的不透明度画（Actor.groupAlpha：4-6 只画手臂和手、上半身淡出）：不透明度 < 0.5 的分组不算遮挡
+    const ga = w.actor.groupAlpha.toArray();
+    const tris: THREE.Vector3[] = [];
+    skinnedOf(w.actor.rig.root, (v, bi) => { if ((ga[boneGroup(bi)] as number) >= 0.5) tris.push(v.clone()); });
+    rasterInto(w, tris, depth, W, H);
+  }
+  for (const d of o.doubles ?? []) {
+    const skip = new Set(d.skip ?? []);
+    const tris: THREE.Vector3[] = [];
+    doubleVerts(w, d.id, (v, bi) => { if (!skip.has(bi)) tris.push(v.clone()); });
+    rasterInto(w, tris, depth, W, H);
+  }
   return depth;
 }
 
-/** 替身（id）在某些骨骼上的顶点里，有多少比例在画面内且没有被主角挡住。 */
-export function visibleFraction(w: Scene, id: string, bones: readonly number[], W = 320, H = 180): { visible: number; total: number } {
-  const depth = playerDepth(w, W, H);
+/** 替身（id）在某些骨骼上的顶点里，有多少比例在画面内且没有被深度图里的东西挡住。 */
+export function visibleAgainst(w: Scene, id: string, bones: readonly number[], depth: Float32Array, W = 320, H = 180): { visible: number; total: number } {
   const set = new Set(bones);
   let total = 0, visible = 0;
   doubleVerts(w, id, (v, bi) => {
@@ -203,6 +261,11 @@ export function visibleFraction(w: Scene, id: string, bones: readonly number[], 
     if (p.z <= (depth[y * W + x] as number) + 1e-4) visible++;
   });
   return { visible: total ? visible / total : 0, total };
+}
+
+/** 替身（id）在某些骨骼上的顶点里，有多少比例在画面内且没有被主角挡住。 */
+export function visibleFraction(w: Scene, id: string, bones: readonly number[], W = 320, H = 180): { visible: number; total: number } {
+  return visibleAgainst(w, id, bones, playerDepth(w, W, H), W, H);
 }
 
 /**

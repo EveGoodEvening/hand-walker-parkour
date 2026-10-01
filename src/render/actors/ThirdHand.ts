@@ -14,6 +14,9 @@ const FWD = new THREE.Vector3(0, 0, -1), DOWN = new THREE.Vector3(0, -1, 0), UP 
 const _o = new THREE.Vector3(), _t = new THREE.Vector3(), _f = new THREE.Vector3(), _n = new THREE.Vector3(), _p = new THREE.Vector3();
 const _hf = new THREE.Vector3(), _hu = new THREE.Vector3(), _q = new THREE.Quaternion(), _x = new THREE.Vector3();
 
+/** 第三只手的手腕到指尖（伸直时，米；rigBuild：掌 0.08 + 两节手指约 0.11）。forehead 手势按它把手腕停在目标前面，指尖正好碰到。 */
+export const HAND3_LEN = 0.19;
+
 export interface ThirdHandTarget {
   /** 世界坐标目标点（palmGlass / forehead / shoulder 需要；其余可省略，按身体推算）。 */
   point?: THREE.Vector3;
@@ -57,8 +60,10 @@ export function applyThirdHand(b: PoseBuilder, g: ThirdHandGesture, extend: numb
       break;
     }
     case 'forehead': {
+      // 指尖碰到额头（修复轮 U5 第二轮）：目标是额头表面，手腕停在它前面一个手长（以前手腕对准头心，指尖要么够不着、要么戳进头里）
       if (tgt.point) b.toChar(tgt.point, _t); else _t.copy(head).addScaledVector(_hf, 0.6);
       _f.copy(_t).sub(S).normalize(); _n.copy(DOWN);
+      _t.addScaledVector(_f, -HAND3_LEN);
       break;
     }
     case 'shoulder': {

@@ -2,6 +2,9 @@
 // 读入全部章节的编译数据，用 FOLLOW.landscape（16:9）把每个 low / bar 障碍的顶边投影到屏幕，与主角爬姿包围盒的投影比较：
 // 接触前 1.2 s 内至少 1.0 s，顶边被遮住的部分不超过一半。主角的上半身按 readability.ts 的规则淡出（不透明度 ≤ 0.5 时不算遮挡），
 // 下半身和着地的手一直算。玩家放在障碍所在的每一条车道上（最坏情况：正对着它爬过去）。
+// 修复轮 U5 第二轮：上半身淡出只在镜头还在他身后时用（CameraRig 写 WP5.chaseCam）。同样的检查也对竖屏追尾机位（9:16）
+// 和 5-3 的段内追尾机位（SEGMENT_SHOTS，只查那一段拍区间里的障碍）跑一遍：这两种机位不淡出时分别有 255 / 335 和 18 / 18 个不合格，
+// 所以淡出在它们下面也保留。
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { QUALITY } from '../../../src/core/quality';
@@ -13,7 +16,7 @@ import { crawlPose, PoseBuilder } from '../../../src/render/actors/handCycle';
 import { OPAQUE_BONE_INDICES, stepUpperFade, UPPER_FADE, upperAlpha, upperFadeWanted } from '../../../src/render/actors/readability';
 import { buildRigGeometry, Rig, rigDetail } from '../../../src/render/actors/rigBuild';
 import { vFromH } from '../../../src/render/camera/CameraRig';
-import { FOLLOW } from '../../../src/render/camera/shots';
+import { FOLLOW, SEGMENT_SHOTS } from '../../../src/render/camera/shots';
 import { crawlInput } from './helpers';
 
 const ASPECT = 16 / 9;
@@ -25,8 +28,21 @@ const HIDDEN = new Set(['arm3Upper', 'arm3Fore', 'arm3Hand', 'propHead', 'propBa
 const OPAQUE = new Set(OPAQUE_BONE_INDICES);
 type Box = [number, number, number, number];
 
-function chaseCam(x: number): THREE.PerspectiveCamera {
+type CamKind = 'landscape' | 'portrait' | '5-3';
+function chaseCam(x: number, kind: CamKind = 'landscape'): THREE.PerspectiveCamera {
   const L = FOLLOW.landscape;
+  if (kind === 'portrait') {
+    const P = FOLLOW.portrait, a = 9 / 16;
+    const cam = new THREE.PerspectiveCamera(Math.min(P.vMax, vFromH(L.hfov, a)), a, 0.05, 200);
+    cam.position.set(P.k * x, P.h, P.back); cam.lookAt(P.lookK * x, P.ly, P.lz); cam.updateMatrixWorld(true);
+    return cam;
+  }
+  if (kind === '5-3') {
+    const S = SEGMENT_SHOTS['5-3']!;
+    const cam = new THREE.PerspectiveCamera(S.fov, ASPECT, 0.05, 200);
+    cam.position.set(L.k * x + S.dx, S.h, S.back); cam.lookAt(L.lookK * x + S.lx, S.ly, S.lz); cam.updateMatrixWorld(true);
+    return cam;
+  }
   const cam = new THREE.PerspectiveCamera(Math.min(L.vMax, Math.max(L.vMin, vFromH(L.hfov, ASPECT))), ASPECT, 0.05, 200);
   cam.position.set(L.k * x, L.h, L.back);
   cam.lookAt(L.lookK * x, L.ly, L.lz);
@@ -57,8 +73,16 @@ function playerBoxes(lane: number, cam: THREE.PerspectiveCamera): { full: Box; o
 }
 
 const LANES = [-1, 0, 1] as const;
-const cams = new Map(LANES.map((l) => [l, chaseCam(l * 1.1)]));
-const boxes = new Map(LANES.map((l) => [l, playerBoxes(l, cams.get(l)!)]));
+const camSets = new Map<CamKind, { cams: Map<number, THREE.PerspectiveCamera>; boxes: Map<number, { full: Box; opaque: Box }> }>();
+function camSet(kind: CamKind) {
+  let c = camSets.get(kind);
+  if (!c) {
+    const cams = new Map(LANES.map((l) => [l as number, chaseCam(l * 1.1, kind)]));
+    c = { cams, boxes: new Map(LANES.map((l) => [l as number, playerBoxes(l, cams.get(l)!)])) };
+    camSets.set(kind, c);
+  }
+  return c;
+}
 const chapters: CompiledChapter[] = CHAPTER_ORDER.map((id) => getChapter(id)).filter((d) => d !== null).map((d) => compile(d!));
 
 describe('the chase camera does not hide required obstacles in your lane (U5, R4)', () => {
@@ -85,15 +109,20 @@ describe('the chase camera does not hide required obstacles in your lane (U5, R4
     expect(upperAlpha(w)).toBeCloseTo(UPPER_FADE.alpha, 6);
   });
 
-  it('every low / bar obstacle of every chapter: its top edge is at most half hidden for ≥ 1.0 s of the last 1.2 s', () => {
+  /** 不合格的障碍（kind 机位下；fade = false 时上半身不淡出）。5-3 的段内机位只查它那一段拍区间。 */
+  function badObstacles(kind: CamKind, fade = true): { checked: number; bad: string[] } {
     let checked = 0;
     const bad: string[] = [];
     const v = new THREE.Vector3();
+    const { cams, boxes } = camSet(kind);
+    const ss = SEGMENT_SHOTS['5-3']!;
     for (const ch of chapters) {
       for (const seg of ch.segments) {
         if (seg.kind !== 'run') continue;
+        if (kind === '5-3' && seg.def.id !== '5-3') continue;
         for (const o of seg.obstacles) {
           if (o.cls !== 'low' && o.cls !== 'bar') continue;
+          if (kind === '5-3' && !(o.beat >= ss.from && o.beat < ss.to)) continue;
           for (const lane of o.lanes) {
             checked++;
             const cam = cams.get(lane)!, bx = boxes.get(lane)!;
@@ -103,7 +132,7 @@ describe('the chase camera does not hide required obstacles in your lane (U5, R4
             let w = 0, okT = 0;
             for (let t = -3; t < 0; t += dt) {
               const sRoot = o.s0 - UPPER_FADE.front + t * speed;
-              w = stepUpperFade(w, upperFadeWanted(seg.obstacles, sRoot, lane, lane, speed), dt);
+              w = stepUpperFade(w, fade && upperFadeWanted(seg.obstacles, sRoot, lane, lane, speed), dt);
               if (t < -1.2) continue;
               const box = upperAlpha(w) <= 0.5 ? bx.opaque : bx.full;
               const ahead = o.s0 - sRoot;              // 障碍近沿在主角根前方多少米（相机放在 s = 0 的主角身后）
@@ -122,7 +151,21 @@ describe('the chase camera does not hide required obstacles in your lane (U5, R4
         }
       }
     }
-    expect(checked).toBeGreaterThan(200);
-    expect(bad).toEqual([]);
+    return { checked, bad };
+  }
+
+  it('every low / bar obstacle of every chapter: its top edge is at most half hidden for ≥ 1.0 s of the last 1.2 s', () => {
+    const r = badObstacles('landscape');
+    expect(r.checked).toBeGreaterThan(200);
+    expect(r.bad).toEqual([]);
+  });
+
+  it('the same holds under the portrait chase camera and the 5-3 segment chase camera, where the fade is kept (and is needed)', () => {
+    for (const kind of ['portrait', '5-3'] as const) {
+      const r = badObstacles(kind);
+      expect(r.checked).toBeGreaterThan(kind === '5-3' ? 10 : 200);
+      expect(r.bad).toEqual([]);
+      expect(badObstacles(kind, false).bad.length).toBeGreaterThan(r.checked / 2);  // 不淡出时一半以上不合格：淡出在这两种机位下有用
+    }
   });
 });

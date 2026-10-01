@@ -24,7 +24,7 @@ import type { CompiledChapter, CompiledSegment, DoubleMod, DoubleSpec } from '..
 import { clipPose } from './clips';
 import { crawlPose, jumpDur, PoseBuilder, type CrawlInput } from './handCycle';
 import { blendPoses } from './poses';
-import { RIG_COLORS, type ActorRigFactory, type Rig } from './rigBuild';
+import { REST, RIG_COLORS, type ActorRigFactory, type Rig } from './rigBuild';
 import { WP5 } from './shared';
 import { FOLLOW } from '../camera/shots';
 import { vFromH } from '../camera/CameraRig';
@@ -41,8 +41,21 @@ export const MEMORY_FADE_IN = 0.12, MEMORY_FADE_OUT = 0.18;
  * 修复轮 U5：2-5 的倒影坐在离玻璃 0.4 m 的椅子上、正面朝着窗外的镜头（反射前面朝玻璃，−x）；3-5 车窗里的「我」照常朝前坐着。
  */
 export const STILL_DOUBLE_YAW: Readonly<Record<string, number>> = { canteenWindow: Math.PI / 2, bus: 0 };
-/** 第三只手各手势伸出的用时（秒）：缺省 1.2 s「慢慢伸出来」；掌心贴玻璃要和 5.0 s 的那一声「贴」对上，快一些。 */
-export const GESTURE_EXTEND: Readonly<Partial<Record<ThirdHandGesture, number>>> = { palmGlass: 0.6 };
+/**
+ * 第三只手各手势伸出的用时（秒）：缺省 1.2 s「慢慢伸出来」；掌心贴玻璃要和 5.0 s 的那一声「贴」对上，快一些。
+ * 搭肩（修复轮 U5 第二轮）0.3 s：3-10 关门前的最后一眼只有 0.8 s（10.8–11.6 s），手要在替身淡入的同时就搭上去，
+ * 否则 11.6 s 黑场时它还在半路、藏在宿主身后（附录 A-12：搭肩是 3-10 的标志画面）。
+ */
+export const GESTURE_EXTEND: Readonly<Partial<Record<ThirdHandGesture, number>>> = { palmGlass: 0.6, shoulder: 0.3 };
+/**
+ * 搭肩的手放在哪里（修复轮 U5 第二轮）：宿主靠镜头那一侧的肩头。以上臂关节为原点、在宿主胸口的坐标系里：
+ * 往上 up、往前 fwd（宿主的前方 = 朝镜子外、朝镜头）、往脖子收 inward 米。手腕停在肩头，手指沿肩的前面垂下来（ThirdHand 'shoulder'）。
+ * 以前目标是关节本身（在上臂里面），手藏在宿主的身体和头后面，镜头一个像素也看不到。
+ */
+export const SHOULDER_HAND = { up: 0.04, fwd: 0.05, inward: 0.05 };
+
+/** 第三只手碰的额头在头心的哪里（米，沿头的上方、前方）。 */
+export const FOREHEAD = { up: 0.04, fwd: 0.09 } as const;
 
 /** 水洼倒影的冷色补光（Lambert emissive）。 */
 export const PUDDLE_FILL = 0x1c2a33;
@@ -62,7 +75,8 @@ interface Rec {
   surf: SurfaceView | null;
   delay: number; headLag: number;
   headDown: { t0: number; hold: number } | null;
-  third: { g: ThirdHandGesture; t0: number; hold: number } | null;
+  /** side：搭肩时搭在宿主哪一侧（+1 右、−1 左；0 = 还没定，手势开始时按镜头定下）。 */
+  third: { g: ThirdHandGesture; t0: number; hold: number; side: number } | null;
   clip: PoseClipId | null; clipT0: number; clipBlend: number;
   speedFactor: number; stopAt: number | null; stopped: boolean;
   offS: number; worldS: number; worldX: number; worldXv: number; lane: number; walk: number;
@@ -78,11 +92,14 @@ interface Rec {
 interface Slot { rig: Rig; box: THREE.Group; body: THREE.MeshLambertMaterial; mirror: THREE.MeshLambertMaterial; puddle: THREE.MeshLambertMaterial; memory: THREE.MeshLambertMaterial; pose: Pose; tmp: Pose; rec: Rec | null; glow: { value: number } }
 
 /**
- * 站立段里的世界替身自带一面立着的大镜子（修复轮 U5）：4-3「广场边上的大镜子里站着的我」。站立段的数据不支持反光面，
- * 只在渲染端处理：镜框 + 浅色镜底 + 一层很淡的玻璃，替身站在框里、面朝镜头（附录 D10：异常只出现在倒影里）。
- * 内框宽 MIRROR_FRAME.w、高 h，镜底在替身身后 back 米。跑段（5-6 迎面走来的「我」）不加。
+ * 站立段里的世界替身站在一面立着的大镜子里（修复轮 U5）：4-3「我走到广场边缘。那里立着一面很大的镜子，和家里的卫生间镜子一样大，
+ * 但没有边框。」站立段的数据不支持反光面，只在渲染端处理（附录 D10：异常只出现在倒影里）。
+ * 修复轮 U5 第二轮：没有边框（以前是深色框条和两条支脚）——浅色镜底比身后的天和地暗一点，上沿和两侧一道很细的亮边，
+ * 前面一层很淡的玻璃；镜子整段都立着（段开始 fadeIn 秒淡入，镜头这时正从爬行升到站立视线），替身按 cue 在里面淡入淡出。
+ * 位置：替身 cue 的 sAhead 处，车道再往广场边上挪 edge 米（不在你走的路上），镜面转向你。
+ * 镜面（玻璃）宽 w、高 h；镜底在玻璃后 back 米，替身站在玻璃后 inset 米。跑段（5-6 迎面走来的「我」）不加。
  */
-export const MIRROR_FRAME = { w: 0.95, h: 2.05, bar: 0.07, depth: 0.05, back: 0.3, frame: 0x3a4146, base: 0xaeb9be, glass: 0xd7e0e4 } as const;
+export const STAND_MIRROR = { w: 1.0, h: 2.0, back: 0.34, inset: 0.17, edge: 0.85, rim: 0.012, fadeIn: 1.0, base: 0xaeb9be, rimColor: 0xd3dadd, glass: 0xd7e0e4 } as const;
 
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _pl = new THREE.Plane();
 const _tgt: ThirdHandTarget = {};
@@ -123,6 +140,11 @@ export function tintLambert(mat: THREE.MeshLambertMaterial, desat: number, tint:
 
 /** 静场替身眼睛自发光（按 set）：4-6 水里站着的「我」。 */
 export const STILL_EYE_GLOW: Readonly<Record<string, number>> = { water: 0.35 };
+/**
+ * 静场替身低头看你的角度（弧度，颈 40 %、头 60 %；修复轮 U5 第二轮）。4-6「他看着我」：水里倒立的「我」站在离你 2.65 m 的地方，
+ * 镜头从岸上斜着往下约 36° 看。他不低头时，倒影的脸是从下巴那一侧看过去的，只剩一块肤色的圆，眼睛看不见。
+ */
+export const STILL_DOUBLE_LOOK: Readonly<Record<string, number>> = { water: 0.62 };
 
 export class DoubleSystem implements ViewSystem {
   readonly id = 'wp5.doubles';
@@ -139,14 +161,16 @@ export class DoubleSystem implements ViewSystem {
   private planSeg = -1;
   private lastT = 0;
   private readonly crawlIn: CrawlInput = { s: 0, x: 0, y: 0, floorY: 0, beat: 0, stride: 1, cadence: 4.8, speed: 4.8, duck: 0, air: false, airT: 0, mode: 'crawl', modeT: 0, laneTarget: 0, twitch: 0, drift: 0, lookBack: 0 };
-  /** 站立段世界替身的镜子（MIRROR_FRAME）：读章前建好，游戏中不建几何体。 */
-  readonly mirrorFrame = new THREE.Group();
+  /** 站立段世界替身的镜子（STAND_MIRROR）：读章前建好，游戏中不建几何体。原点在玻璃下沿中点，镜面朝本地 +z。 */
+  readonly standMirror = new THREE.Group();
   /** 穿过玻璃的第三只手在玻璃上的涟漪（GLASS_RIPPLE）。 */
   readonly ripple = new THREE.Group();
   private rippleMat!: THREE.MeshBasicMaterial;
-  private frameMats: THREE.MeshBasicMaterial[] = [];
+  private mirrorMats: THREE.MeshBasicMaterial[] = [];
+  /** 这一段（站立段）里要立镜子的替身 cue；镜子的位置（世界：x、里程 s、转向 yaw）与开始淡入的时刻。 */
+  private mirrorSpec: DoubleSpec | null = null;
+  private mirrorAt: { x: number; s: number; yaw: number; t0: number } | null = null;
   private rippleOn = false;
-  private frameOwner: string | null = null;
 
   constructor(private readonly surfaces: ReflectSurfaces) {}
 
@@ -174,7 +198,7 @@ export class DoubleSystem implements ViewSystem {
       ctx.scene.add(box);
       this.slots.push({ rig, box, body, mirror, puddle, memory, pose: createPose(), tmp: createPose(), rec: null, glow });
     }
-    this.buildMirrorFrame(ctx);
+    this.buildStandMirror(ctx);
     // 涟漪：两圈细环（加法混合，不写深度），面朝 +z；按玻璃的朝向转
     this.rippleMat = ctx.mat.basic({ color: GLASS_RIPPLE.color, transparent: true, opacity: 0, additive: true });
     this.rippleMat.side = THREE.DoubleSide;
@@ -211,50 +235,55 @@ export class DoubleSystem implements ViewSystem {
     return false;
   }
 
-  private buildMirrorFrame(ctx: ViewContext): void {
-    const F = MIRROR_FRAME;
-    const frameMat = ctx.mat.basic({ color: F.frame, transparent: true, opacity: 1 });
-    const baseMat = ctx.mat.basic({ color: F.base, transparent: true, opacity: 1 });
-    const glassMat = ctx.mat.basic({ color: F.glass, transparent: true, opacity: 0.14 });
-    for (const m of [frameMat, baseMat]) m.depthWrite = true;
-    glassMat.depthWrite = false;
-    this.frameMats = [frameMat, baseMat, glassMat];
-    const g = this.mirrorFrame;
-    g.name = 'wp5.mirrorFrame';
-    const W = F.w + 2 * F.bar, H = F.h + 2 * F.bar;
-    const bars: Array<[number, number, number, number]> = [
-      [0, F.bar / 2, W, F.bar], [0, H - F.bar / 2, W, F.bar], [-(F.w + F.bar) / 2, H / 2, F.bar, H], [(F.w + F.bar) / 2, H / 2, F.bar, H],
-    ];
-    for (const [x, y, w, h] of bars) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, F.depth), frameMat);
-      m.position.set(x, y, 0);
+  private buildStandMirror(ctx: ViewContext): void {
+    const M = STAND_MIRROR;
+    const baseMat = ctx.mat.basic({ color: M.base, transparent: true, opacity: 1 });
+    const rimMat = ctx.mat.basic({ color: M.rimColor, transparent: true, opacity: 1 });
+    const glassMat = ctx.mat.basic({ color: M.glass, transparent: true, opacity: 0.14 });
+    baseMat.depthWrite = true; rimMat.depthWrite = true; glassMat.depthWrite = false;
+    this.mirrorMats = [baseMat, rimMat, glassMat];
+    const g = this.standMirror;
+    g.name = 'wp5.standMirror';
+    // 镜底：一块薄板（替身身后），立在地上
+    const base = new THREE.Mesh(new THREE.BoxGeometry(M.w, M.h, 0.03), baseMat);
+    base.position.set(0, M.h / 2, -M.back);
+    base.name = 'wp5.standMirror.base';
+    g.add(base);
+    // 一道很细的亮边（上沿和两侧，贴在镜底前面）：没有框，只有亮度差
+    for (const [x, y, w, h] of [[0, M.h - M.rim / 2, M.w, M.rim], [-(M.w - M.rim) / 2, M.h / 2, M.rim, M.h], [(M.w - M.rim) / 2, M.h / 2, M.rim, M.h]] as const) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), rimMat);
+      m.position.set(x, y, -M.back + 0.016);
       g.add(m);
     }
-    // 镜底（替身身后）：浅色，深色校服的人贴在上面读得清
-    const base = new THREE.Mesh(new THREE.PlaneGeometry(F.w, F.h), baseMat);
-    base.position.set(0, F.bar + F.h / 2, -F.depth / 2 - 0.002);
-    // 两条支脚
-    for (const sx of [-1, 1]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.5), frameMat);
-      leg.position.set(sx * (W / 2 - 0.05), 0.025, -0.25);
-      g.add(leg);
-    }
-    g.add(base);
     // 玻璃（替身前面，很淡）：渲染顺序在替身之后
-    const glass = new THREE.Mesh(new THREE.PlaneGeometry(F.w, F.h), glassMat);
-    glass.position.set(0, F.bar + F.h / 2, F.back + 0.02);
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(M.w, M.h), glassMat);
+    glass.position.set(0, M.h / 2, 0);
     glass.renderOrder = 10;
     g.add(glass);
     g.visible = false;
     ctx.scene.add(g);
   }
 
-  /** 替身 id 是否带着镜框（测试用）。 */
-  framed(id: string): boolean { return this.mirrorFrame.visible && this.frameOwner === id; }
+  /** 替身 id 是否站在站立段的镜子里（测试用）。 */
+  inMirror(id: string): boolean {
+    return this.standMirror.visible && !!this.mirrorSpec && this.mirrorSpec.id === id && this.slots.some((q) => q.rec?.id === id && q.rec.kind === 'world');
+  }
+  /** 站立段镜子的状态（测试 / wp5State 用）。 */
+  mirrorState(): { visible: boolean; opacity: number; pos: number[]; yaw: number } {
+    return { visible: this.standMirror.visible, opacity: this.mirrorMats[0]?.opacity ?? 0, pos: this.standMirror.position.toArray(), yaw: this.standMirror.rotation.y };
+  }
 
   async loadChapter(ch: CompiledChapter): Promise<void> { this.chapter = ch; this.clear(); }
   onSegment(seg: CompiledSegment): void {
     this.seg = seg;
+    // 站立段里有世界替身（4-3）：这一段一开始就立一面镜子（位置在第一帧按玩家的里程定）
+    this.mirrorAt = null;
+    this.mirrorSpec = null;
+    if (seg.kind === 'stand') {
+      for (const e of ((seg.def as { events?: Array<{ type: string; spec?: DoubleSpec }> }).events ?? [])) {
+        if (e.type === 'double' && e.spec && e.spec.surface === 'world') { this.mirrorSpec = e.spec; break; }
+      }
+    }
     // 离开这一段：世界 / 静场 / 记忆替身立即结束；挂在反光面上的替身等反光面离开视野再结束
     for (const sl of this.slots) {
       const r = sl.rec;
@@ -267,16 +296,16 @@ export class DoubleSystem implements ViewSystem {
   }
   onReset(): void { this.clear(); }
 
-  clear(): void { for (const sl of this.slots) this.free(sl); WP5.focus = null; this.mirrorFrame.visible = false; this.frameOwner = null; if (this.ripple) this.ripple.visible = false; }
+  clear(): void { for (const sl of this.slots) this.free(sl); WP5.focus = null; this.standMirror.visible = false; this.mirrorAt = null; if (this.ripple) this.ripple.visible = false; }
   private free(sl: Slot): void { sl.rec = null; sl.box.visible = false; }
 
   /** 替身所在的槽位下标（没有返回 −1）。 */
   slotIndexOf(id: string): number { return this.slots.findIndex((s) => s.rec?.id === id); }
 
   /** 活动替身（调试 / 测试用）。 */
-  active(): Array<{ id: string; kind: Kind; alpha: number; visible: boolean; head: number[]; yaw: number; framed: boolean; slot: number }> {
+  active(): Array<{ id: string; kind: Kind; alpha: number; visible: boolean; head: number[]; yaw: number; mirror: boolean; slot: number }> {
     return this.slots.map((s, i) => ({ s, i })).filter(({ s }) => s.rec).map(({ s, i }) => ({ id: (s.rec as Rec).id, kind: (s.rec as Rec).kind, alpha: (s.rec as Rec).alpha, visible: s.box.visible,
-      head: (s.rec as Rec).head.toArray(), yaw: s.pose.root[3] as number, framed: this.framed((s.rec as Rec).id), slot: i }));
+      head: (s.rec as Rec).head.toArray(), yaw: s.pose.root[3] as number, mirror: this.inMirror((s.rec as Rec).id), slot: i }));
   }
 
   // ———————————————————— cue ————————————————————
@@ -300,7 +329,7 @@ export class DoubleSystem implements ViewSystem {
       id: spec.id, spec, kind, t0: t, surf,
       delay: spec.delay ?? (spec.source === 'history' ? 0.35 : 0), headLag: spec.headLag ?? 0,
       headDown: spec.headDownHold ? { t0: t, hold: spec.headDownHold } : null,
-      third: spec.thirdHand ? { g: spec.thirdHand.gesture, t0: t + spec.thirdHand.at, hold: spec.thirdHand.hold } : null,
+      third: spec.thirdHand ? { g: spec.thirdHand.gesture, t0: t + spec.thirdHand.at, hold: spec.thirdHand.hold, side: 0 } : null,
       clip: null, clipT0: t, clipBlend: 0,
       speedFactor: 1, stopAt: null, stopped: false,
       offS: 0, worldS: snap.player.s + (spec.anchor?.sAhead ?? 8), worldX: (spec.anchor?.lane ?? 0) * 1.1, worldXv: 0, lane: spec.anchor?.lane ?? 0, walk: 0,
@@ -321,7 +350,7 @@ export class DoubleSystem implements ViewSystem {
     if (mod.delay !== undefined) r.delay = mod.delay;
     if (mod.headLag !== undefined) r.headLag = mod.headLag;
     if (mod.headDownHold !== undefined) r.headDown = { t0: t, hold: mod.headDownHold };
-    if (mod.thirdHand) r.third = { g: mod.thirdHand.gesture, t0: t + mod.thirdHand.at, hold: mod.thirdHand.hold };
+    if (mod.thirdHand) r.third = { g: mod.thirdHand.gesture, t0: t + mod.thirdHand.at, hold: mod.thirdHand.hold, side: 0 };
     if (mod.clip) { r.clip = mod.clip; r.clipT0 = t; }
     if (mod.speedFactor !== undefined) { r.speedFactor = mod.speedFactor; if (r.stopped) { r.stopped = false; r.stopAt = null; } }
     if (mod.stopAtDistance !== undefined) r.stopAt = mod.stopAtDistance;
@@ -351,8 +380,8 @@ export class DoubleSystem implements ViewSystem {
     if (!(step >= 0) || step > 60) step = 0;
     this.lastT = t;
     let focus: Rec | null = null;
-    let frameOn = false;
     this.rippleOn = false;
+    this.updateStandMirror(prev, next, a, t);
     for (const sl of this.slots) {
       const r = sl.rec;
       if (!r) continue;
@@ -377,16 +406,7 @@ export class DoubleSystem implements ViewSystem {
       sl.rig.mesh.renderOrder = r.kind === 'floor' ? -18 : 0;
       if (sl.box.visible && r.kind !== 'memory' && r.kind !== 'world' && al > 0.5) focus = !focus || r.t0 > focus.t0 ? r : focus;
       if (r.surf) this.surfaces.want(r.surf.id);
-      // 站立段的世界替身：镜子跟着它，透明度一起淡入淡出
-      if (sl.box.visible && r.kind === 'world' && next.segKind === 'stand' && !frameOn) {
-        frameOn = true; this.frameOwner = r.id;
-        const root = sl.pose.root;
-        this.mirrorFrame.position.set(root[0] as number, lerp(prev.player.floorY, next.player.floorY, a), -(root[2] as number) - MIRROR_FRAME.back);
-        this.frameMats[0]!.opacity = al; this.frameMats[1]!.opacity = al; this.frameMats[2]!.opacity = 0.14 * al;
-      }
     }
-    this.mirrorFrame.visible = frameOn;
-    if (!frameOn) this.frameOwner = null;
     this.ripple.visible = this.rippleOn;
     // 镜头焦点：最近出现的那个镜中 / 水洼替身
     if (focus) {
@@ -395,6 +415,26 @@ export class DoubleSystem implements ViewSystem {
       WP5.focus.point.copy(focus.head); WP5.focus.kind = kind; WP5.focus.weight = focus.alpha;
       WP5.focus.through = focus.third?.g === 'forehead' ? t - focus.third.t0 : -1;
     } else if (WP5.focus) WP5.focus.weight = 0;
+  }
+
+  /** 站立段的镜子：第一帧按玩家位置立好，整段可见，开场淡入；离开站立段就收起。 */
+  private updateStandMirror(prev: SimSnapshot, next: SimSnapshot, a: number, t: number): void {
+    const M = STAND_MIRROR, spec = this.mirrorSpec;
+    if (next.segKind !== 'stand' || !spec) { this.standMirror.visible = false; this.mirrorAt = null; return; }
+    const N = next.player;
+    if (!this.mirrorAt) {
+      const lane = spec.anchor?.lane ?? 0;
+      const x = lane * 1.1 + (lane < 0 ? -1 : 1) * M.edge, s = N.s + (spec.anchor?.sAhead ?? 8);
+      // 镜面转向你（站立机位在你身后，镜面朝你也就差不多朝着镜头）
+      this.mirrorAt = { x, s, yaw: Math.atan2(N.x - x, s - N.s), t0: t };
+    }
+    const A = this.mirrorAt;
+    const g = this.standMirror;
+    g.position.set(A.x, lerp(prev.player.floorY, N.floorY, a), -A.s);
+    g.rotation.set(0, A.yaw, 0);
+    const k = this.ctx.settings.reducedMotion ? 1 : smoothstep(0, 1, (t - A.t0) / M.fadeIn);
+    this.mirrorMats[0]!.opacity = k; this.mirrorMats[1]!.opacity = k; this.mirrorMats[2]!.opacity = 0.14 * k;
+    g.visible = k > 0.002;
   }
 
   /** 算姿势与放置矩阵；返回是否应该显示。 */
@@ -476,10 +516,12 @@ export class DoubleSystem implements ViewSystem {
         const v = r.surf as SurfaceView;
         if (!v.active) return false;
         const D = Math.max(0, v.planeS - sNow);
-        // 第三只手穿过玻璃（2-10 forehead）：它随手伸出慢慢贴近玻璃，手才穿得过来（修复轮 U5）
-        const eF = r.third && r.third.g === 'forehead' ? gestureExtend(t - r.third.t0, r.third.hold) : 0;
-        const d = clamp(0.2 * D, lerp(0.5, 0.22, eF), 3.2);
-        root[0] = (scripted ? xNow : (root[0] as number)) * 0.5;
+        let d = clamp(0.2 * D, 0.5, 3.2), xk = 0.5;
+        // 掌心贴掌心（2-10，修复轮 U5 第二轮）：主角爬近、掌心贴到玻璃上时，替身从压缩的深度过渡到真正的镜像
+        // （离玻璃的距离 = 主角的根离玻璃的距离，横向不压缩），两只手掌隔着玻璃对上，第三只手才够得到额头
+        const pg = src === 'history' ? WP5.palmGlass : 0;
+        if (pg > 0) { d = lerp(d, Math.max(0.04, v.planeS - (root[2] as number)), pg); xk = lerp(0.5, 1, pg); }
+        root[0] = (scripted ? xNow : (root[0] as number)) * xk;
         root[2] = v.planeS - d;
         // 镜中房间的地面与开口下沿齐平（endRoomFloor），替身站在这个地面上
         const yf = v.floorY + endRoomFloor(v);
@@ -531,8 +573,14 @@ export class DoubleSystem implements ViewSystem {
           }
           root[1] = (root[1] as number) + fyNow;
         }
-        // 站立段（4-3 镜中的「我」）：站在镜子里，面朝镜头
         root[0] = r.worldX; root[2] = r.worldS; root[3] = toward || next.segKind === 'stand' ? Math.PI : 0;
+        // 站立段（4-3 镜中的「我」）：身体（骨盆）站在镜子里、玻璃后 inset 米，面朝镜面的方向（转向你）。
+        // 骨盆在根后方 REST.pelvis[2] 米，所以根放在玻璃后 inset − 它 处
+        const MA = this.mirrorAt;
+        if (next.segKind === 'stand' && MA && this.mirrorSpec?.id === r.id) {
+          const k = STAND_MIRROR.inset - (REST.pelvis[2] as number);
+          root[0] = MA.x - Math.sin(MA.yaw) * k; root[2] = MA.s + Math.cos(MA.yaw) * k; root[3] = Math.PI + MA.yaw;
+        }
         box.matrix.identity();
         break;
       }
@@ -566,6 +614,8 @@ export class DoubleSystem implements ViewSystem {
       if (w > 0) { b.addLocal('neck', -0.35 * w, 0, 0); b.addLocal('head', -HEAD_DOWN * w, 0, 0); b.fkAll(BONE_INDEX.head); }
       if (u > r.headDown.hold + 0.3) r.headDown = null;
     }
+    const look = r.kind === 'still' && next.still ? STILL_DOUBLE_LOOK[next.still.set] : undefined;
+    if (look) { b.addLocal('neck', -0.4 * look, 0, 0); b.addLocal('head', -0.6 * look, 0, 0); b.fkAll(BONE_INDEX.neck); }
     if (r.third) {
       const u = t - r.third.t0;
       const e = gestureExtend(u, r.third.hold, GESTURE_EXTEND[r.third.g] ?? 1.2);
@@ -615,10 +665,12 @@ export class DoubleSystem implements ViewSystem {
     const g = r.third?.g;
     const inv = sl.box.matrix;       // 反射矩阵是自己的逆（世界 ↔ 反射前）
     if (g === 'forehead') {
-      _tp.copy(WP5.playerRoot);
-      // 玩家额头：取主角头骨的世界位置
-      this.b2.load(WP5.playerPose);
-      this.b2.jointWorld('head', _tp); _tp.y += 0.1;
+      // 主角的额头：头心沿头的前方 FOREHEAD.fwd、上方 FOREHEAD.up（额头表面；指尖停在这里，ThirdHand 让手腕留出一个手长）
+      const b2 = this.b2.load(WP5.playerPose);
+      const hq = b2.wq[BONE_INDEX.head] as THREE.Quaternion;
+      _w.copy(b2.wp[BONE_INDEX.head] as THREE.Vector3).addScaledVector(_td.set(0, 1, 0).applyQuaternion(hq), 0.1 + FOREHEAD.up)
+        .addScaledVector(_td.set(0, 0, -1).applyQuaternion(hq), FOREHEAD.fwd);
+      b2.toWorld(_w, _tp);
       if (next.segKind === 'still') _tp.applyMatrix4(WP5.stillAnchor);
       _tgt.point = _tp.applyMatrix4(_m.copy(inv).invert());
     } else if (g === 'palmGlass' && r.kind === 'still' && r.stillPlane) {
@@ -635,9 +687,25 @@ export class DoubleSystem implements ViewSystem {
       if (v.kind === 'side') { _tp.set(v.planeX, v.floorY + 0.95, -(this.b.pose.root[2] as number) - 0.35); _td.set(v.sign, 0, 0); }
       else { _tp.set(this.b.pose.root[0] as number, v.floorY + 0.7, -v.planeS); _td.set(0, 0, -1); }
       _tgt.point = _tp; _tgt.dir = _td;
-    } else if (g === 'shoulder' && r.spec.attachBehind) {
+    } else if (g === 'shoulder' && r.spec.attachBehind && r.third) {
       const other = this.slots.find((s) => s.rec?.id === r.spec.attachBehind);
-      if (other) { this.b2.load(other.pose); this.b2.jointWorld('upperArmR', _tp); _tgt.point = _tp; }
+      if (other) {
+        const b2 = this.b2;
+        b2.load(other.pose);
+        // 搭在靠镜头那一侧的肩上：手势开始时按（反射之后的）世界坐标里哪个肩离镜头近定下，之后不换
+        if (r.third.side === 0) {
+          b2.jointWorld('upperArmR', _p0).applyMatrix4(inv); b2.jointWorld('upperArmL', _p1).applyMatrix4(inv);
+          const cam = this.ctx.camera.position;
+          r.third.side = _p0.distanceToSquared(cam) <= _p1.distanceToSquared(cam) ? 1 : -1;
+        }
+        const side = r.third.side, S = SHOULDER_HAND;
+        const cq = b2.wq[BONE_INDEX.chest] as THREE.Quaternion;
+        _w.copy(b2.wp[side > 0 ? BONE_INDEX.upperArmR : BONE_INDEX.upperArmL] as THREE.Vector3)
+          .addScaledVector(_td.set(0, 1, 0).applyQuaternion(cq), S.up)
+          .addScaledVector(_td.set(0, 0, -1).applyQuaternion(cq), S.fwd)
+          .addScaledVector(_td.set(-side, 0, 0).applyQuaternion(cq), S.inward);
+        _tgt.point = b2.toWorld(_w, _tp);
+      }
     } else if (g === 'point') {
       _td.set(0, 0, r.kind === 'side' || r.kind === 'end' ? -1 : 1); _tgt.dir = _td;
     }

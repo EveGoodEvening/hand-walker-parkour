@@ -15,8 +15,9 @@ export const SET_SHOTS: Partial<Record<ShotId, SetShot>> = {
   // 2-5：低机位（0.32 m，修复轮 U5）在主角左后方、窗与他之间，对着干净的窗玻璃：窗里的「我」正面坐着、腿垂到地上，
   // 第三只手的掌心贴在玻璃上；主角自己在画面右边缘之外
   windowSeat: { pos: [-0.1, 0.32, 1.0], look: [-1.05, 0.6, -0.25], fov: 55 },
-  // 2-9：背靠实验桌腿，看黑板（右边的实验台挪到 x = 1.5，黑板整块露出来；修复轮 U5）
-  labBoard: { pos: [0.62, 0.55, 1.2], look: [0, 1.1, -2.6], fov: 60 },
+  // 2-9：背靠实验桌腿坐着，看黑板。修复轮 U5 第二轮：镜头在他左后方的低处、越过他的左肩看黑板，右手边的实验台（x = 1.05，
+  // 钢架腿就在他身旁，「背靠着实验桌的桌腿」）在画面右侧，挡不住黑板；他在画面右边、不和黑板重叠。第一轮把实验台挪到 x = 1.5，桌腿离他 1.1 m
+  labBoard: { pos: [-0.55, 0.45, 0.9], look: [0.15, 1.25, -2.6], fov: 60 },
   // 3-5：公交车，车窗在左侧。从过道上方越过主角的头看车窗（修复轮 U5：以前与头同高，车窗里的「我」有一半被他挡住）
   busWindow: { pos: [0.35, 1.6, 0.9], look: [-1.5, 1.0, -0.6], fov: 55 },
   // 3-9：黑暗的客厅，自动爬行
@@ -25,9 +26,10 @@ export const SET_SHOTS: Partial<Record<ShotId, SetShot>> = {
   bathroomMirror: { pos: [0.85, 1.5, 0.6], look: [-0.25, 1.35, -0.87], fov: 62 },
   // 4-4：右手举到眼前（镜头在眼睛里）
   palmEye: { pos: [0.0, 1.02, -0.02], look: [0.04, 1.0, -0.6], fov: 50 },
-  // 4-6：趴在水边、从他眼睛里俯看水面（约 −56°；修复轮 U5）：倒影里站着的「我」在画面中间，下沿伸进来按在水里的双手，
-  // 岸边的灰带出画（以前从 1.15 m 高、岸上看下去，水里的人群像一堆盒子，岸是画面底部的一条灰带）
-  waterDown: { pos: [0.0, 0.62, -0.47], look: [0, 0, -0.9], fov: 58 },
+  // 4-6：跪在水边、从他眼睛里斜着往下看水面（约 −36°，修复轮 U5 第二轮）：倒影里站着的「我」（离他 2.65 m、离岸 2.3 m，water.ts）倒着立在
+  // 画面中间，低头看着镜头（Doubles 的 STILL_DOUBLE_LOOK），脸在中间偏下；四周是缩小、压暗的爬行人群；下沿伸进来按在水里的双手和手边的涟漪，岸出画。
+  // 以前约 −56°、替身就在镜头下方 0.7 m：只看得见鞋底和腿，头藏在肩膀后面
+  waterDown: { pos: [0.0, 0.85, 0.0], look: [0, -0.02, -1.2], fov: 50 },
   // 4 章结尾 / 5-10：天花板上的裂缝（仰躺，镜头在眼睛里）
   ceilingCrack: { pos: [0, 0.34, 0.62], look: [0, 3, 0.5], fov: 60 },
   // 5-1：被子里的脚
@@ -44,9 +46,12 @@ export const SET_SHOT_RETURN: Partial<Record<ShotId, SetShot>> = {
   bathroomMirror: { pos: [0.95, 1.7, 1.0], look: [-0.28, 1.32, -0.87], fov: 45 },
 };
 
-/** 静场里过了某个时刻慢慢推到的近景（修复轮 U5）：5-9 推到枕边的凹陷，从床边平视枕头，主角的身体退出画面。 */
+/**
+ * 静场里过了某个时刻慢慢推到的近景（修复轮 U5）：5-9 推到枕边的凹陷，主角的身体退出画面。
+ * 修复轮 U5 第二轮：推得更近、视角收窄到 40°（以前 52°，8.6 s 时他的头、肩和手臂还占着画面左上的四分之一）。
+ */
 export const SET_SHOT_LATE: Partial<Record<ShotId, { after: number; blend: number; shot: SetShot }>> = {
-  infirmaryBed: { after: 7.0, blend: 1.2, shot: { pos: [-1.0, 0.45, 0.35], look: [-0.45, -0.02, 0.72], fov: 52 } },
+  infirmaryBed: { after: 7.0, blend: 1.2, shot: { pos: [-0.9, 0.55, 0.6], look: [-0.5, -0.02, 0.75], fov: 40 } },
 };
 
 /** 每个 set 的缺省机位（`camera` cue 可以覆盖）。键 = `${set}.${variant}` 或 `${set}`。 */
@@ -92,20 +97,24 @@ export const FOLLOW = {
 } as const;
 
 /**
- * 跑段里某一拍区间的专门追尾机位（修复轮 U5）。5-3 @30–@140：反向的影子从身后追来（第二个影子在身后 follower.distance 处），
+ * 跑段里某一拍区间的专门追尾机位（修复轮 U5）。5-3 @30–@212：反向的影子从身后追来（第二个影子在身后 follower.distance 处），
  * 默认机位看不到身后 2 m；拉高拉远、看向前方 2 m 的地面，自己的影子（前右方）和追来的影子都在画面里。
+ * 修复轮 U5 第二轮：一直保持到 @212 的公交站（以前到 @140，「我开始跑。」之后追来的影子还在，却在画面外）。
+ * 这一段的必需障碍在这个机位下照样按 occlusion 的规则可读（上半身淡出照常；tests/unit/actors/occlusion.test.ts）。
  * pos / look 相对玩家（x 跟随车道：pos.x = k·x + dx，look.x = lookK·x + lx）；fov 为竖直视角（横屏），竖屏 ×1.3、≤ 80°。
  */
 export interface SegmentShot { from: number; to: number; dx: number; h: number; back: number; lx: number; ly: number; lz: number; fov: number; blend: number }
 export const SEGMENT_SHOTS: Readonly<Record<string, SegmentShot>> = {
-  '5-3': { from: 30, to: 140, dx: 0.4, h: 1.8, back: 3.8, lx: 0, ly: 0, lz: -2, fov: 60, blend: 1.0 },
+  '5-3': { from: 30, to: 212, dx: 0.4, h: 1.8, back: 3.8, lx: 0, ly: 0, lz: -2, fov: 60, blend: 1.0 },
 };
 
 /**
- * 停拍里第三只手穿过玻璃碰你的额头（2-10「掌心贴掌心」之后，forehead 手势开始起 2.2 s）：切到侧面机位（修复轮 U5）。
- * 追尾机位从你身后看，镜中替身正好在你后脑勺后面。pos / look 相对玩家的根（世界坐标轴，−z 是前方）。
+ * 停拍里第三只手穿过玻璃碰你的额头（2-10「掌心贴掌心」之后，forehead 手势开始起到替身消失）：切到侧面机位（修复轮 U5）。
+ * 追尾机位从你身后看，镜中替身正好在你后脑勺后面。修复轮 U5 第二轮：pos / look 相对「接触点」——你的头心与镜中它的头心的中点
+ * （世界坐标轴，−z 是前方，接触点差不多就在玻璃上）：镜头在你右前方的走廊里斜着看玻璃，你的头、它的头、穿过玻璃的手都在画面里。
+ * 以前相对你的根，镜头在你头的前面，你的头一直在画面外，指尖停在半空。
  */
-export const THROUGH_GLASS_SHOT = { pos: [1.1, 1.1, -0.2] as const, look: [-0.2, 0.95, -1.3] as const, fov: 55, from: 0, to: 2.2 };
+export const THROUGH_GLASS_SHOT = { pos: [1.3, 0.15, 0.9] as const, look: [0, -0.05, 0] as const, fov: 55, from: 0, to: 2.6 };
 
 /** 停拍里看水洼里的倒影（3-4）：镜头在主角前方 far 米、离地 h 米，回头看主角前方 lookAhead 米处的水面（lookY 低于地面一点）。 */
 export const PUDDLE_GAZE = { far: 2.4, h: 0.8, lookAhead: 0.9, lookY: -0.2 } as const;
