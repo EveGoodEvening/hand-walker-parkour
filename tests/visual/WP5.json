@@ -1,1 +1,536 @@
-[]
+[
+ {
+  "out": "shots/visual/WP5/poseTest-crawl.png",
+  "q": "medium",
+  "query": "ch=test",
+  "ops": [
+   {
+    "steps": 60
+   },
+   {
+    "eval": "__game.poseTest('crawl')"
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/poseTest-jump.png",
+  "q": "medium",
+  "query": "ch=test",
+  "ops": [
+   {
+    "steps": 60
+   },
+   {
+    "eval": "__game.poseTest('jump')"
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/poseTest-duck.png",
+  "q": "medium",
+  "query": "ch=test",
+  "ops": [
+   {
+    "steps": 60
+   },
+   {
+    "eval": "__game.poseTest('duck')"
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/poseTest-twitch.png",
+  "q": "medium",
+  "query": "ch=test",
+  "ops": [
+   {
+    "steps": 60
+   },
+   {
+    "eval": "__game.poseTest('twitch')"
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/poseTest-stand.png",
+  "q": "medium",
+  "query": "ch=test",
+  "ops": [
+   {
+    "steps": 60
+   },
+   {
+    "eval": "__game.poseTest('stand')"
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/poseTest-thirdHand.png",
+  "q": "medium",
+  "query": "ch=test",
+  "ops": [
+   {
+    "steps": 60
+   },
+   {
+    "eval": "__game.poseTest('thirdHand')"
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/poseTest-shadowThreeHands.png",
+  "q": "medium",
+  "query": "ch=test",
+  "ops": [
+   {
+    "steps": 60
+   },
+   {
+    "eval": "__game.poseTest('shadowThreeHands')"
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/crawl-chase-1-1-a.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-1&beat=8",
+  "ops": [
+   {
+    "steps": 60
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {beat:+s.beat.toFixed(2),mode:s.mode,duck:s.duck,y:s.y}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/crawl-chase-1-1-b.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-1&beat=8",
+  "ops": [
+   {
+    "steps": 66
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {beat:+s.beat.toFixed(2),mode:s.mode,duck:s.duck,y:s.y}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/crawl-chase-1-1-c.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-1&beat=8",
+  "ops": [
+   {
+    "steps": 72
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {beat:+s.beat.toFixed(2),mode:s.mode,duck:s.duck,y:s.y}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/crawl-chase-1-1-d.png",
+  "q": "low",
+  "size": "640x360",
+  "query": "ch=ch1&seg=1-1&beat=8",
+  "ops": [
+   {
+    "steps": 78
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(1,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {beat:+s.beat.toFixed(2),mode:s.mode,duck:s.duck,y:s.y}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/duck-1-2-68-side.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2&beat=60",
+  "ops": [
+   {
+    "steps": 191
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "__game.ext.wp5Cam([2.4,0.5,0.0],[0,0.35,-0.2],45)"
+   },
+   {
+    "eval": "__game.step(1,{render:true}).beat"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {beat:+s.beat.toFixed(2),mode:s.mode,duck:s.duck,y:s.y}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/duck-1-2-68-chase.png",
+  "q": "low",
+  "query": "ch=ch1&seg=1-2&beat=60",
+  "ops": [
+   {
+    "steps": 176
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<12;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "(()=>{const s=__game.getState();return {beat:+s.beat.toFixed(2),mode:s.mode,duck:s.duck,y:s.y}})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/ch1-start-no-surfaces.png",
+  "q": "low",
+  "query": "ch=ch1&autopilot=off",
+  "ops": [
+   {
+    "steps": 30
+   },
+   {
+    "eval": "(()=>{__game.step(1,{render:true});const s=__game.ext.wp5State();if(s.surfaces.length)console.error('[wp5] reflective surfaces active at chapter start',JSON.stringify(s.surfaces));return s.surfaces})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/mirror-1-3-lane-1.png",
+  "query": "ch=ch1&seg=1-3&beat=0",
+  "ops": [
+   {
+    "eval": "(__game.setAutopilot('off'),__game.setInvincible(true),1)"
+   },
+   {
+    "eval": "__game.input('left')"
+   },
+   {
+    "steps": 300
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/mirror-1-3-lane+0.png",
+  "query": "ch=ch1&seg=1-3&beat=0",
+  "ops": [
+   {
+    "eval": "(__game.setAutopilot('off'),__game.setInvincible(true),1)"
+   },
+   {
+    "steps": 300
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/mirror-1-3-lane+1.png",
+  "query": "ch=ch1&seg=1-3&beat=0",
+  "ops": [
+   {
+    "eval": "(__game.setAutopilot('off'),__game.setInvincible(true),1)"
+   },
+   {
+    "eval": "__game.input('right')"
+   },
+   {
+    "steps": 300
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/mirror-1-3-headDown.png",
+  "query": "ch=ch1&seg=1-3&beat=0",
+  "ops": [
+   {
+    "steps": 1070
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<20;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/mirror-1-3-headDown-detail.png",
+  "query": "ch=ch1&seg=1-3&beat=0",
+  "ops": [
+   {
+    "steps": 1085
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<20;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "__game.ext.wp5Cam([-0.6,0.8,-1.2],[-2.6,0.45,-4.2],40)"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/memory-1-2-handstand.png",
+  "query": "ch=ch1&seg=1-2&beat=40",
+  "ops": [
+   {
+    "steps": 210
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<20;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/memory-1-2-handstand-rf.png",
+  "query": "ch=ch1&seg=1-2&beat=40&rf=1",
+  "ops": [
+   {
+    "steps": 210
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<20;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/shadow-1-5-jellyfish.png",
+  "query": "ch=ch1&seg=1-5&beat=120",
+  "ops": [
+   {
+    "steps": 280
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<20;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/shush-1-6.png",
+  "query": "ch=ch1&seg=1-6&beat=0",
+  "ops": [
+   {
+    "steps": 760
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<40;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/shush-1-6-inside.png",
+  "query": "ch=ch1&seg=1-6&beat=0",
+  "ops": [
+   {
+    "steps": 800
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<20;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "__game.ext.wp5Cam([0.3,0.75,-10.1],[0,0.5,-12],55)"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/still-1-4-feetArchDesk.png",
+  "query": "ch=ch1&seg=1-4",
+  "ops": [
+   {
+    "steps": 636
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<10;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/puddle-stencil.png",
+  "query": "ch=test",
+  "ops": [
+   {
+    "steps": 120
+   },
+   {
+    "eval": "__game.ext.wp5Puddle({ahead:4.2,lane:1})"
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "__game.ext.wp5PixelCheck('puddle')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/puddle-nostencil.png",
+  "query": "ch=test&nostencil=1",
+  "ops": [
+   {
+    "steps": 120
+   },
+   {
+    "eval": "__game.ext.wp5Puddle({ahead:4.2,lane:1})"
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "__game.ext.wp5PixelCheck('puddle')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/shadow-stencil.png",
+  "q": "medium",
+  "query": "ch=test",
+  "ops": [
+   {
+    "steps": 120
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "__game.ext.wp5PixelCheck('shadow')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/shadow-nostencil.png",
+  "q": "medium",
+  "query": "ch=test&nostencil=1",
+  "ops": [
+   {
+    "steps": 120
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   },
+   {
+    "eval": "__game.ext.wp5PixelCheck('shadow')"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/leader-ahead.png",
+  "query": "ch=test",
+  "ops": [
+   {
+    "steps": 60
+   },
+   {
+    "eval": "__game.ext.wp5Leader(true)"
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<60;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/portrait-lane-1.png",
+  "size": "360x640",
+  "query": "ch=ch1&seg=1-2&beat=20",
+  "ops": [
+   {
+    "eval": "(__game.setAutopilot('off'),__game.setInvincible(true),1)"
+   },
+   {
+    "eval": "__game.input('left')"
+   },
+   {
+    "steps": 120
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/portrait-lane+0.png",
+  "size": "360x640",
+  "query": "ch=ch1&seg=1-2&beat=20",
+  "ops": [
+   {
+    "eval": "(__game.setAutopilot('off'),__game.setInvincible(true),1)"
+   },
+   {
+    "steps": 120
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/portrait-lane+1.png",
+  "size": "360x640",
+  "query": "ch=ch1&seg=1-2&beat=20",
+  "ops": [
+   {
+    "eval": "(__game.setAutopilot('off'),__game.setInvincible(true),1)"
+   },
+   {
+    "eval": "__game.input('right')"
+   },
+   {
+    "steps": 120
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ },
+ {
+  "out": "shots/visual/WP5/crawl-high.png",
+  "q": "high",
+  "query": "ch=ch1&seg=1-2&beat=20",
+  "ops": [
+   {
+    "steps": 90
+   },
+   {
+    "eval": "(()=>{for(let i=0;i<24;i++)__game.step(2,{render:true});return __game.ext.wp5State()})()"
+   }
+  ]
+ }
+]
