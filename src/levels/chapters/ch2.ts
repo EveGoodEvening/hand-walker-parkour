@@ -1,4 +1,5 @@
 // src/levels/chapters/ch2.ts —— 第二章 · 午饭（DESIGN.md §4.2、附录 B、附录 C）。归 WP2。
+// lead 集成：静场反光面 / 黑板的 id 按 WP3 的 set（2-5 canteenWindow 的玻璃 'canteenGlass'，2-9 labBoard 的黑板 'labBoard'）。
 // 台词全部来自 lines.ts（原文逐字）。只 import schema（§8.2 规则 2）。
 // 与 §4.2 表格的差异（为了附录 A-11「任意 20 s 内最多一个主异常」，按 Sim 时间轴算，静场里的异常也算；
 // tests/unit/content/anomalies.test.ts 检查。其余照表）：
@@ -141,7 +142,7 @@ export default {
       follower: { mode: 'absent' },
       events: [
         { at: 0.0, type: 'camera', shot: 'windowSeat', seconds: 0 },
-        { at: 0.0, type: 'double', spec: { id: 'winSeat', surface: 'window', source: 'script', clip: 'sitEat' } },
+        { at: 0.0, type: 'double', spec: { id: 'winSeat', surface: 'canteenGlass', source: 'script', clip: 'sitEat' } },
         { at: 0.5, type: 'text', line: 'c2.sits', id: 'reflectionSits' },
         { at: 2.4, type: 'text', line: 'c2.curled' },
         { at: 5.0, type: 'doubleMod', target: 'winSeat', mod: { thirdHand: { gesture: 'palmGlass', at: 0, hold: 1.5 } } },
@@ -260,13 +261,13 @@ export default {
         { at: 4.4, type: 'shadow', mode: 'pointBack', seconds: 8 },                     // 多了一只手，从胸口伸出来指向身后
         { at: 4.4, type: 'text', line: 'c2.extraHand', id: 'threeHands' },
         { at: 5.2, type: 'camera', shot: 'turnBack', seconds: 0.8 },
-        { at: 6.0, type: 'board', surface: 'board', op: 'write', line: 'c2.whyNotStand', tremble: true, id: 'boardQuestion' },
+        { at: 6.0, type: 'board', surface: 'labBoard', op: 'write', line: 'c2.whyNotStand', tremble: true, id: 'boardQuestion' },
       ],
       input: { at: 7.4, hint: 'wipe', mode: 'hold', holdSeconds: 1.2, timeout: 5, onDone: [
-        { at: 0.0, type: 'board', surface: 'board', op: 'wipe', byPlayer: true },
+        { at: 0.0, type: 'board', surface: 'labBoard', op: 'wipe', byPlayer: true },
         { at: 0.2, type: 'actor', clip: 'writeBoard', seconds: 1.6 },
         { at: 0.4, type: 'sfx', sfx: 'chalk' },
-        { at: 0.8, type: 'board', surface: 'board', op: 'write', line: 'c2.cantStand', byPlayer: true, id: 'boardAnswer' },
+        { at: 0.8, type: 'board', surface: 'labBoard', op: 'write', line: 'c2.cantStand', byPlayer: true, id: 'boardAnswer' },
         { at: 3.0, type: 'text', line: 'c2.lying' },
       ] },
     },

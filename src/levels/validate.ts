@@ -709,17 +709,28 @@ export function normalizeLint(raw: unknown, chapter: string): Issue[] {
  * 按约定调用 lint 模块：lintAll() 一次（chapter 记为 'text'），lintChapter(def) 每章一次。
  * 返回实际调用了哪些入口，以及归一化后的问题。
  */
-export function runLint(mod: Record<string, unknown>, defs: readonly ChapterDef[]): { entries: string[]; issues: Issue[] } {
+export function runLint(mod: Record<string, unknown>, defs: readonly ChapterDef[],
+  extra: { full?: boolean; sources?: unknown; uiStrings?: Record<string, unknown> } = {}): { entries: string[]; issues: Issue[] } {
   const issues: Issue[] = [];
   const entries: string[] = [];
   const call = (name: string, chapter: string, f: () => unknown) => {
     try { issues.push(...normalizeLint(f(), chapter)); } catch (e) { issues.push({ level: 'error', rule: 'R14', chapter, msg: `${name} threw: ${(e as Error)?.message ?? String(e)}` }); }
   };
-  const all = mod.lintAll, per = mod.lintChapter;
+  const all = mod.lintAll, per = mod.lintChapter, content = mod.lintContent, strings = mod.lintStrings;
   if (typeof all === 'function') { entries.push('lintAll'); call('lintAll()', 'text', () => (all as () => unknown)()); }
-  if (typeof per === 'function') {
+  // lead 集成：WP2 的 lint.ts 导出 lintContent（lines.ts 与原文逐字比对 + 每章 lintChapter + 跨章规则）。
+  // 校验全部章节时用它代替逐章 lintChapter（它的「没被引用的台词」只有看到全部章节才有意义）；原文由调用方传入。
+  if (typeof content === 'function' && extra.full) {
+    entries.push('lintContent');
+    call('lintContent()', 'text', () => (content as (o: { chapters: readonly ChapterDef[]; sources?: unknown }) => unknown)({ chapters: defs, sources: extra.sources }));
+  } else if (typeof per === 'function') {
     entries.push('lintChapter');
     for (const d of defs) call(`lintChapter(${d.id})`, d.id, () => (per as (d: ChapterDef) => unknown)(d));
+  }
+  // 附录 B.8 同样作用于 ui/strings.ts
+  if (typeof strings === 'function' && extra.uiStrings) {
+    entries.push('lintStrings');
+    call('lintStrings(ui/strings)', 'text', () => (strings as (t: unknown, where?: string) => unknown)(extra.uiStrings, 'ui/strings'));
   }
   if (!entries.length) {
     const names = Object.keys(mod).filter((k) => k !== 'default');

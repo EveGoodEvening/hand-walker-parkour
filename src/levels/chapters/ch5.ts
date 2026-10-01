@@ -47,7 +47,9 @@ export default {
     },
     /* 5-2 迟疑的灯：声控灯晚 0.5 s 才亮 */
     {
-      id: '5-2', kind: 'run', kit: 'stairs', variant: 'dawnDown', atmosphere: 'dawn', surface: 'concrete',
+      // lead 集成：§4.5 写 5-2「暗」、声控灯晚 0.5 s 才亮。dawn 不是暗色预设（日光照亮一切、没有粉笔描边），WP1 的 R4 判声控区间里的障碍不可读；
+      // 楼道没有窗，改用暗色的 nightIndoor（描边 0.35），5-3 出楼道再进 dawn。
+      id: '5-2', kind: 'run', kit: 'stairs', variant: 'dawnDown', atmosphere: 'nightIndoor', surface: 'concrete',
       beats: 36, stride: 0.6, cadence: 4.4, stairs: { dir: 'down', risePerBeat: 0.15 },
       follower: { mode: 'absent' },
       rows: [

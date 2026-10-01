@@ -72,7 +72,16 @@ if (!existsSync(LINT_PATH)) {
   try { mod = (await import(pathToFileURL(LINT_PATH).href)) as Record<string, unknown>; } catch (e) {
     lint = { status: 'ran', entries: [], issues: [{ level: 'error', rule: 'R14', chapter: 'text', msg: `src/levels/lint.ts failed to load: ${(e as Error)?.message ?? String(e)}` }] };
   }
-  if (mod) lint = { status: 'ran', ...runLint(mod, defs) };
+  if (mod) {
+    // lead 集成：全部章节时跑 WP2 的 lintContent（原文只在这里读，不进产物），并对 ui/strings.ts 跑附录 B.8
+    const full = !chArg && defs.length === CHAPTER_ORDER.filter((id) => getChapter(id)).length + (getChapter('test') ? 1 : 0);
+    const sources = full ? (await import('../src/levels/sourceQuotes')).SOURCE_CHAPTERS : undefined;
+    const uiStrings: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(await import('../src/ui/strings'))) {
+      if (typeof v === 'string' || Array.isArray(v) || (v !== null && typeof v === 'object' && !(v instanceof Set) && !(v instanceof Map))) uiStrings[k] = v;
+    }
+    lint = { status: 'ran', ...runLint(mod, defs, { full, sources, uiStrings }) };
+  }
   const e = lint.issues.filter((i) => i.level === 'error');
   errors += e.length;
   if (!json) {
