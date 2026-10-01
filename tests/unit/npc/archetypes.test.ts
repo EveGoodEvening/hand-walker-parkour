@@ -209,9 +209,12 @@ describe('人腿 / 陈默 / 爬行者：世界包围盒与碰撞盒偏差 ≤ 5 
     const out: string[] = [];
     let turnedPeople = 0, total = 0;
     const shoeYaws = (view: ReturnType<typeof stageView>['view']) => {
-      const shoes = view.forest.pool('shoe');
+      const { pool: shoes, variant } = view.forest.shoes();
       const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), ys: number[] = [];
-      for (let i = 0; i < shoes.n; i++) { shoes.matrixAt(i, m).decompose(new THREE.Vector3(), q, new THREE.Vector3()); ys.push(e.setFromQuaternion(q, 'YXZ').y); }
+      for (let i = 0; i < shoes.n; i++) {
+        if (shoes.variantAt(i) !== variant) continue;
+        shoes.matrixAt(i, m).decompose(new THREE.Vector3(), q, new THREE.Vector3()); ys.push(e.setFromQuaternion(q, 'YXZ').y);
+      }
       return ys;
     };
     for (const tier of ['low', 'high'] as QualityTier[]) {
@@ -321,6 +324,82 @@ describe('人腿 / 陈默 / 爬行者：世界包围盒与碰撞盒偏差 ≤ 5 
       const fy = view.lastSnap?.player.floorY ?? 0;
       expect(b.max.y - fy).toBeGreaterThan(FOOT_HIP.y + 0.1);
       void obstacles;
+    }
+  });
+});
+
+/** 从 +z（玩家一侧）水平射向 −z 的一条光线是否碰到这个变体的任何三角形（不剔除背面）。 */
+function hitsFromFront(geo: THREE.BufferGeometry, v: number, x: number, y: number): boolean {
+  const pos = geo.getAttribute('position'), hw = geo.getAttribute('aHw');
+  const ray = new THREE.Ray(new THREE.Vector3(x, y, 5), new THREE.Vector3(0, 0, -1));
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), out = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i += 3) {
+    const vi = hw.getX(i);
+    if (!(vi === v || vi < 0)) continue;
+    a.fromBufferAttribute(pos, i); b.fromBufferAttribute(pos, i + 1); c.fromBufferAttribute(pos, i + 2);
+    if (ray.intersectTriangle(a, b, c, false, out)) return true;
+  }
+  return false;
+}
+
+describe('剪影语言（§2.5、lead 要求 2）：同一套田径场景里的两种栏架一眼分开', () => {
+  it('被碰倒的栏架（low）：从玩家一侧看，整个宽度、横板以下都是实的，没有缝；最高处整条粉笔白', () => {
+    const p = pools.get('curb') as ArchetypePoolImpl;
+    const v = p.variantOf('hurdleDown');
+    const holes: string[] = [];
+    for (const x of [-0.45, -0.3, -0.15, 0, 0.15, 0.3, 0.45]) {
+      for (const y of [0.02, 0.06, 0.1, 0.14, 0.18, 0.21]) if (!hitsFromFront(p.geo, v, x, y)) holes.push(`x ${x} y ${y}`);
+    }
+    expect(holes).toEqual([]);
+    // 最高的那一条是粉笔白（aChalk = 1），横跨整个宽度
+    const pos = p.geo.getAttribute('position'), hw = p.geo.getAttribute('aHw'), ch = p.geo.getAttribute('aChalk');
+    let top = -Infinity;
+    for (let i = 0; i < pos.count; i++) if (hw.getX(i) === v) top = Math.max(top, pos.getY(i));
+    const chalk = new THREE.Box3();
+    for (let i = 0; i < pos.count; i++) if (hw.getX(i) === v && ch.getX(i) >= 0.99) chalk.expandByPoint(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)));
+    expect(chalk.max.y).toBeCloseTo(top, 6);
+    expect(chalk.min.x).toBeLessThan(-OBSTACLES.hurdleDown.halfW);
+    expect(chalk.max.x).toBeGreaterThan(OBSTACLES.hurdleDown.halfW);
+    // 扁宽：宽是高的 4 倍以上
+    const b = bounds(p.geo, v);
+    expect((b.max.x - b.min.x) / (b.max.y - b.min.y)).toBeGreaterThan(4);
+  });
+
+  it('立着的栏架（bar）：同样的光线在横板下面穿过去（下面是一道空的缝）', () => {
+    const p = pools.get('armBar') as ArchetypePoolImpl;
+    const v = p.variantOf('hurdle');
+    for (const y of [0.06, 0.14, 0.21, 0.3]) expect(hitsFromFront(p.geo, v, 0, y), `y ${y}`).toBe(false);
+    expect(hitsFromFront(p.geo, v, 0, 0.46)).toBe(true);
+  });
+});
+
+describe('地面贴花（水渍、水洼、湿落叶）：边缘逐顶点淡出，不是一圈锯齿', () => {
+  it('外圈最外面的顶点在每个三角形里都取淡出值（≤ 0.05），同一位置的顶点只有一个不透明度', () => {
+    const p = pools.get('floorDecal') as ArchetypePoolImpl;
+    const pos = p.geo.getAttribute('position'), hw = p.geo.getAttribute('aHw'), col = p.geo.getAttribute('color');
+    expect(col.itemSize).toBe(4);
+    const N = 14;
+    for (const kind of ['wet', 'puddle', 'leaves'] as ObstacleKind[]) {
+      const v = p.variantOf(kind);
+      const d = dimsOf(kind);
+      // 只看那一摊（y = 0.005；拖把痕、落叶在它上面）：按角度分组，每组半径最大的是外圈
+      const pts: Array<{ k: number; r: number; a: number; key: string }> = [];
+      for (let i = 0; i < pos.count; i++) {
+        if (hw.getX(i) !== v || Math.abs(pos.getY(i) - 0.005) > 1e-6) continue;
+        const nx = pos.getX(i) / d.vw, nz = pos.getZ(i) / d.vd, r = Math.hypot(nx, nz);
+        if (r < 1e-6) continue;
+        const k = ((Math.round(Math.atan2(nz, nx) / (2 * Math.PI / N)) % N) + N) % N;
+        pts.push({ k, r, a: col.getW(i), key: `${pos.getX(i).toFixed(5)},${pos.getZ(i).toFixed(5)}` });
+      }
+      const outerR = new Map<number, number>();
+      for (const q of pts) outerR.set(q.k, Math.max(outerR.get(q.k) ?? 0, q.r));
+      const outer = pts.filter((q) => q.r > (outerR.get(q.k) ?? 0) - 1e-6);
+      expect(outer.length, kind).toBeGreaterThanOrEqual(N * 3);
+      expect(Math.max(...outer.map((q) => q.a)), kind).toBeLessThanOrEqual(0.05 + 1e-6);
+      // 外圈顶点：同一位置只有一个不透明度（按三角形交替取值时同一点会同时是 a1 和 a2）
+      const byKey = new Map<string, Set<number>>();
+      for (const q of outer) { const s = byKey.get(q.key) ?? new Set<number>(); s.add(Math.round(q.a * 1e4)); byKey.set(q.key, s); }
+      for (const [key, s] of byKey) expect(s.size, `${kind} ${key}`).toBe(1);
     }
   });
 });

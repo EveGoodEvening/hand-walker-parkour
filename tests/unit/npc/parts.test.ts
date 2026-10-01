@@ -147,7 +147,8 @@ describe('契约 ArchetypePool 的槽位语义（legs / crawler 的独立工厂�
         id: n, kind: id, cls: 'block', archetype: id, lanes: [lane], beat: 4, s0: 4, s1: 4.3, y0: 0, y1: 1, halfW: 0.3,
         behavior: { type: 'walk', speed: 2 }, npc: true, params: {},
       });
-      const meshName = id === 'legs' ? 'npc:hips' : 'crawler:body';
+      // 低画质下普通人的髋在 npc:hipsLow 里（特殊人物在 npc:special）
+      const meshName = id === 'legs' ? 'npc:hipsLow' : 'crawler:body';
       const people = () => {
         const out: Array<{ x: number; z: number }> = [];
         pool.object.traverse((o) => {

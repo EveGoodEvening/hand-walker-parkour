@@ -7,7 +7,7 @@ import type { Behavior, CompiledObstacle, CompiledSegment, NpcGroupDef, RunSegme
 import { expandSegment, type Decor, type GroupInfo } from './crowds';
 import type { Stage } from './ObstacleView';
 
-export const STAGE_NAMES = ['gallery-low', 'gallery-bar', 'gallery-block', 'gallery-soft', 'forest', 'stretch', 'specials', 'dream', 'night'] as const;
+export const STAGE_NAMES = ['gallery-low', 'gallery-bar', 'gallery-block', 'gallery-soft', 'forest', 'stretch', 'specials', 'dream', 'night', 'track'] as const;
 export type StageName = (typeof STAGE_NAMES)[number];
 
 export interface Spec { kind: ObstacleKind; lane: Lane | Lane[] | 'all'; at: number; behavior?: Behavior; id?: string; len?: number; note?: string }
@@ -123,6 +123,17 @@ export function makeStage(name: StageName, s0: number, floorY: number, seed = 7)
         { kind: 'crawler', lane: 1, at: 14, behavior: { type: 'walk', speed: 3 } },
         { kind: 'crawler', lane: -1, at: 18, behavior: { type: 'walk', speed: 3 } },
         { kind: 'legs', lane: 0, at: 20 },
+      ];
+      break;
+    case 'track':
+      // 田径场的同一套障碍（kitSymbols track：L → cone / hurdleDown，H → hurdle）：被碰倒的栏架（low，撑跃）
+      // 和立着的栏架（bar，伏低）并排，检查剪影能不能一眼分开（lead 要求 2）
+      kit = 'track';
+      specs = [
+        { kind: 'hurdleDown', lane: -1, at: 3.5 }, { kind: 'hurdle', lane: 1, at: 3.5 },
+        { kind: 'hurdle', lane: 0, at: 7 },
+        { kind: 'hurdleDown', lane: 1, at: 10 }, { kind: 'cone', lane: -1, at: 10 },
+        { kind: 'legs', lane: 0, at: 14, id: 'teacherMa' },
       ];
       break;
     case 'night':

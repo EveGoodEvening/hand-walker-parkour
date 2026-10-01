@@ -1,7 +1,17 @@
-// archetypes/curb.ts —— 路沿 / 地面管线 / 放倒的栏架（low，§2.5：扁宽，顶边一道粉笔白）。
+// archetypes/curb.ts —— 路沿 / 地面管线 / 被碰倒的栏架（low，§2.5：扁宽，顶边一道粉笔白）。
+import * as THREE from 'three';
 import { defineArchetype } from '../archetype';
 import { C } from '../colors';
 import { chalkTop, stripedBar } from '../shapes';
+
+const DEG = Math.PI / 180;
+
+/**
+ * 被碰倒、平躺在地上的栏架：条纹横板向后仰 HURDLE_DOWN.tilt，斜靠在折倒的框架上。
+ * 框架（前后两根钢管 + 中间的底板）贴地铺满整个宽度，横板下面没有缝——立着的栏架（bar 的 hurdle）下面是一道空的深缝，
+ * 两者在同一套田径场景里出现（kitSymbols track：L → hurdleDown，H → hurdle），操作相反，剪影必须一眼分开（审查 r2）。
+ */
+export const HURDLE_DOWN = { tilt: 55 * DEG, boardY: 0.185, boardZ: -0.005, boardH: 0.1, boardT: 0.025, baseH: 0.15, chalkY: 0.255 } as const;
 
 export default defineArchetype({
   id: 'curb', material: 'lambert', cap: 48,
@@ -31,14 +41,18 @@ export default defineArchetype({
     {
       name: 'hurdleDown', kind: 'hurdleDown',
       build(b, d) {
-        // 向前倒下的栏架：横板离地 0.21–0.27，两侧立柱斜撑在地上
+        const H = HURDLE_DOWN;
         const hw = d.vw - 0.02;
-        stripedBar(b, -hw, hw, 0.24, 0, 0.06, 0.03, 5, C.trackLine, C.dark);
-        for (const x of [-hw, hw]) {
-          b.segment([x, 0.0, 0.09], [x, 0.24, -0.005], 0.03, 0.03, C.dark);
-          b.box([x, 0.015, 0], [0.03, 0.03, 2 * d.vd - 0.01], C.dark);
-        }
-        chalkTop(b, d, { y: 0.28, w: 2 * hw, z: 0.02 });
+        // 折倒的框架：底板填满横板下面（不留缝），前后两根钢管横躺在地上
+        b.box([0, H.baseH / 2, -0.01], [2 * hw - 0.04, H.baseH, 0.17], C.deskLeg, { faces: '+x-x+y+z-z', colors: { '+y': 0x6b7270, '+z': 0x737b7d } });
+        for (const z of [d.vd - 0.04, -(d.vd - 0.04)]) b.rodX(-hw, hw, 0.035, z, 0.035, 6, C.steel);
+        // 两端：放倒的立柱，从地面斜撑到横板两端
+        for (const x of [-hw + 0.015, hw - 0.015]) b.segment([x, 0.0, d.vd - 0.03], [x, 0.2, -0.03], 0.03, 0.03, C.dark);
+        // 条纹横板：向后仰，朝上露出条纹，下沿压在底板上
+        const m = new THREE.Matrix4().makeTranslation(0, H.boardY, H.boardZ).multiply(new THREE.Matrix4().makeRotationX(-H.tilt));
+        b.withMatrix(m, () => stripedBar(b, -hw, hw, 0, 0, H.boardH, H.boardT, 5, C.trackLine, C.dark));
+        // 最高处（横板上沿）整条粉笔白
+        chalkTop(b, d, { y: H.chalkY, w: 2 * hw, z: -0.045 });
       },
     },
   ],

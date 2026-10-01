@@ -7,8 +7,8 @@ import { getChapter } from '../../../src/levels/chapters/index';
 import type { ChapterDef } from '../../../src/levels/schema';
 import { customStage, makeStage, toStage, type StageName } from '../../../src/render/npc/stage';
 import { chapter, runSeg } from '../core/helpers';
-import { ViewDriver, fakeCtx, makeView, stageView } from './helpers';
-import { LegForest, newPerson } from '../../../src/render/npc/LegForest';
+import { ViewDriver, fakeCtx, instancedBounds, makeView, stageView } from './helpers';
+import { FEET, LegForest, newPerson } from '../../../src/render/npc/LegForest';
 import { EMBER_PEAK, emberGlow, lookFor } from '../../../src/render/npc/specials';
 import { LAMP_PEAK, lampGlow } from '../../../src/render/npc/archetypes/armBar';
 import { reducedPulse } from '../../../src/render/npc/behaviors';
@@ -42,11 +42,42 @@ describe('WP6 draw call 与数量上限（§9.4；验收 1）', () => {
     }
   });
 
-  it('低画质下 NPC 部件只有鞋、腿、髋 3 个 InstancedMesh 在画（梦里也不画躯干和头）', () => {
-    const { view } = withStage('low', 'dream', 20);
-    const c = view.forest.counts();
-    expect(c.torso + c.head + c.upper + c.shin + c.thigh).toBe(0);
-    expect(c.leg).toBeGreaterThan(0);
+  it('低画质下 NPC 部件最多 3 个 InstancedMesh：feet（鞋 + 腿）、hipsLow、special（梦里也不画躯干和头）', () => {
+    for (const stage of ['dream', 'specials', 'forest'] as StageName[]) {
+      const { view } = withStage('low', stage, 20);
+      const c = view.forest.counts();
+      expect(c.torso + c.head + c.upper + c.shin + c.thigh + c.shoe + c.hips, stage).toBe(0);
+      expect(c.feet, stage).toBeGreaterThan(0);
+      expect(c.hipsLow, stage).toBeGreaterThan(0);
+      // 特殊人物（陈默、周主任）只在 special 里，普通人不进去
+      expect(c.special > 0, stage).toBe(stage === 'specials');
+    }
+  });
+
+  it('NPC 三角形（按 renderer.info 的算法，几何体全部三角形 × 实例数）：低画质 ≤ 8k（§9.4，最多 24 人）', () => {
+    const LOW_BUDGET = 8000;
+    const rows: string[] = [];
+    // 第一章 1-1（教室里两侧坐满的人）、1-2 陈默和储物柜、几个舞台（特殊人物、人墙、梦里）
+    for (const [seg, beat] of [['1-1', 3], ['1-2', 112], ['1-2', 150]] as const) {
+      const { view } = makeView('low');
+      const vd = new ViewDriver(view, getChapter('ch1') as ChapterDef, { segment: seg, beat });
+      vd.d.sim.setInvincible(true);
+      vd.step(20);
+      rows.push(`${seg}@${beat}: ${view.stats.people} 人 ${view.forest.triangles()}`);
+      expect(view.forest.triangles(), `${seg}@${beat}`).toBeLessThanOrEqual(LOW_BUDGET);
+    }
+    for (const stage of ['forest', 'specials', 'dream', 'stretch'] as StageName[]) {
+      const { view } = withStage('low', stage, 20);
+      rows.push(`${stage}: ${view.stats.people} 人 ${view.forest.triangles()}`);
+      expect(view.forest.triangles(), stage).toBeLessThanOrEqual(LOW_BUDGET);
+    }
+    // 24 个普通人 + 每人一双垂着的手（最坏情况）也在预算内
+    const f = new LegForest(); f.init(fakeCtx('low'));
+    const p = newPerson(lookFor('student', 1, 'tris'));
+    p.arms = true;
+    f.begin(); for (let i = 0; i < 24; i++) f.add(p); f.end();
+    expect(f.triangles()).toBeLessThanOrEqual(LOW_BUDGET);
+    expect(rows.length).toBe(7);
   });
 
   it('梦中的爬行者 ≤ 3 次 draw call；数量上限 低 24 / 中 60 / 高 120', () => {
@@ -333,7 +364,7 @@ describe('R12：人腿的粉笔与朝向无关', () => {
         f.begin(); f.add(p); f.end();
         let facing = 0, chalked = 0;
         const m = new THREE.Matrix4(), nm = new THREE.Matrix3(), n = new THREE.Vector3();
-        for (const id of (tier === 'low' ? ['leg'] : ['shin', 'thigh']) as Array<'leg' | 'shin' | 'thigh'>) {
+        for (const id of (tier === 'low' ? ['feet'] : ['shin', 'thigh']) as Array<'feet' | 'shin' | 'thigh'>) {
           const pool = f.pool(id);
           const geo = pool.mesh.geometry;
           const nor = geo.getAttribute('normal'), hw = geo.getAttribute('aHw'), ch = geo.getAttribute('aChalk');
@@ -341,6 +372,7 @@ describe('R12：人腿的粉笔与朝向无关', () => {
             pool.matrixAt(i, m);
             nm.getNormalMatrix(m);
             const v = pool.variantAt(i);
+            if (id === 'feet' && v !== FEET.leg) continue;     // 低画质的 feet 里还有鞋（浅色鞋底不写粉笔）
             for (let k = 0; k < nor.count; k += 3) {
               const vi = hw.getX(k);
               if (vi >= 0 && Math.abs(vi - v) > 0.5) continue;
@@ -485,6 +517,24 @@ describe('centerShoes 与多车道平铺', () => {
     const after = shoeYaws();
     expect(after.length).toBe(before.length);
     expect(after.some((y, i) => Math.abs(y - (before[i] ?? y)) > 0.1)).toBe(true);
+  });
+
+  it('turnShoes：走路的人只转鞋尖、腿不跟着转（不横着走），脚不踩进 ±1.8 的墙里', () => {
+    for (const tier of ['low', 'high'] as QualityTier[]) {
+      const { view, vd } = stageView(tier, [], { groups: [{ id: 'w', kind: 'walkers', from: 0, to: 40, side: 'both', density: 1 }] });
+      const feet = () => instancedBounds(view.forest.meshes, { yMax: (vd.d.snap.player.floorY ?? 0) + 0.3 });
+      const b0 = feet();
+      view.crowdOp('*', 'turnShoes', vd.d.snap);
+      let worst = 0;
+      for (let k = 0; k < 8; k++) {
+        vd.step(8);
+        const b = feet();
+        worst = Math.max(worst, -b.min.x, b.max.x);
+      }
+      expect(view.stats.people, tier).toBeGreaterThan(6);
+      expect(worst, tier).toBeLessThanOrEqual(1.8);
+      expect(Math.max(-b0.min.x, b0.max.x), tier).toBeLessThanOrEqual(1.8);
+    }
   });
 
   it('跨两条车道的书包：每条车道一个名义宽度的书包，不横向拉伸；外沿在碰撞盒的 x0 / x1 上', () => {

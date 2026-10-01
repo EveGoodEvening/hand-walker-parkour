@@ -9,6 +9,9 @@ import { InstPool } from './InstPool';
 import { applyNpcPatch, PartBuilder } from './material';
 import { C } from './colors';
 
+/** 左右两侧（热路径里不每帧新建数组）。 */
+const SIDES = [-1, 1] as const;
+
 /**
  * 身体尺寸：肩高 0.46、髋高 0.34；长度沿 z，头在 −z（朝前爬）。碰撞盒是 0.60 宽 × 1.10 长 × 0.55 高（obstacles.ts crawler），
  * 模型的外沿都在它的 ±5 cm 内（WP6 验收 4）：两肩外沿 ±0.29，背和头顶不超过 0.57，手臂向前摆到头前面一点，脚跟在 +0.6。
@@ -88,7 +91,7 @@ export class Crawlers {
     _q.setFromAxisAngle(_up, c.yaw + wig);
     _a.compose(_v.set(c.x, c.y + bob, c.z), _q, _one);
     this.body.push(_a, 0, 0, c.color);
-    for (const s of [-1, 1] as const) {
+    for (const s of SIDES) {
       // 左右手交替前后摆（支撑时几乎竖直）
       const swing = CRAWL.swing * Math.sin(ph + (s < 0 ? 0 : Math.PI));
       _m.copy(_a).multiply(_r.makeTranslation(s * CRAWL.shoulderX, CRAWL.shoulderY, CRAWL.shoulderZ));

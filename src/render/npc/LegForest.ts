@@ -2,15 +2,18 @@
 // 「椅子腿、人腿、桌腿，从四面八方围过来。我从这些柱子下面穿过，视线里只有膝盖和腰带。」
 // 部件各一个 InstancedMesh，颜色走 instanceColor（衣服着色，鞋底 / 手 / 头发不着色）：
 //   高画质：鞋、小腿、大腿、髋、躯干、头 = 6 次 draw call；中画质：鞋、小腿、大腿、髋、上身（躯干 + 头合并）= 5；
-//   低画质：鞋、腿（小腿 + 大腿合并，按姿势选变体）、髋 = 3，不画躯干和头。
+//   低画质：feet（鞋 + 合并的腿）、hipsLow（常见的几种髋）、special（周主任、班长、陈默）= 最多 3，不画躯干和头。
+// 每个实例都要处理整个几何体的全部顶点（不属于它的变体收拢成退化三角形），renderer.info 也按全量计数。
+// 低画质的 NPC 三角形预算只有 8k（§9.4），所以低画质把少见的特殊人物（夹克、作业本、陈默的上身）拆成单独的小几何体，
+// 只在他们出现时才有实例；常见的人只付 hipsLow 那一点三角形（审查 r2：原来每个实例都带着 8 个变体，24 人 10.3k）。
 // NPC 默认只建到腰带；躯干和头只在梦里、站立段显示（Person.upper）。陈默的上身（「全作唯一出现在你视线高度的头」）
-// 是髋部件的一个变体，所以低画质下也在。所有人都没有五官。
+// 是髋部件的一个变体（低画质在 special 里），所以低画质下也在。所有人都没有五官。
 import * as THREE from 'three';
 import type { QualityProfile, ViewContext } from '../../core/contracts';
 import { InstPool } from './InstPool';
 import { applyNpcPatch, PartBuilder } from './material';
 import { C } from './colors';
-import { HIPS, LEGV, type Look } from './specials';
+import { HIPS, LEGV, type HipsVariant, type Look } from './specials';
 
 /** 骨架尺寸（米）。站立时髋关节高 0.905，腰带在 1.03–1.07。 */
 export const BODY = { thigh: 0.43, shin: 0.4, ankle: 0.075, stance: 0.115, belt: 0.14 } as const;
@@ -65,13 +68,21 @@ function chalkBox(b: PartBuilder, c: [number, number, number], size: [number, nu
   b.with({ chalk }, () => b.box(c, size, hex, { faces: '+x-x+z-z', colors }));
 }
 
-function shoeGeo(): THREE.BufferGeometry {
-  // 鞋：鞋面着色（instanceColor），浅色鞋底不着色。脚踝在原点，鞋尖朝 +z。
-  const b = new PartBuilder();
-  b.variant(0, () => {
-    b.with({ tint: 1 }, () => chalkBox(b, [0, -0.032, 0.055], [0.1, 0.066, 0.25], W, LEG_CHALK, { '+y': G1 }));
-    b.box([0, -0.068, 0.055], [0.106, 0.014, 0.262], C.sole, { faces: '+x-x+z-z-y' });
+/**
+ * 鞋：鞋面着色（instanceColor），浅色鞋底不着色。脚踝在原点，鞋尖朝 +z。
+ * 鞋面的底面藏在鞋底里、鞋底的底面贴地（镜头永远在地面以上），都不画。
+ */
+function shoe(b: PartBuilder): void {
+  b.with({ tint: 1 }, () => {
+    b.with({ chalk: 0 }, () => b.box([0, -0.032, 0.055], [0.1, 0.066, 0.25], W, { faces: '+y', colors: { '+y': G1 } }));
+    b.with({ chalk: LEG_CHALK }, () => b.box([0, -0.032, 0.055], [0.1, 0.066, 0.25], W, { faces: '+x-x+z-z' }));
   });
+  b.box([0, -0.068, 0.055], [0.106, 0.014, 0.262], C.sole, { faces: '+x-x+z-z' });
+}
+
+function shoeGeo(): THREE.BufferGeometry {
+  const b = new PartBuilder();
+  b.variant(0, () => shoe(b));
   return b.build();
 }
 
@@ -87,11 +98,18 @@ function legSegGeo(len: number, w: number, d: number): THREE.BufferGeometry {
   return b.build();
 }
 
-/** 低画质：小腿 + 大腿合并成一根，从髋关节伸向脚踝（按正向运动学算出脚踝后指过去）。 */
-function legMergedGeo(): THREE.BufferGeometry {
+/** 低画质 feet 几何体的变体：鞋、合并的腿。 */
+export const FEET = { shoe: 0, leg: 1 } as const;
+
+/**
+ * 低画质：鞋 + 合并的腿（小腿 + 大腿合成一根，从髋关节伸向脚踝，按正向运动学算出脚踝后指过去）共用一个几何体，
+ * 省下一次 draw call 给 special。腿的上端藏在胯里、下端在脚踝（镜头在脚踝以上），上下两面不画。
+ */
+function feetGeo(): THREE.BufferGeometry {
   const b = new PartBuilder();
   const L = BODY.thigh + BODY.shin;
-  b.variant(0, () => b.with({ tint: 1 }, () => chalkBox(b, [0, -L / 2, 0], [0.135, L, 0.14], W, LEG_CHALK, { '-z': G1 })));
+  b.variant(FEET.shoe, () => shoe(b));
+  b.variant(FEET.leg, () => b.with({ tint: 1, chalk: LEG_CHALK }, () => b.box([0, -L / 2, 0], [0.135, L, 0.14], W, { faces: '+x-x+z-z', colors: { '-z': G1 } })));
   return b.build();
 }
 
@@ -113,10 +131,10 @@ function hangingArms(b: PartBuilder): void {
   }
 }
 
-/** 胯部：下沿在髋关节下 5 cm（离地 0.855 m，高于玩家碰撞盒的最高 0.85 m），大腿的上端从下面插进来。 */
+/** 胯部：下沿在髋关节下 5 cm（离地 0.855 m，高于玩家碰撞盒的最高 0.85 m），大腿的上端从下面插进来。腰带的底面藏在胯里，不画。 */
 function pelvis(b: PartBuilder): void {
   b.with({ tint: 1 }, () => b.box([0, 0.03, 0], [0.4, 0.16, 0.23], W, { colors: { '+y': G1 }, faces: '+x-x+z-z-y' }));
-  b.box([0, 0.125, 0], [0.41, 0.04, 0.238], C.hair);
+  b.box([0, 0.125, 0], [0.41, 0.04, 0.238], C.hair, { faces: '+x-x+z-z+y' });
 }
 
 function headAt(b: PartBuilder, y: number, long = false): void {
@@ -128,45 +146,74 @@ function headAt(b: PartBuilder, y: number, long = false): void {
 /** 陈默的上身：躯干高度、脖子（头底）高度（相对髋关节）。 */
 export const CHEN_UPPER = { torso: 0.42, neck: 0.56 } as const;
 
+/** 髋部件的一个变体（HIPS 编号）。 */
+function hipsPart(b: PartBuilder, id: HipsVariant): void {
+  switch (id) {
+    case HIPS.trousers: case HIPS.noHands:
+      // 普通人只到腰带：「视线里只有膝盖和腰带」
+      pelvis(b); break;
+    case HIPS.skirt:
+      b.with({ tint: 1 }, () => b.box([0, -0.13, 0], [0.44, 0.52, 0.28], W, { colors: { '+y': G1 } }));
+      b.box([0, 0.125, 0], [0.41, 0.035, 0.238], C.hair, { faces: '+x-x+z-z+y' });
+      break;
+    case HIPS.jacket:
+      // 周主任：灰夹克下摆到大腿中部；右手在身侧夹着烟，烟头一明一灭（glow）
+      b.with({ tint: 1 }, () => b.box([0, -0.02, 0], [0.44, 0.46, 0.27], W, { colors: { '+y': G1 } }));
+      // 夹烟的手抬在腰带高度（离地 0.86 m 以上），烟头不伸出碰撞盒正面 5 cm 以外
+      arms(b, 1);
+      b.segment([0.25, 0.1, 0.0], [0.265, -0.05, 0.08], 0.062, 0.062, C.skin);
+      b.segment([0.265, -0.045, 0.1], [0.275, -0.03, 0.17], 0.013, 0.013, 0xe4e8e4);
+      b.with({ glow: 1 }, () => b.box([0.275, -0.028, 0.178], [0.022, 0.022, 0.022], C.cigarette));
+      break;
+    case HIPS.books:
+      // 班长：双手在身前抱着一摞作业本（只看得见本子的下沿）
+      pelvis(b);
+      for (const s of [-1, 1]) b.segment([s * 0.21, 0.1, 0.02], [s * 0.14, 0.02, 0.2], 0.06, 0.06, C.skin);
+      b.box([0, 0.05, 0.22], [0.46, 0.1, 0.3], 0xd9dee3, { colors: { '+z': 0x9fb2c0, '-y': 0x9fb2c0 } });
+      break;
+    case HIPS.fullUpper:
+      // 陈默：完整的上身（校服、没有五官的头）。躯干比普通人短一点（蹲着时头顶正好在碰撞盒上沿，头和镜头一样高）
+      pelvis(b);
+      b.box([0, CHEN_UPPER.torso / 2 + 0.14, 0], [0.4, CHEN_UPPER.torso, 0.22], C.uniform, { colors: { '+y': 0x2b4466 } });
+      for (const s of [-1, 1]) b.segment([s * 0.24, CHEN_UPPER.neck - 0.04, 0], [s * 0.26, 0.08, 0.05], 0.08, 0.08, C.uniform);
+      for (const s of [-1, 1]) b.box([s * 0.26, 0.03, 0.06], [0.05, 0.1, 0.08], C.skin);
+      headAt(b, CHEN_UPPER.neck);
+      break;
+    case HIPS.trackPants:
+      pelvis(b);
+      for (const s of [-1, 1]) b.box([s * 0.202, 0.0, 0], [0.004, 0.18, 0.03], C.uniformStripe, { faces: s > 0 ? '+x' : '-x' });
+      break;
+    case HIPS.arms:
+      hangingArms(b); break;
+  }
+}
+
+/** 中、高画质：一个几何体放全部变体，变体号 = HIPS 编号（noHands 与 trousers 相同，不再单独建）。 */
 function hipsGeo(): THREE.BufferGeometry {
   const b = new PartBuilder();
-  // 普通人只到腰带：「视线里只有膝盖和腰带」
-  b.variant(HIPS.trousers, () => pelvis(b));
-  b.variant(HIPS.skirt, () => {
-    b.with({ tint: 1 }, () => b.box([0, -0.13, 0], [0.44, 0.52, 0.28], W, { colors: { '+y': G1 } }));
-    b.box([0, 0.125, 0], [0.41, 0.035, 0.238], C.hair);
-  });
-  b.variant(HIPS.jacket, () => {
-    // 周主任：灰夹克下摆到大腿中部；右手在身侧夹着烟，烟头一明一灭（glow）
-    b.with({ tint: 1 }, () => b.box([0, -0.02, 0], [0.44, 0.46, 0.27], W, { colors: { '+y': G1 } }));
-    // 夹烟的手抬在腰带高度（离地 0.86 m 以上），烟头不伸出碰撞盒正面 5 cm 以外
-    arms(b, 1);
-    b.segment([0.25, 0.1, 0.0], [0.265, -0.05, 0.08], 0.062, 0.062, C.skin);
-    b.segment([0.265, -0.045, 0.1], [0.275, -0.03, 0.17], 0.013, 0.013, 0xe4e8e4);
-    b.with({ glow: 1 }, () => b.box([0.275, -0.028, 0.178], [0.022, 0.022, 0.022], C.cigarette));
-  });
-  b.variant(HIPS.books, () => {
-    // 班长：双手在身前抱着一摞作业本（只看得见本子的下沿）
-    pelvis(b);
-    for (const s of [-1, 1]) b.segment([s * 0.21, 0.1, 0.02], [s * 0.14, 0.02, 0.2], 0.06, 0.06, C.skin);
-    b.box([0, 0.05, 0.22], [0.46, 0.1, 0.3], 0xd9dee3, { colors: { '+z': 0x9fb2c0, '-y': 0x9fb2c0 } });
-  });
-  b.variant(HIPS.fullUpper, () => {
-    // 陈默：完整的上身（校服、没有五官的头）。躯干比普通人短一点（蹲着时头顶正好在碰撞盒上沿，头和镜头一样高）
-    pelvis(b);
-    b.box([0, CHEN_UPPER.torso / 2 + 0.14, 0], [0.4, CHEN_UPPER.torso, 0.22], C.uniform, { colors: { '+y': 0x2b4466 } });
-    for (const s of [-1, 1]) b.segment([s * 0.24, CHEN_UPPER.neck - 0.04, 0], [s * 0.26, 0.08, 0.05], 0.08, 0.08, C.uniform);
-    for (const s of [-1, 1]) b.box([s * 0.26, 0.03, 0.06], [0.05, 0.1, 0.08], C.skin);
-    headAt(b, CHEN_UPPER.neck);
-  });
-  b.variant(HIPS.trackPants, () => {
-    pelvis(b);
-    for (const s of [-1, 1]) b.box([s * 0.202, 0.0, 0], [0.004, 0.18, 0.03], C.uniformStripe, { faces: s > 0 ? '+x' : '-x' });
-  });
-  b.variant(HIPS.noHands, () => pelvis(b));
-  b.variant(HIPS.arms, () => hangingArms(b));
+  for (const id of Object.values(HIPS)) if (id !== HIPS.noHands) b.variant(id, () => hipsPart(b, id));
   return b.build();
 }
+
+/** 低画质的常见髋部（hipsLow 的变体按这个顺序编号）。 */
+export const HIPS_LOW: readonly HipsVariant[] = [HIPS.trousers, HIPS.skirt, HIPS.trackPants, HIPS.arms];
+/** 低画质的特殊人物（special 的变体按这个顺序编号）：周主任、班长、陈默。 */
+export const HIPS_SPECIAL: readonly HipsVariant[] = [HIPS.jacket, HIPS.books, HIPS.fullUpper];
+
+function listGeo(ids: readonly HipsVariant[]): THREE.BufferGeometry {
+  const b = new PartBuilder();
+  ids.forEach((id, i) => b.variant(i, () => hipsPart(b, id)));
+  return b.build();
+}
+
+/** 低画质：HIPS 编号 → [是否在 special 里, 变体号]。 */
+const LOW_SLOT: Array<readonly [boolean, number]> = [];
+for (const id of Object.values(HIPS)) {
+  const k = id === HIPS.noHands ? HIPS.trousers : id;
+  const i = HIPS_SPECIAL.indexOf(k);
+  LOW_SLOT[id] = i >= 0 ? [true, i] as const : [false, Math.max(0, HIPS_LOW.indexOf(k))] as const;
+}
+const LOW_ARMS = HIPS_LOW.indexOf(HIPS.arms);
 
 function torsoGeo(withHead: boolean): THREE.BufferGeometry {
   const b = new PartBuilder();
@@ -196,7 +243,9 @@ function headGeo(): THREE.BufferGeometry {
   return b.build();
 }
 
-type PartId = 'shoe' | 'shin' | 'thigh' | 'leg' | 'hips' | 'torso' | 'head' | 'upper';
+export type PartId = 'shoe' | 'shin' | 'thigh' | 'hips' | 'torso' | 'head' | 'upper' | 'feet' | 'hipsLow' | 'special';
+/** 左右两侧（热路径里不每帧新建数组）。 */
+const SIDES = [-1, 1] as const;
 
 const _root = new THREE.Matrix4(), _m = new THREE.Matrix4(), _a = new THREE.Matrix4(), _b = new THREE.Matrix4();
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1);
@@ -207,6 +256,8 @@ const TIGHTS = 0x2a3136;
 export class LegForest {
   readonly group = new THREE.Group();
   private parts = new Map<PartId, InstPool>();
+  /** 各部件（init 之后；热路径里不查 Map）。 */
+  private p!: Record<PartId, InstPool>;
   private tier: QualityProfile['tier'] = 'low';
   /** 本帧画了多少人（不含被容量截掉的）。 */
   people = 0;
@@ -228,11 +279,17 @@ export class LegForest {
     add('shoe', shoeGeo(), cap * 2);
     add('shin', legSegGeo(BODY.shin, 0.115, 0.12), cap * 2);
     add('thigh', legSegGeo(BODY.thigh, 0.15, 0.16), cap * 2);
-    add('leg', legMergedGeo(), cap * 2);
     add('hips', hipsGeo(), cap);
     add('torso', torsoGeo(false), cap);
     add('head', headGeo(), cap);
     add('upper', torsoGeo(true), cap);
+    add('feet', feetGeo(), cap * 4);
+    add('hipsLow', listGeo(HIPS_LOW), cap);
+    add('special', listGeo(HIPS_SPECIAL), 16);
+    this.p = {
+      shoe: this.pool('shoe'), shin: this.pool('shin'), thigh: this.pool('thigh'), hips: this.pool('hips'), torso: this.pool('torso'),
+      head: this.pool('head'), upper: this.pool('upper'), feet: this.pool('feet'), hipsLow: this.pool('hipsLow'), special: this.pool('special'),
+    };
     ctx.scene.add(this.group);
     this.setQuality(ctx.quality);
   }
@@ -249,6 +306,7 @@ export class LegForest {
   /** 画一个人。 */
   add(p: Person): void {
     this.people++;
+    const P = this.p;
     const low = this.tier === 'low';
     _q.setFromAxisAngle(_v.set(0, 1, 0), p.yaw);
     _root.compose(_w.set(p.x, p.y, p.z), _q, _one);
@@ -256,7 +314,7 @@ export class LegForest {
     _col.setHex(look.legs === LEGV.bare ? TIGHTS : look.pants);
     _col2.setHex(look.shoes);
     const legV = low ? 0 : look.legs;
-    for (const s of [-1, 1] as const) {
+    for (const s of SIDES) {
       const hip = s < 0 ? p.hipL : p.hipR, knee = s < 0 ? p.kneeL : p.kneeR;
       const legYaw = s < 0 ? p.legYawL : p.legYawR, footYaw = s < 0 ? p.footYawL : p.footYawR;
       // 髋关节（世界坐标）
@@ -269,9 +327,9 @@ export class LegForest {
         // 正向运动学：大腿（髋角）→ 小腿（膝角）→ 脚踝
         _a.multiply(_b.makeRotationY(legYaw));
         _m.copy(_a).multiply(_b.makeRotationX(-hip));
-        if (!low) this.pool('thigh').push(_m, legV, 0, _col);
+        if (!low) P.thigh.push(_m, legV, 0, _col);
         _m.multiply(_b.makeTranslation(0, -BODY.thigh, 0)).multiply(_b.makeRotationX(knee));
-        if (!low) this.pool('shin').push(_m, legV, 0, _col);
+        if (!low) P.shin.push(_m, legV, 0, _col);
         _v.set(0, -BODY.shin, 0).applyMatrix4(_m);
       }
       if (target || low) {
@@ -282,36 +340,55 @@ export class LegForest {
         _q.setFromUnitVectors(DOWN, _d.normalize());
         const k = Math.min(1.25, Math.max(0.3, len / (BODY.thigh + BODY.shin)));
         _m.compose(_w, _q, _one).multiply(_b.makeScale(1, k, 1));
-        if (low) this.pool('leg').push(_m, 0, 0, _col);
+        if (low) P.feet.push(_m, FEET.leg, 0, _col);
         else {
-          this.pool('thigh').push(_m, legV, 0, _col);
+          P.thigh.push(_m, legV, 0, _col);
           _m.multiply(_b.makeTranslation(0, -BODY.thigh, 0));
-          this.pool('shin').push(_m, legV, 0, _col);
+          P.shin.push(_m, legV, 0, _col);
         }
       }
       // 鞋：放平，只转向（鞋尖 = 凝视）
       _q.setFromAxisAngle(_w.set(0, 1, 0), p.yaw + legYaw + footYaw);
       _m.compose(_v, _q, _one);
-      this.pool('shoe').push(_m, 0, 0, _col2);
+      if (low) P.feet.push(_m, FEET.shoe, 0, _col2);
+      else P.shoe.push(_m, 0, 0, _col2);
     }
     // 髋（以及陈默的上身、周主任的烟头、班长的作业本）
     _a.makeTranslation(p.dx, p.hipH + p.bob, 0).premultiply(_root);
     if (p.turn !== 0) _a.multiply(_b.makeRotationY(p.turn));
     _a.multiply(_b.makeRotationZ(p.roll)).multiply(_m.makeRotationX(p.lean));
     const upperOn = p.upper && !low;
-    const hipsV = upperOn && look.hips === HIPS.trousers ? HIPS.noHands : look.hips;
     const hipsHex = look.hips === HIPS.jacket || look.legs === LEGV.bare ? look.shirt : look.pants;
-    this.pool('hips').push(_a, hipsV, p.glow, _col.setHex(hipsHex));
     // 鼓掌时前臂举在胸前（躯干部件），不再垂在身侧
-    if (p.arms && !(upperOn && p.clap > 0)) this.pool('hips').push(_a, HIPS.arms, 0, _col.setHex(look.shirt));
+    const armsOn = p.arms && !(upperOn && p.clap > 0);
+    if (low) {
+      const [sp, v] = LOW_SLOT[look.hips] ?? [false, 0];
+      (sp ? P.special : P.hipsLow).push(_a, v, p.glow, _col.setHex(hipsHex));
+      if (armsOn) P.hipsLow.push(_a, LOW_ARMS, 0, _col.setHex(look.shirt));
+      return;
+    }
+    P.hips.push(_a, look.hips === HIPS.noHands ? HIPS.trousers : look.hips, p.glow, _col.setHex(hipsHex));
+    if (armsOn) P.hips.push(_a, HIPS.arms, 0, _col.setHex(look.shirt));
     if (upperOn && look.hips !== HIPS.fullUpper) {
       _col.setHex(look.shirt);
       if (this.tier === 'high') {
-        this.pool('torso').push(_a, p.clap, 0, _col);
-        this.pool('head').push(_a, look.hair, 0, _col);
-      } else this.pool('upper').push(_a, p.clap, 0, _col);
+        P.torso.push(_a, p.clap, 0, _col);
+        P.head.push(_a, look.hair, 0, _col);
+      } else P.upper.push(_a, p.clap, 0, _col);
     }
   }
+
+  /** 本帧画出来的 NPC 三角形（按 renderer.info 的算法：几何体全部三角形 × 实例数；§9.4 低画质 ≤ 8k）。 */
+  triangles(): number {
+    let n = 0;
+    for (const p of this.parts.values()) if (p.n > 0) n += (p.mesh.geometry.getAttribute('position').count / 3) * p.n;
+    return n;
+  }
+
+  /** 鞋的实例（测试用：低画质下鞋和腿在同一个 feet 部件里）。 */
+  shoes(): { pool: InstPool; variant: number } { return this.tier === 'low' ? { pool: this.p.feet, variant: FEET.shoe } : { pool: this.p.shoe, variant: 0 }; }
+  /** 髋部件（测试用：低画质下普通人在 hipsLow 里、特殊人物在 special 里）。 */
+  hipsPools(): InstPool[] { return this.tier === 'low' ? [this.p.hipsLow, this.p.special] : [this.p.hips]; }
 
   /** 各部件本帧的实例数（测试用）。 */
   counts(): Record<PartId, number> {

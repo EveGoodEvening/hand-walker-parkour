@@ -119,6 +119,17 @@ export class PartBuilder {
   }
   quad(a: V3, b: V3, c: V3, d: V3, hex: number): this { this.g.quad(a, b, c, d, hex); this.sync(); return this; }
   tri(a: V3, b: V3, c: V3, hex: number): this { this.g.tri(a, b, c, hex); this.sync(); return this; }
+  /**
+   * 逐顶点不透明度的三角形（贴花的淡出边缘）：三个顶点分别取 alphas[0..2]，光栅化时插值。
+   * with({ alpha }) 只能给整个三角形一个值；外圈若按三角形交替取内外两个值，边缘会变成锯齿（审查 r2）。
+   */
+  triAlpha(a: V3, b: V3, c: V3, hex: number, alphas: readonly [number, number, number]): this {
+    this.g.tri(a, b, c, hex);
+    this.sync();
+    const n = this.alpha.length;
+    this.alpha[n - 3] = alphas[0]; this.alpha[n - 2] = alphas[1]; this.alpha[n - 1] = alphas[2];
+    return this;
+  }
   withMatrix(m: THREE.Matrix4, fn: () => void): this { this.g.withMatrix(m, fn); this.sync(); return this; }
 
   /** 竖直的 n 棱柱（近似圆柱 / 圆台）：底面中心 c，底半径 r0，顶半径 r1，高 h。 */

@@ -707,5 +707,72 @@
         "steps": 50
       }
     ]
+  },
+  {
+    "out": "shots/visual/WP6/track-hurdles.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('track', { ahead: -1 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/track-hurdles-q-low.png",
+    "q": "low",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('track', { ahead: -1 })"
+      },
+      {
+        "steps": 1
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/specials-q-low.png",
+    "q": "low",
+    "query": "ch=test&seg=t-1&beat=1",
+    "ops": [
+      {
+        "eval": "__game.ext.npcStage('specials', { ahead: 1 })"
+      },
+      {
+        "steps": 120
+      },
+      {
+        "eval": "__game.ext.npcStats()"
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ch1-chenmo-foot-hitbox.png",
+    "q": "high",
+    "size": "960x540",
+    "query": "ch=ch1&seg=1-2&beat=104&debug=hitbox",
+    "ops": [
+      {
+        "steps": 700
+      }
+    ]
+  },
+  {
+    "out": "shots/visual/WP6/ch1-chenmo-foot-q-low.png",
+    "q": "low",
+    "query": "ch=ch1&seg=1-2&beat=104",
+    "ops": [
+      {
+        "steps": 700
+      },
+      {
+        "eval": "__game.ext.npcStats()"
+      }
+    ]
   }
 ]

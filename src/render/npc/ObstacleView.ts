@@ -7,6 +7,9 @@
 //   ask    ：part → 0.5 s 后横移 0.6 m 让出一条缝；ignore → 不动。两种结果附近的鞋尖都会转过来。
 //   note   ：地上那张纸不再画（重来时保留已拾取的状态）。
 //   retry / 读章 / 跳转：清掉碰倒、凝视、静止等画面状态。
+//   fall   ：模拟在失败后不再推进段内时间（门、伸出的脚停在碰撞的那一刻），画面的段内时间也停住，直到 retry。
+// 段内时间：每段记下它在模拟时钟上的开始时刻（segment 事件 / onReset）。已经过去的段照常计时（路边的人、爬行的人、
+// 门和脚在段界上不跳回原位），拍号取 +∞（让开的陈默、移动过的人墙保持最终状态）；还没到的段时间为 0、拍号 −1。
 // cue：crowd（turnShoes / centerShoes / silent / applaud / crawlOvertake / normal），由 index.ts 注册。
 import * as THREE from 'three';
 import type { ArchetypeId, QualityProfile, ViewContext, ViewSystem } from '../../core/contracts';
@@ -21,7 +24,7 @@ import type { CompiledChapter, CompiledObstacle, CompiledSegment, RunSegmentDef 
 import { ArchetypePoolImpl, createArchetypeMaterial, type ArchetypeDef, type PlaceCtx } from './archetype';
 import {
   FOOT_CENTER, GAZE_MAX, GAZE_TOTAL, clapClosed, gazeAmount, gazeSince, hash01, idleSway, obstacleTwist, obstacleYaw, partOffset, shiftBlend, silenceClock,
-  silenceLevel, tremble, walkPose, type WalkPose,
+  silenceLevel, tremble, walkPose, type ShiftBlend, type Sway, type Tremble, type WalkPose,
 } from './behaviors';
 import { CRAWL, Crawlers, type Crawler } from './Crawlers';
 import { expandChapter, lowerBound, type Decor, type GroupInfo } from './crowds';
@@ -29,6 +32,7 @@ import { HitboxDebug } from './hitboxDebug';
 import { BODY, LegForest, STAND_HIP, newPerson, type Person } from './LegForest';
 import { KNEELER_BOY, KNEELER_CROWD } from './archetypes/kneeler';
 import { footSeat } from './archetypes/footOut';
+import { MAX_EXPAND } from './archetype';
 import { obstacleState, type ObstacleState } from './simBridge';
 import { HIPS, crowdOfKit, emberGlow, itemIdOf, lookFor, specialLook, specialOfObstacle, type Look, type SpecialId } from './specials';
 
@@ -44,6 +48,8 @@ export const OBSTACLE_GAZE_MAX = 35 * DEG;
 export const CHEN_SQUAT: { hipH: number; hip: number; knee: number; legYaw: number; footYaw: number; lean: number; back: number } = {
   hipH: 0.215, hip: 125 * DEG, knee: 140 * DEG, legYaw: 0.45, footYaw: 0.15, lean: 0.4, back: 0.147,
 };
+/** 走路的人凝视时鞋尖最多转多少（鞋尖转 0.6 倍，腿不转）。 */
+export const WALK_GAZE_MAX = 50 * DEG;
 /** 「进入 3 m」的凝视记录多久之后清掉（秒）：人早已在身后、被裁掉，不再遍历到。 */
 const GAZE_MEMO_TTL = 20;
 /** 4-3「从两侧超过你」的爬行者最多持续多久（秒）；离开本段也清掉。 */
@@ -82,7 +88,12 @@ export class ObstacleView implements ViewSystem {
 
   chapter: CompiledChapter | null = null;
   private segIndex = 0;
-  private segStartT = 0;
+  /** 每段在模拟时钟上的开始时刻（NaN = 还没到 / 未知）。 */
+  private segStart: number[] = [];
+  /** 失败（fall）的时刻：模拟此后不再推进段内时间；null = 没有失败。 */
+  private fallT: number | null = null;
+  /** 陈默让开后站的位置（读章时按相邻车道的障碍算好）。 */
+  private chenDest = new Map<number, ChenDest>();
   private knocked = new Map<number, number>();
   private taken = new Set<string>();
   private asks = new Map<number, { t: number; part: boolean }>();
@@ -116,6 +127,9 @@ export class ObstacleView implements ViewSystem {
   private readonly m = new THREE.Matrix4();
   private readonly fctx: FrameCtx = { s: 0, px: 0, t: 0, tAnim: 0, beat: 0, tSeg: 0, speed: 0, bps: 5, ahead: 40, behind: 5, hush: 0, stand: false };
   private readonly fallbackLook: Look = lookFor('student', 1, 'fallback');
+  private readonly sway: Sway = { dx: 0, knee: 0, side: 1 };
+  private readonly trem: Tremble = { roll: 0, pitch: 0 };
+  private readonly blend: ShiftBlend = { turn: 0, move: 0 };
 
   constructor(defs: ArchetypeDef[] = []) {
     this.defs = defs;
@@ -155,7 +169,8 @@ export class ObstacleView implements ViewSystem {
     const { decor, groups } = expandChapter(ch.seed, ch.segments);
     this.groups = groups;
     this.groupState = groups.map(() => ({ gaze: null, applaud: -1, overtake: -1, overtakeS: 0 }));
-    this.specials.clear(); this.looks.clear(); this.chenFoot.clear(); this.chenFootIds.clear();
+    this.specials.clear(); this.looks.clear(); this.chenFoot.clear(); this.chenFootIds.clear(); this.chenDest.clear();
+    this.segStart = ch.segments.map(() => Number.NaN);
     for (const seg of ch.segments) this.indexSegment(seg, ch.seed, ch.def.id);
     this.decor = this.withoutSeatClash(decor, ch.segments.flatMap((sg) => sg.obstacles));
     this.resetState();
@@ -184,6 +199,7 @@ export class ObstacleView implements ViewSystem {
       const near = seg.obstacles.find((f) => f.kind === 'footOut' && f.s0 >= o.s0 && f.s0 - o.s1 < 4 && f.lanes.some((l) => o.lanes.includes(l)));
       const foot = byId ?? near;
       if (foot) { this.chenFoot.set(o.id, foot); this.chenFootIds.add(foot.id); }
+      this.chenDest.set(o.id, chenStepAside(o, foot ?? null, seg.obstacles, this.st2));
     }
   }
 
@@ -203,6 +219,7 @@ export class ObstacleView implements ViewSystem {
 
   private resetState(): void {
     this.knocked.clear(); this.asks.clear(); this.gazeEvents = []; this.silences = []; this.gazeMemo.clear();
+    this.fallT = null;
     for (const g of this.groupState) { g.gaze = null; g.applaud = -1; g.overtake = -1; }
     this.globalOp.applaud = -1; this.globalOp.overtake = -1;
   }
@@ -225,7 +242,7 @@ export class ObstacleView implements ViewSystem {
     const t = snap.t;
     switch (e.type) {
       case 'segment':
-        this.segStartT = t; this.segIndex = e.data.index;
+        this.segStart[e.data.index] = t; this.segIndex = e.data.index;
         this.globalOp.applaud = -1;
         // 「从两侧超过你」只属于发 cue 的那一段（4-3）：离开本段就收掉，免得被下一段更快的玩家反超
         if (this.globalOp.overtake >= 0 && this.globalOp.overtake < t) this.globalOp.overtake = -1;
@@ -249,6 +266,7 @@ export class ObstacleView implements ViewSystem {
         break;
       }
       case 'note': this.taken.add(e.data.id); break;
+      case 'fall': this.fallT = t; break;
       case 'retry': this.resetState(); break;
       default: break;
     }
@@ -256,10 +274,32 @@ export class ObstacleView implements ViewSystem {
 
   onReset(snap: SimSnapshot): void {
     this.resetState();
-    const seg = this.chapter?.segments[snap.segIndex];
-    this.segIndex = snap.segIndex;
+    const segs = this.chapter?.segments ?? [];
+    const i0 = snap.segIndex;
+    const seg = segs[i0];
+    this.segIndex = i0;
+    if (this.segStart.length !== segs.length) this.segStart = segs.map(() => Number.NaN);
     // 读章或跳到检查点时模拟把 tSeg 设为 seg.timeAt(beat)
-    this.segStartT = seg && seg.kind === 'run' ? snap.t - seg.timeAt(snap.segBeat) : snap.t;
+    this.segStart[i0] = seg && seg.kind === 'run' ? snap.t - seg.timeAt(snap.segBeat) : snap.t;
+    // 之前的段按名义时长往回推（静场、站立段的时长由玩家决定，按 0 计）；之后的段还没开始
+    for (let i = i0 - 1; i >= 0; i--) {
+      const sg = segs[i] as CompiledSegment;
+      const dur = sg.kind === 'run' ? sg.timeAt((sg.def as RunSegmentDef).beats) : 0;
+      this.segStart[i] = (this.segStart[i + 1] as number) - dur;
+    }
+    for (let i = i0 + 1; i < segs.length; i++) this.segStart[i] = Number.NaN;
+  }
+
+  /** 第 i 段此刻的段内时间（秒，模拟时钟 t）。还没开始的段为 0。 */
+  private segTime(i: number, t: number): number {
+    if (i > this.segIndex) return 0;
+    const t0 = this.segStart[i];
+    return t0 === undefined || Number.isNaN(t0) ? 0 : Math.max(0, t - t0);
+  }
+  /** 第 i 段的开始时刻（未知时取 t，即段内时间 0）。 */
+  private segStartAt(i: number, t: number): number {
+    const t0 = this.segStart[i];
+    return t0 === undefined || Number.isNaN(t0) ? t : t0;
   }
 
   private trimEvents(t: number): void {
@@ -337,7 +377,9 @@ export class ObstacleView implements ViewSystem {
     const s = lerp(P.s, N.s, a), px = lerp(P.x, N.x, a);
     const t = lerp(prev.t, next.t, a);
     const beat = same ? lerp(prev.segBeat, next.segBeat, a) : next.segBeat;
-    const tSeg = t - this.segStartT;
+    // 障碍的段内时间与模拟一致：失败以后模拟不再推进 tSeg（门、伸出的脚停在那一刻），直到 retry
+    const tObs = this.fallT !== null ? Math.min(t, this.fallT) : t;
+    const tSeg = this.segTime(this.segIndex, tObs);
     const speed = Math.max(0, N.speed);
     const bps = next.segKind === 'run' ? Math.max(0.5, N.cadence || speed / Math.max(0.3, N.stride)) : 4.8;
     this.lastT = t;
@@ -365,8 +407,12 @@ export class ObstacleView implements ViewSystem {
         if (seg.kind !== 'run') continue;
         if (seg.s1 < s - behind - 80 || seg.s0 > s + ahead + 80) continue;
         const cur = seg.index === this.segIndex;
+        const past = seg.index < this.segIndex;
         const def = seg.def as RunSegmentDef;
-        this.obstaclesOf(seg, seg.obstacles, ctx, cur, cur ? tSeg : 0, 0, def.kit, def.variant, cur ? beat : -1);
+        // 已经过去的段：时间照常走，拍号 +∞（陈默已让开、人墙已移动）；还没到的段：时间 0、拍号 −1
+        const tS = cur ? tSeg : this.segTime(seg.index, tObs);
+        const bS = cur ? beat : past ? Number.POSITIVE_INFINITY : -1;
+        this.obstaclesOf(seg, seg.obstacles, ctx, cur, tS, 0, def.kit, def.variant, bS);
       }
     }
     // —— 路边的人 ——
@@ -380,7 +426,7 @@ export class ObstacleView implements ViewSystem {
     const beat = this.stage ? (f.s - this.stage.segment.s0 - shift) / Math.max(0.3, seg.stride) : beatIn;
     pc.kit = kit; pc.tSeg = tSeg; pc.beat = beat;
     for (const o of list) {
-      const st = obstacleState(o, tSeg, cur ? beat : -1, this.st);
+      const st = obstacleState(o, tSeg, beat, this.st);
       const s0 = o.s0 + st.ds + shift, s1 = o.s1 + st.ds + shift;
       if (s0 > f.s + f.ahead || s1 < f.s - f.behind) continue;
       if (o.cls === 'pickup' && this.taken.has(String(o.params.note ?? ''))) continue;
@@ -425,7 +471,7 @@ export class ObstacleView implements ViewSystem {
     } else if (pc.knockedAt !== null && f.t - pc.knockedAt > 0.15) {
       variant = 'fallen';
     } else {
-      const tr = tremble(f.tAnim, o.id);
+      const tr = tremble(f.tAnim, o.id, this.trem);
       roll = tr.roll; pitch = tr.pitch;
     }
     this.m.makeRotationFromEuler(_e.set(pitch, 0, roll));
@@ -466,7 +512,7 @@ export class ObstacleView implements ViewSystem {
     let shiftTurn = 0, shiftDx = 0;
     if (b.type === 'shift' && cur) {
       const dt = (f.beat - b.atBeat) / f.bps;
-      const bl = shiftBlend(dt, 0);
+      const bl = shiftBlend(dt, 0, this.blend);
       obstacleState(o, f.tSeg, b.atBeat - 1, this.st2);
       const before = (this.st2.x0 + this.st2.x1) / 2;
       obstacleState(o, f.tSeg, b.atBeat + 1, this.st2);
@@ -517,7 +563,7 @@ export class ObstacleView implements ViewSystem {
     this.resetPerson(p, look);
     const b = o.behavior;
     const at = b.type === 'yield' ? b.atBeat : Number.POSITIVE_INFINITY;
-    const beat = cur ? f.beat : -1;
+    const beat = this.pc.beat;
     // 起身：at − 2.6 → at − 1.6 拍；让开：at − 1.6 → at − 0.6 拍。画面先于碰撞（先看见、后碰到）：
     // 他留在过道里的脚从 at − 1.3 拍起就在画面上，第一章按 1-2 的减速曲线算，离接触还有 ≥ 1.2 s（R4）。
     const rise = clamp01((beat - (at - 2.6)) / 1.0);
@@ -525,10 +571,10 @@ export class ObstacleView implements ViewSystem {
     const cx = (o.lanes.reduce<number>((acc, l) => acc + l, 0) / Math.max(1, o.lanes.length)) * LANE_WIDTH;
     const zc = -((o.s0 + o.s1) / 2);
     const foot = this.chenFoot.get(o.id);
-    const side = foot ? ((foot.lanes[0] ?? 0) > 0 ? -1 : 1) : cx > 0 ? -1 : 1;
-    const fx = foot ? (foot.lanes[0] ?? 0) * LANE_WIDTH : cx;
-    const fs = foot ? (foot.s0 + foot.s1) / 2 : (o.s0 + o.s1) / 2 + 2;
-    const destX = fx + side * 0.56, destZ = -(fs + 0.3);
+    // 让到一边：相邻车道在那个位置有障碍（1-2 的储物柜）时只让到它的内沿以内，不钻进柜子里（审查 r2）
+    const dest = this.chenDest.get(o.id) ?? chenStepAside(o, foot ?? null, [], this.st2);
+    const { side, fx, fs } = dest;
+    const destX = dest.x, destZ = -dest.s;
     const e = easeInOutSine(step);
     const r = easeInOutSine(rise);
     const S = CHEN_SQUAT;
@@ -551,7 +597,7 @@ export class ObstacleView implements ViewSystem {
     p.upper = true;
     if (rise >= 1) this.applyIdle(p, f.tAnim, 0.37);
     this.forest.add(p);
-    void st; void seg;
+    void st; void seg; void cur;
   }
 
   private resetPerson(p: Person, look: Look): void {
@@ -563,7 +609,7 @@ export class ObstacleView implements ViewSystem {
 
   /** idle：重心左右换（「安静的一秒」里动画时钟 tAnim 不走，所以人就停住了）。 */
   private applyIdle(p: Person, t: number, phase: number): void {
-    const s = idleSway(t, phase);
+    const s = idleSway(t, phase, this.sway);
     p.dx = s.dx;
     p.roll = -s.dx * 0.8;
     if (s.side > 0) p.kneeR = s.knee; else p.kneeL = s.knee;
@@ -605,9 +651,12 @@ export class ObstacleView implements ViewSystem {
     if (g <= 0) return;
     // 目标方向：从这个人指向玩家（世界坐标：+z = −s）
     const want = Math.atan2(f.px - p.x, -(f.s) - p.z);
-    const rel = Math.max(-maxRel, Math.min(maxRel, wrapPi(want - p.yaw)));
+    // 走路的人只转鞋尖（最多 WALK_GAZE_MAX），腿不跟着转：腿一转，前后摆的腿就变成横着摆（螃蟹步），
+    // 靠墙走的人脚会踩进墙里（审查 r2）
+    const lim = walking ? Math.min(maxRel, WALK_GAZE_MAX) : maxRel;
+    const rel = Math.max(-lim, Math.min(lim, wrapPi(want - p.yaw)));
     p.footYawL += rel * g * 0.6; p.footYawR += rel * g * 0.6;
-    p.legYawL += rel * g * 0.4; p.legYawR += rel * g * 0.4;
+    if (!walking) { p.legYawL += rel * g * 0.4; p.legYawR += rel * g * 0.4; }
     p.turn += rel * g * turnK;
   }
 
@@ -630,7 +679,9 @@ export class ObstacleView implements ViewSystem {
       const d = list[i] as Decor;
       if (d.s + shift > f.s + f.ahead + 60) break;
       // 路边走路的人按动画时钟走（「安静的一秒」里和腿一起停）
-      const segT = this.stage ? f.tAnim - silenceClock(this.stage.t0, this.silences) : d.seg === this.segIndex ? f.tAnim - silenceClock(this.segStartT, this.silences) : 0;
+      // 已经过去的段照常计时（段界上不跳回出生点）；还没到的段为 0
+      const segT = this.stage ? f.tAnim - silenceClock(this.stage.t0, this.silences)
+        : d.seg <= this.segIndex ? f.tAnim - silenceClock(this.segStartAt(d.seg, f.t), this.silences) : 0;
       const sN = d.s + shift + d.speed * Math.max(0, segT);
       if (sN > f.s + f.ahead || sN < f.s - f.behind) continue;
       const floorY = this.floorAt(sN);
@@ -646,7 +697,7 @@ export class ObstacleView implements ViewSystem {
       if (d.kind === 'kneeler') {
         const pool = this.pools.get('kneeler');
         if (!pool) continue;
-        const tr = tremble(f.tAnim, i);
+        const tr = tremble(f.tAnim, i, this.trem);
         this.m.makeRotationFromEuler(_e.set(tr.pitch, d.yaw, tr.roll));
         this.m.setPosition(d.x, floorY, -sN);
         pool.push(this.m, pool.variantIndex('kneel'), 0, KNEELER_CROWD);
@@ -662,7 +713,7 @@ export class ObstacleView implements ViewSystem {
         if (chairs) { this.m.makeRotationY(d.yaw); this.m.setPosition(d.x, floorY, -sN); chairs.push(this.m, chairs.variantIndex('seat')); }
         p.hipH = 0.46; p.hipL = p.hipR = 90 * DEG; p.kneeL = p.kneeR = 90 * DEG; p.seated = true;
         p.legYawL = -0.08; p.legYawR = 0.08; p.stance = 0.11;
-        const sw = idleSway(f.tAnim, d.phase);
+        const sw = idleSway(f.tAnim, d.phase, this.sway);
         p.kneeL += sw.dx * 3; p.kneeR -= sw.dx * 3;
       } else this.applyIdle(p, f.tAnim, d.phase);
       this.applyGaze(p, -1 - i, sN, f, d.gaze, gi, d.pose === 'walk');
@@ -726,6 +777,41 @@ export class ObstacleView implements ViewSystem {
   }
   get currentSegment(): number { return this.segIndex; }
   get obstacleSpec(): typeof OBSTACLES { return OBSTACLES; }
+}
+
+/** 陈默让开后的站位：脚所在车道的中心 fx、脚的里程 fs、让开的方向 side、站位 (x, s)。 */
+export interface ChenDest { x: number; s: number; side: 1 | -1; fx: number; fs: number }
+/**
+ * 陈默让开的距离：横向最多 aside；站在脚后面 back（沿 +s）；身体（含垂着的手臂、重心摆动）半宽 half；离相邻障碍的视觉内沿留 margin。
+ */
+export const CHEN_STEP = { aside: 0.56, back: 0.3, half: 0.33, margin: 0.02, reach: 0.35 } as const;
+
+/**
+ * 陈默让到哪里（§4.1 1-2「他让开了，一只脚还留在过道里」）。默认让到脚所在车道的一侧 0.56 m；
+ * 那一侧在他站的位置（s ± reach）有障碍时，只让到障碍视觉内沿（碰撞盒 − 5 cm）再留 2 cm 以内，不钻进储物柜里。
+ * 两侧都有障碍（1-2 的储物柜夹出中道）时取空间更大的一侧，默认一侧优先。
+ */
+export function chenStepAside(o: CompiledObstacle, foot: CompiledObstacle | null, list: readonly CompiledObstacle[], st: ObstacleState): ChenDest {
+  const cx = (o.lanes.reduce<number>((acc, l) => acc + l, 0) / Math.max(1, o.lanes.length)) * LANE_WIDTH;
+  const fx = foot ? (foot.lanes[0] ?? 0) * LANE_WIDTH : cx;
+  const fs = foot ? (foot.s0 + foot.s1) / 2 : (o.s0 + o.s1) / 2 + 2;
+  const s = fs + CHEN_STEP.back;
+  const pref: 1 | -1 = foot ? ((foot.lanes[0] ?? 0) > 0 ? -1 : 1) : cx > 0 ? -1 : 1;
+  const room = (side: 1 | -1): number => {
+    let lim: number = CHEN_STEP.aside;
+    for (const q of list) {
+      if (q.id === o.id || (foot && q.id === foot.id) || q.cls === 'soft' || q.cls === 'pickup') continue;
+      if (q.s1 < s - CHEN_STEP.reach || q.s0 > s + CHEN_STEP.reach) continue;
+      obstacleState(q, 0, Number.POSITIVE_INFINITY, st);
+      const pad = MAX_EXPAND + CHEN_STEP.margin + CHEN_STEP.half;
+      if (side > 0 && st.x0 > fx) lim = Math.min(lim, st.x0 - pad - fx);
+      if (side < 0 && st.x1 < fx) lim = Math.min(lim, fx - st.x1 - pad);
+    }
+    return Math.max(0, lim);
+  };
+  const r0 = room(pref), r1 = room(pref === 1 ? -1 : 1);
+  const side: 1 | -1 = r0 >= CHEN_STEP.aside || r0 >= r1 ? pref : (pref === 1 ? -1 : 1);
+  return { x: fx + side * (side === pref ? r0 : r1), s, side, fx, fs };
 }
 
 /** 周主任（暖色的烟头）只允许出现在第三章和调试舞台（附录 A-9）。 */

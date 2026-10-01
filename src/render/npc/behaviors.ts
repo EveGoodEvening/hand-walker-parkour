@@ -72,11 +72,13 @@ export function walkPose(dist: number, out: WalkPose): WalkPose {
   return out;
 }
 
-/** idle：重心左右换，每个人相位不同（周期 3.2–4.8 s）。返回横移（米）与重心脚的屈膝（弧度）。 */
-export function idleSway(t: number, phase: number): { dx: number; knee: number; side: number } {
+/** idle：重心左右换，每个人相位不同（周期 3.2–4.8 s）。返回横移（米）与重心脚的屈膝（弧度）。热路径传入 out 复用。 */
+export interface Sway { dx: number; knee: number; side: number }
+export function idleSway(t: number, phase: number, out: Sway = { dx: 0, knee: 0, side: 1 }): Sway {
   const period = 3.2 + 1.6 * phase;
   const u = Math.sin((t / period + phase) * Math.PI * 2);
-  return { dx: 0.018 * u, knee: 6 * DEG * Math.max(0, -u), side: u >= 0 ? 1 : -1 };
+  out.dx = 0.018 * u; out.knee = 6 * DEG * Math.max(0, -u); out.side = u >= 0 ? 1 : -1;
+  return out;
 }
 
 /**
@@ -128,13 +130,15 @@ export function partOffset(dt: number): number {
  * 画面的平移集中在 [tAt − 0.25, tAt + 0.15]，以 tAt 为中心。返回 { turn, move } ∈ 0..1。
  */
 export const SHIFT = { warn: 1.2, turnIn: 0.4, moveBefore: 0.25, moveAfter: 0.15, settle: 0.6 } as const;
-export function shiftBlend(t: number, tAt: number): { turn: number; move: number } {
+export interface ShiftBlend { turn: number; move: number }
+export function shiftBlend(t: number, tAt: number, out: ShiftBlend = { turn: 0, move: 0 }): ShiftBlend {
   const dt = t - tAt;
   let turn = 0;
   if (dt >= -SHIFT.warn) turn = easeInOutSine(clamp01((dt + SHIFT.warn) / SHIFT.turnIn));
   if (dt > SHIFT.moveAfter) turn *= 1 - clamp01((dt - SHIFT.moveAfter) / SHIFT.settle);
   const move = easeInOutSine(clamp01((dt + SHIFT.moveBefore) / (SHIFT.moveBefore + SHIFT.moveAfter)));
-  return { turn: turn + 0, move: move + 0 };
+  out.turn = turn + 0; out.move = move + 0;
+  return out;
 }
 
 /** 梦中鼓掌（applaud）：两臂在胸前开合，每秒约 3 下；返回此刻手是否合在一起。 */
@@ -143,8 +147,10 @@ export function clapClosed(t: number, phase: number): boolean {
 }
 
 /** 发抖（梦里跪着模仿的人：「身体在发抖，像刚出生的小动物」）：小幅抖动的角度（弧度）。 */
-export function tremble(t: number, seed: number): { roll: number; pitch: number } {
-  return { roll: 0.02 * Math.sin(t * 37 + seed * 1.3), pitch: 0.014 * Math.sin(t * 29 + seed * 2.1) };
+export interface Tremble { roll: number; pitch: number }
+export function tremble(t: number, seed: number, out: Tremble = { roll: 0, pitch: 0 }): Tremble {
+  out.roll = 0.02 * Math.sin(t * 37 + seed * 1.3); out.pitch = 0.014 * Math.sin(t * 29 + seed * 2.1);
+  return out;
 }
 
 /** 确定性的 0..1 散列（热路径里不分配 rng 对象）。 */

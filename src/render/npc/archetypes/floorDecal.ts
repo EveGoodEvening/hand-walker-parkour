@@ -20,11 +20,11 @@ function blob(b: PartBuilder, d: Dims, seed: number, center: number, rim: number
   for (let i = 0; i < n; i++) {
     b.with({ alpha: a0 }, () => b.tri([0, Y, 0], pt(i + 1, k1), pt(i, k1), center));
   }
-  // 外圈：内点 a1、外点 a2（逐顶点插值 → 边缘淡出）
+  // 外圈：内圈的顶点 a1、外圈的顶点 a2，逐顶点插值 → 边缘平滑淡出（不能按三角形交替取值，否则是一圈锯齿）
   for (let i = 0; i < n; i++) {
     const p0 = pt(i, k1), p1 = pt(i + 1, k1), q0 = pt(i, 1), q1 = pt(i + 1, 1);
-    b.with({ alpha: a1 }, () => b.tri(p0, p1, q1, rim));
-    b.with({ alpha: a2 }, () => b.tri(p0, q1, q0, rim));
+    b.triAlpha(p0, p1, q1, rim, [a1, a1, a2]);
+    b.triAlpha(p0, q1, q0, rim, [a1, a2, a2]);
   }
 }
 
