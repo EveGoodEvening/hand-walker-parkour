@@ -29,11 +29,15 @@
 //     回头。非 auto 回头窗口的 id 与 then 只在玩家按 Q 时触发（可选行为），必备节拍挂在那里报 error。
 //   · 豁免：只认 lead 在 §10 书面批准的（WAIVERS.approval 逐字出现在 §10），工作包不得自行降级。
 //   · R13：站立段的实际时长 = max(duration, 第七步摔倒 + 最后一个按步事件)，不含起身前的等待。
+//   · R15-jump（评审 U2，先报 warning，lead 合并数据修复后升为 error）：每个 low 障碍，假设玩家待在它的车道上、按名义时间轴前进，
+//     逐 tick 枚举起跳时刻（与 Sim 同序：输入在 tick 开头、撑跃滞空按当时的名义步频），能越过它的起跳时刻连成的最长区间 < 0.16 s
+//     报出。慢速、小步幅时滞空被夹在 0.72 s，而越过障碍要的时间按速度变长，窗口会缩到 0（3-2 的拖把桶）。
 import { LANE_WIDTH, LIMITS, MIN_ACTION_GAP, TEXT, TICK_DT } from '../core/constants';
 import type { SolveFrom, SolverAPI } from '../core/contracts';
 import { QUALITY } from '../core/quality';
 import type { AtmosphereId, HintId, Lane, ObstacleClass } from '../core/types';
-import { advancePace, createPaceState, paceEvents } from '../sim/Pace';
+import { advancePace, createPaceState, nominalCadence, paceEvents } from '../sim/Pace';
+import { jumpDuration, jumpHeight } from '../sim/Player';
 import { FALL_STEP, PLANT_SEC } from '../sim/Stand';
 import { obstacleState } from '../sim/Track';
 import { TUNING } from '../sim/tuning';
@@ -43,8 +47,8 @@ import { KIT_SYMBOLS, KIT_VARIANTS, symbolsFor } from './kitSymbols';
 import { lineText } from './lines';
 import { OBSTACLES } from './obstacles';
 import type {
-  ChapterDef, CompiledChapter, CompiledSegment, CompiledSurface, DoubleSpec, EventBody, RunSegmentDef, StillSegmentDef, StandSegmentDef,
-  TimedEventDef,
+  ChapterDef, CompiledChapter, CompiledObstacle, CompiledSegment, CompiledSurface, DoubleSpec, EventBody, RunSegmentDef, StillSegmentDef,
+  StandSegmentDef, TimedEventDef,
 } from './schema';
 import { expandPattern } from './patterns';
 import { isSym, parseLanes } from './shorthand';
@@ -94,6 +98,130 @@ const ANOMALY_GAP = 20;
  */
 export interface Waiver { chapter: string; rule: string; msg: string; approval: string }
 export const WAIVERS: ReadonlyArray<Waiver> = [];
+
+/** R15-jump：撑跃窗口的下限（秒）。 */
+export const JUMP_WINDOW_MIN = 0.16;
+
+/**
+ * R15-jump：一个跑段里每个 low 障碍的撑跃窗口（秒）。玩家待在障碍的车道上（多车道或 shift 的障碍取窗口最小的那条车道），
+ * 按名义时间轴（不做其他动作、不受击）从段首逐 tick 前进；在第 m 个 tick 开头按 ↑（与 Sim.handleInput 同序：滞空按此刻的名义步频，
+ * 之后每 tick 先前进再判定），之后与障碍有交叠的每一 tick 玩家盒底都不低于障碍顶，就算越过。window = 能越过的起跳 tick 连成的
+ * 最长区间 × TICK_DT（0 = 怎么跳都越不过）。永远碰不到玩家的（例如同向更快地走远）不列出。端盘段（不能撑跃）不列出。
+ */
+export function jumpWindows(seg: CompiledSegment): Array<{ o: CompiledObstacle; lane: Lane; window: number }> {
+  if (seg.kind !== 'run') return [];
+  const def = seg.def as RunSegmentDef;
+  if (def.controls?.jump === false) return [];
+  const lows = seg.obstacles.filter((o) => o.cls === 'low');
+  if (!lows.length) return [];
+  // 名义时间轴：t、s、拍号，以及每个 tick 开头（输入时刻）的名义步频
+  const pace = createPaceState(seg, seg.s0, 0);
+  const evs = paceEvents(seg);
+  const cap = 120 * 600;
+  const T: number[] = [0], S: number[] = [seg.s0], B: number[] = [0], C: number[] = [nominalCadence(seg, pace, 0)];
+  while (T.length < cap) {
+    advancePace(seg, pace, evs, 1, TICK_DT);
+    const beat = (pace.s - seg.s0) / seg.stride;
+    T.push(pace.tSeg); S.push(pace.s); B.push(beat); C.push(nominalCadence(seg, pace, beat));
+    if (pace.ended || beat >= def.beats) break;
+  }
+  const n = T.length;
+  const H = TUNING.hitbox;
+  const maxAir = Math.ceil(TUNING.jump.maxSec / TICK_DT) + 2;
+  const st = { active: true, ds: 0, x0: 0, x1: 0, amount: 1 };
+  const out: Array<{ o: CompiledObstacle; lane: Lane; window: number }> = [];
+  for (const o of lows) {
+    let best: { lane: Lane; window: number } | null = null;
+    for (const lane of [-1, 0, 1] as Lane[]) {
+      const px0 = lane * LANE_WIDTH - H.halfW, px1 = lane * LANE_WIDTH + H.halfW;
+      // 与玩家盒在 s、x 上交叠的 tick（玩家盒竖直方向要高过障碍顶才不算碰）
+      const over: number[] = [];
+      // 不走动的障碍只看它附近（±5 m）；走动的人整段扫
+      const walk = o.behavior.type === 'walk';
+      for (let i = walk ? 1 : Math.max(1, lowerIndex(S, o.s0 - 5)); i < n; i++) {
+        const sp = S[i] as number;
+        if (!walk && sp > o.s1 + 5) break;
+        obstacleState(o, T[i] as number, B[i] as number, st);
+        if (!st.active || !(st.x0 < px1 && px0 < st.x1)) continue;
+        if (sp - H.sBack < o.s1 + st.ds && o.s0 + st.ds < sp + H.sFront) over.push(i);
+      }
+      if (!over.length) continue;
+      const first = over[0] as number;
+      let run = 0, bestRun = 0;
+      for (let m = Math.max(0, first - maxAir); m < first; m++) {
+        const air = jumpDuration(C[m] as number);
+        let clear = true;
+        for (const i of over) {
+          const at = (i - m) * TICK_DT;
+          const y = at < air ? jumpHeight(at, air) : 0;
+          if (y < o.y1) { clear = false; break; }
+        }
+        run = clear ? run + 1 : 0;
+        if (run > bestRun) bestRun = run;
+      }
+      const w = bestRun * TICK_DT;
+      if (!best || w < best.window) best = { lane, window: w };
+    }
+    if (best) out.push({ o, ...best });
+  }
+  return out;
+}
+
+/**
+ * §2.8「必需动作密度」的度量（评审 U2，bot:difficulty 的报告用）：去掉纸条之后，求解器按本章的最小间隔（MIN_ACTION_GAP）
+ * 求出的最少输入路线（不开口）里有几次动作（换道、撑跃、伏低、掰正）。
+ *   inputsPer10Beats = 次数 / 拍数 × 10；inputsPerSec = 次数 / 名义段长（seg.timeAt(拍数)，不含减速与停拍）；
+ *   maxIdleSec = 段首、各次输入、段末（名义时间轴，含减速与停拍）之间最长的一段空闲。
+ * 按本章间隔解不出来时退回 0.22 s 的物理间隔（gapRelaxed = true）；仍解不出来返回 null。
+ */
+export interface SegmentDensity {
+  segment: string; beats: number; inputs: number; inputsPer10Beats: number; inputsPerSec: number; maxIdleSec: number; maxIdleFrom: number;
+  minGap: number; gapRelaxed: boolean; route: string;
+}
+const DENSITY_ACTS: ReadonlySet<string> = new Set(['left', 'right', 'jump', 'duck', 'straighten']);
+export function segmentDensity(seg: CompiledSegment, minGap: number, solver: SolverAPI): SegmentDensity | null {
+  if (seg.kind !== 'run') return null;
+  const def = seg.def as RunSegmentDef;
+  const noPick: CompiledSegment = { ...seg, obstacles: seg.obstacles.filter((o) => o.cls !== 'pickup') };
+  let gapRelaxed = false;
+  let plan = solver.solve(noPick, { noAsk: true, minGap });
+  if (!plan) { plan = solver.solve(noPick, { noAsk: true }); gapRelaxed = true; }
+  if (!plan) return null;
+  const steps = plan.steps.filter((x) => DENSITY_ACTS.has(x.action));
+  const n = steps.length;
+  const tEnd = Math.max(nominalTimeline(seg).tEnd, ...steps.map((x) => x.t));
+  const bounds = [0, ...steps.map((x) => x.t), tEnd];
+  let idle = 0, idleFrom = 0;
+  for (let i = 1; i < bounds.length; i++) {
+    const g = (bounds[i] as number) - (bounds[i - 1] as number);
+    if (g > idle) { idle = g; idleFrom = bounds[i - 1] as number; }
+  }
+  const beatOf = (x: { s?: number }) => ((x.s ?? seg.s0) - seg.s0) / seg.stride;
+  return {
+    segment: def.id, beats: def.beats, inputs: n,
+    inputsPer10Beats: (n / def.beats) * 10, inputsPerSec: n / seg.timeAt(def.beats),
+    maxIdleSec: idle, maxIdleFrom: idleFrom, minGap, gapRelaxed,
+    route: steps.map((x) => `${x.action[0]}${beatOf(x).toFixed(1)}`).join(' '),
+  };
+}
+/** §2.8 / §4 点名了密度的段：目标取区间的下沿（次 / 10 拍）。低于目标的 DENSITY_WARN_FRAC 报 warning（bot:difficulty）。 */
+export const DENSITY_TARGET: Readonly<Record<string, number>> = {
+  '1-5': 1.0, '2-7': 1.4, '2-8': 1.4, '3-4': 1.8, '3-6': 2.6, '4-1': 1.0, '4-5': 2.2, '5-3': 2.0, '5-11': 2.0,
+};
+export const DENSITY_WARN_FRAC = 0.6;
+/** 密度低于目标 60% 时的 warning 文字；没有目标或达标时为 null。 */
+export function densityWarning(d: Pick<SegmentDensity, 'segment' | 'inputsPer10Beats'>): string | null {
+  const target = DENSITY_TARGET[d.segment];
+  if (target === undefined || d.inputsPer10Beats >= target * DENSITY_WARN_FRAC - 1e-9) return null;
+  return `${d.segment}: ${d.inputsPer10Beats.toFixed(2)} required inputs / 10 beats < ${DENSITY_WARN_FRAC * 100}% of the §2.8 target ${target.toFixed(1)} (${(target * DENSITY_WARN_FRAC).toFixed(2)})`;
+}
+
+/** 升序数组里第一个 ≥ v 的下标（没有则返回长度）。 */
+function lowerIndex(a: readonly number[], v: number): number {
+  let lo = 0, hi = a.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if ((a[m] as number) < v) lo = m + 1; else hi = m; }
+  return lo;
+}
 
 /** 段内名义时间轴（不做任何动作、不受击）：从某一拍开始逐 tick 推进。 */
 export interface Timeline { t: Float64Array; s: Float64Array; n: number; tEnd: number; stopSec: number; t0: number; s0: number }
@@ -448,6 +576,22 @@ export function validateChapter(def: ChapterDef, solver: SolverAPI, opts: { seed
 
     // R11：端盘段没有 low
     if (def2.controls?.jump === false) for (const o of seg.obstacles) if (o.cls === 'low') err('R11', `tray segment has low obstacle ${o.kind} @${o.beat}`, sid);
+
+    // R15-jump：撑跃窗口（先报 warning；同一行同一种类合并成一条）
+    const narrow = new Map<string, { kind: string; beat: number; lanes: Lane[]; window: number }>();
+    for (const r of jumpWindows(seg)) {
+      if (r.window >= JUMP_WINDOW_MIN - 1e-9) continue;
+      const k = `${r.o.beat}|${r.o.kind}`;
+      const cur = narrow.get(k) ?? { kind: r.o.kind, beat: r.o.beat, lanes: [], window: Infinity };
+      cur.lanes.push(...r.o.lanes.filter((l) => !cur.lanes.includes(l)));
+      cur.window = Math.min(cur.window, r.window);
+      narrow.set(k, cur);
+    }
+    for (const r of narrow.values()) {
+      const cad = seg.cadenceAt(r.beat);
+      const what = r.window > 0 ? `jump window only ${r.window.toFixed(3)} s` : 'no jump timing clears it (window 0 s)';
+      warn('R15-jump', `${r.kind} @${r.beat} (lane ${r.lanes.join('/')}): ${what}, need ≥ ${JUMP_WINDOW_MIN} s (stride ${seg.stride} m, ${cad.toFixed(1)} palms/s = ${(seg.stride * cad).toFixed(2)} m/s)`, sid);
+    }
 
     // R12：暗色氛围的描边。
     // R4 的亮度一项：非暗色氛围没有粉笔描边兜底（chalkMin < 0.15），关灯（out）或声控灯（sound：拍地之前是黑的）的区间里
