@@ -4,6 +4,8 @@
 
 ## 怎么玩
 
+在线试玩：[手行者 · 跑酷](https://evegoodevening.github.io/hand-walker-parkour/)。
+
 `npm ci && npm run build`，然后用浏览器打开 `dist/index.html`（桌面或手机都可以，建议戴耳机）。
 
 | 操作 | 键盘 | 触摸 |
