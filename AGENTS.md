@@ -162,3 +162,4 @@
   - 需要按 CSS 断言可见性时，happy-dom 能对注入的 `<style>`（读 `src/ui/styles.css`）算 `getComputedStyle().visibility`，后代选择器也认。
 - 发布成 claude.ai Artifact（2026-10-01）：Artifact 发布时会自己包一层 `<!doctype html><html><head>…<body>`，所以要把 `dist/index.html` 的 doctype、`<html>`、`<head>`、`<body>` 及其闭合标签、charset meta 去掉，并补 `<style>:root{color-scheme:dark;background:#0d1216}</style>`（骨架把 `:root` 钉成 light）。内联的 `type="module"` 脚本本来就会延迟执行，放在 `#app` 之前没问题。发布前用一个仿骨架的 wrapped.html 经 heavy-gate 冒烟一次即可。
 - PreToolUse 的 heavy-gate hook 会扫描整条命令文本：在同一条 Bash 里用 heredoc 写一个提到 playwright 的脚本文件也会被判成启动浏览器。用 Write 工具写脚本文件，再单独经闸门运行它（不要改写命令去绕过）。
+- README 的正式截图放在 `docs/screenshots/`，不要引用被 `.gitignore` 排除的 `shots/`。用 `scripts/shot.mjs --plan` 复拍，统一 `1280x720`、`q: high`、`wait: 1500`，从段首推进以重放 cue；当前取景点为 `1-2 @31.4`、`3-6 @64.4`、`4-1 @48.6`、`5-7 @21.6`（`autopilot=perfect`）。

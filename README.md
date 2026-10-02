@@ -18,6 +18,18 @@
 
 稳度耗尽会摔倒，从检查点重来。
 
+## 游戏截图
+
+实机画面，点击可查看原图。
+
+| 早自习 · 走廊 | 雨夜 · 街巷 |
+| :---: | :---: |
+| [![主角用双手穿过教学楼走廊，两侧站着同学，前方摆着清洁车](docs/screenshots/corridor.png)](docs/screenshots/corridor.png) | [![雨夜的街巷，主角从路灯下经过，身旁是卷帘门和墙上的手印](docs/screenshots/rain-night.png)](docs/screenshots/rain-night.png) |
+
+| 广场 · 梦中的人群 | 七步 · 体育课 |
+| :---: | :---: |
+| [![梦中的灰白广场，人群围在道路两旁，主角用双手前行](docs/screenshots/dream-plaza.png)](docs/screenshots/dream-plaza.png) | [![操场的红色跑道，同学站在两侧，前方是需要避让的栏架](docs/screenshots/track.png)](docs/screenshots/track.png) |
+
 ## 开发
 
 需要 Node ≥ 24、npm 11。
