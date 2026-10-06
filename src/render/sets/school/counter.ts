@@ -1,0 +1,154 @@
+// src/render/sets/school/counter.ts —— 静场「取餐窗口」（DESIGN.md §4.2 2-3，WP3）。
+// 「我把双手撑在窗台边缘，膝盖弯曲，脚踮地」：镜头在主角身后（WP5 的 counter 机位 (0, 1.1, 1.6) → (0, 1.0, −1)），
+// 看见不锈钢窗台、窗口里的菜盆、窗口阿姨的一只手和勺子（只露出这只手）。
+// 窗口里那盏酱油色的灯（#B08D5E）和那勺红烧肉（#9C5F3E）是全作第一处暖色，只在这里（附录 A-9）。
+// 手的动作：先盛一勺菜，再「又舀了一勺红烧肉，盖在最上面」（2.8 s 落到餐盘上），然后收回去。
+import * as THREE from 'three';
+import type { StillSet, ViewContext } from '../../../core/contracts';
+import { clamp, lerp, smoothstep } from '../../../core/math';
+import { registerSet } from '../../../core/registry';
+import type { SimSnapshot } from '../../../core/types';
+import { KitGeo } from '../../geom';
+import { PAL, WARM } from '../../palette';
+import { emissiveMesh, floorRect, lambertMesh, propGeo, wallZ } from './common';
+import { mixHex } from '../../../core/geo';
+
+const ZW = -0.62;         // 窗口所在的墙
+const WX = 0.8;           // 窗口半宽
+const Y0 = 0.95, Y1 = 1.85;
+
+interface Built { hand: THREE.Group; ladleVeg: THREE.Mesh; ladlePork: THREE.Mesh; porkOnTray: THREE.Mesh; vegOnTray: THREE.Mesh }
+let built: Built | null = null;
+
+/**
+ * 手的关键帧：[t, x, y, z, 腕部翻转]（手腕的位置）；勺子在 1.55 s 与 2.85 s 倒进餐盘。
+ * 手从窗口里右后方伸出来（HAND_YAW），勺头在手腕前下方 LADLE（世界坐标偏移）：
+ * 舀菜时勺头落在菜盆（青菜 x 0.1、红烧肉 x −0.45，z −1.15），倒菜时落在窗台上的餐盘（x ≈ 0，z −0.5）。
+ */
+const HAND_YAW = -0.6;
+const KEYS: Array<[number, number, number, number, number]> = [
+  [0.0, 0.62, 1.4, -1.65, 0], [0.6, 0.25, 1.2, -1.37, 0], [1.1, 0.22, 1.42, -1.05, 0], [1.55, 0.15, 1.2, -0.72, 1],
+  [1.85, 0.1, 1.42, -1.05, 0], [2.3, -0.3, 1.2, -1.37, 0], [2.6, -0.05, 1.42, -1.05, 0], [2.85, 0.11, 1.22, -0.72, 1],
+  [3.3, 0.35, 1.42, -1.15, 0], [4.2, 0.62, 1.4, -1.65, 0], [99, 0.62, 1.4, -1.65, 0],
+];
+export function handAt(t: number): { x: number; y: number; z: number; tip: number } {
+  for (let i = 0; i + 1 < KEYS.length; i++) {
+    const a = KEYS[i] as (typeof KEYS)[number], b = KEYS[i + 1] as (typeof KEYS)[number];
+    if (t <= b[0]) {
+      const k = smoothstep(a[0], b[0], t);
+      return { x: lerp(a[1], b[1], k), y: lerp(a[2], b[2], k), z: lerp(a[3], b[3], k), tip: lerp(a[4], b[4], k) };
+    }
+  }
+  const l = KEYS[KEYS.length - 1] as (typeof KEYS)[number];
+  return { x: l[1], y: l[2], z: l[3], tip: l[4] };
+}
+
+function build(ctx: ViewContext): THREE.Object3D {
+  const root = new THREE.Group();
+  const stat = propGeo('noon'), emi = new KitGeo();
+  // 食堂这一侧：地面、墙（下半截白瓷砖）、窗口
+  floorRect(stat, -3.5, 3.5, ZW, 3, 0x9aa0a0);
+  const tileG = new KitGeo();
+  const wall = (x0: number, x1: number, y0: number, y1: number) => {
+    // 下半截白瓷砖（贴图），上半截灰泥
+    const ya = y0, yb = Math.min(y1, 1.5);
+    if (yb > ya) tileG.quad([x0, ya, ZW], [x1, ya, ZW], [x1, yb, ZW], [x0, yb, ZW], 0xffffff,
+      [[x0 / 0.6, ya / 0.6], [x1 / 0.6, ya / 0.6], [x1 / 0.6, yb / 0.6], [x0 / 0.6, yb / 0.6]], [0.8, 0.8, 1, 1]);
+    if (y1 > 1.5) wallZ(stat, ZW, x0, x1, Math.max(y0, 1.5), y1, 0xcbd1d0);
+  };
+  wall(-3.5, -WX, 0, 3.4); wall(WX, 3.5, 0, 3.4); wall(-WX, WX, 0, Y0); wall(-WX, WX, Y1, 3.4);
+  // 不锈钢窗台（伸出墙外，双手撑在这里）与窗框
+  stat.box([0, Y0 - 0.02, ZW + 0.17], [WX * 2 + 0.3, 0.04, 0.38], PAL.steel, { faces: '+y+z-y+x-x' });
+  stat.box([0, Y0 - 0.02, ZW - 0.25], [WX * 2, 0.04, 0.5], 0x8a979e, { faces: '+y' });
+  for (const x of [-WX, WX]) stat.box([x, (Y0 + Y1) / 2, ZW], [0.06, Y1 - Y0, 0.12], PAL.steel, { faces: '+z+x-x' });
+  stat.box([0, Y1 + 0.03, ZW], [WX * 2 + 0.12, 0.06, 0.12], PAL.steel, { faces: '+z-y' });
+  // 左右两个关着的窗口（卷帘）
+  for (const x of [-2.3, 2.3]) {
+    stat.box([x, (Y0 + Y1) / 2, ZW + 0.01], [1.4, Y1 - Y0, 0.02], 0x8f9a9c, { faces: '+z' });
+    for (let i = 1; i < 9; i++) stat.box([x, Y0 + (i * (Y1 - Y0)) / 9, ZW + 0.022], [1.38, 0.012, 0.004], 0x6e7c82, { faces: '+z' });
+    stat.box([x, Y0 - 0.02, ZW + 0.12], [1.5, 0.04, 0.26], PAL.steel, { faces: '+y+z' });
+  }
+  // 窗口上方：一块没有字的深色价目板；窗台下沿一道积灰
+  stat.box([0, 2.25, ZW + 0.02], [1.9, 0.5, 0.04], 0x3a464d, { faces: '+z+y-y' });
+  stat.box([0, 0.08, ZW + 0.01], [7, 0.16, 0.02], 0x8a979e, { faces: '+z' });
+  // 窗口里：操作台、菜盆（暖灯下带一点暖）、后墙与暖灯
+  // 窗口里那一小块暖光是对着画面调的（「酱油色」的暗），不走道具的暗色补偿
+  const warm = (c: number, k: number) => mixHex(c, WARM.windowLamp, k);
+  stat.withTone(null, () => {
+    stat.box([0, 0.88, -1.25], [2.4, 0.06, 1.0], warm(0xaab4b8, 0.35), { faces: '+y+z' });
+    stat.quad([-1.8, 0, -2.4], [1.8, 0, -2.4], [1.8, 3.2, -2.4], [-1.8, 3.2, -2.4], warm(0x3a4246, 0.35), null, [0.6, 0.6, 1, 1]);
+    const basins: Array<[number, number]> = [[-0.45, WARM.braisedPork], [0.1, 0x5e6b5a], [0.62, 0xd9dcd6]];
+    for (const [x, food] of basins) {
+      stat.box([x, 0.97, -1.15], [0.5, 0.12, 0.42], warm(0xc9cfcf, 0.3), { faces: '+x-x+z-z' });
+      stat.box([x, 1.02, -1.15], [0.44, 0.02, 0.36], food, { faces: '+y' });
+    }
+    stat.box([0, 2.9, -1.6], [0.02, 0.6, 0.02], 0x3a4246);
+  });
+  emi.withSteady(1, () => {
+    emi.box([0, 2.55, -1.6], [0.16, 0.12, 0.16], WARM.windowLamp);                    // 酱油色的灯
+    emi.quad([-1.6, 1.2, -2.39], [1.6, 1.2, -2.39], [1.6, 3.0, -2.39], [-1.6, 3.0, -2.39], [0x3a3228, 0x3a3228, 0x6e5a40, 0x6e5a40]); // 灯照亮的后墙
+  });
+  // 窗台上主角的餐盘（米饭；菜与那勺红烧肉按时间出现）
+  stat.box([0, Y0 + 0.012, ZW + 0.12], [0.4, 0.02, 0.3], PAL.steel, { faces: '+y+z+x-x' });
+  stat.box([-0.08, Y0 + 0.035, ZW + 0.12], [0.16, 0.03, 0.2], 0xe6ebee, { faces: '+y+z' });
+  const vegG = new KitGeo(); vegG.box([0.1, Y0 + 0.035, ZW + 0.16], [0.12, 0.03, 0.1], 0x5e6b5a, { faces: '+y+z+x' });
+  const porkG = new KitGeo(); porkG.box([-0.04, Y0 + 0.06, ZW + 0.1], [0.14, 0.04, 0.12], WARM.braisedPork, { faces: '+y+z+x-x' });
+  const vegOnTray = lambertMesh(ctx, vegG, 'veg'), porkOnTray = lambertMesh(ctx, porkG, 'pork');
+  // 窗口阿姨的手（只露出这只手）：局部 −z 是手臂伸回窗口里的方向，+z 是勺子伸向餐盘的方向。
+  // 前臂斜着从右后方伸出来，镜头看得见它的长度；袖口在最里面，被前臂和手挡住一半，不再是迎面的一块白方块。
+  const handG = propGeo('noon');
+  const skin = PAL.skin, skinDark = mixHex(PAL.skin, PAL.creaseGray, 0.35);
+  handG.segment([0.0, 0.04, -0.12], [0.03, 0.11, -0.46], 0.062, 0.055, skin);                    // 前臂
+  handG.segment([0.03, 0.11, -0.44], [0.045, 0.15, -0.62], 0.092, 0.09, 0xc3cacb);               // 袖口（灰白工作服）
+  // 袖子再往窗口深处伸一截，越往里越暗（被窗口里的暗光吞掉），手不再是悬在半空的一截
+  handG.withTone(null, () => {
+    handG.segment([0.045, 0.15, -0.6], [0.06, 0.2, -0.86], 0.1, 0.098, mixHex(0xc3cacb, 0x6e5a40, 0.45));
+    handG.segment([0.06, 0.2, -0.84], [0.08, 0.27, -1.3], 0.104, 0.102, mixHex(0xc3cacb, 0x6e5a40, 0.85));
+  });
+  handG.box([0, 0.012, -0.03], [0.082, 0.032, 0.11], skin, { faces: '+x-x+y-y+z-z' });              // 手背
+  for (let i = 0; i < 4; i++) {                                                                     // 四根弯着的手指，握住勺柄
+    const x = -0.03 + i * 0.02;
+    handG.box([x, 0.0, 0.035], [0.017, 0.022, 0.034], skin, { faces: '+x-x+y+z-z' });
+    handG.box([x, -0.022, 0.05], [0.016, 0.026, 0.018], skinDark, { faces: '+x-x+z-y' });
+  }
+  handG.segment([0.045, 0.004, -0.04], [0.035, -0.012, 0.03], 0.02, 0.02, skin);                  // 拇指
+  handG.segment([0.0, -0.012, 0.0], [0.0, -0.12, 0.24], 0.018, 0.018, PAL.steel);                   // 勺柄
+  handG.prism([0.0, -0.17, 0.27], 0.062, 0.05, 6, PAL.steel);                                      // 勺头
+  const vegL = new KitGeo(); vegL.box([0.0, -0.118, 0.27], [0.085, 0.02, 0.085], 0x5e6b5a, { faces: '+y' });
+  const porkL = new KitGeo(); porkL.box([0.0, -0.11, 0.27], [0.095, 0.03, 0.095], WARM.braisedPork, { faces: '+y' });
+  const hand = new THREE.Group();
+  hand.name = 'lunchLadyHand';
+  hand.add(lambertMesh(ctx, handG, 'hand'));
+  const ladleVeg = lambertMesh(ctx, vegL, 'ladleVeg'), ladlePork = lambertMesh(ctx, porkL, 'ladlePork');
+  hand.add(ladleVeg, ladlePork);
+  const tileGeom = tileG.build();
+  ctx.mat.ensureChalkAttr(tileGeom);
+  const tiles = new THREE.Mesh(tileGeom, ctx.mat.lambert({ vertexColors: true, map: ctx.tex.get('tile', { n: 4, tile: 0xe6ebee, grout: 0xaab4b8, repeat: 1 }), flat: true }));
+  tiles.name = 'tiles';
+  root.add(lambertMesh(ctx, stat, 'counter'), tiles, emissiveMesh(ctx, emi, 'lamp'), vegOnTray, porkOnTray, hand);
+  built = { hand, ladleVeg, ladlePork, porkOnTray, vegOnTray };
+  update(0, null as unknown as SimSnapshot);
+  return root;
+}
+
+function update(t: number, _snap: SimSnapshot): void {
+  if (!built) return;
+  const p = handAt(t);
+  built.hand.position.set(p.x, p.y, p.z);
+  built.hand.rotation.set(-0.06 - p.tip * 0.2, HAND_YAW, p.tip * 0.9);
+  // 勺里有东西：舀起来之后、倒下之前
+  built.ladleVeg.visible = t > 0.62 && t < 1.55;
+  built.ladlePork.visible = t > 2.32 && t < 2.85;
+  built.vegOnTray.visible = t >= 1.55;
+  built.porkOnTray.visible = t >= 2.85;
+  void clamp;
+}
+
+export const counterSet: StillSet = {
+  id: 'counter', owner: 'WP3', variants: ['default'],
+  build: (ctx) => build(ctx),
+  playerAnchor: () => new THREE.Matrix4().makeTranslation(0, 0, 0),
+  update,
+};
+
+registerSet(counterSet);

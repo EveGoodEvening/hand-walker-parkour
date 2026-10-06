@@ -1,0 +1,41 @@
+{
+  "name": "hand-walker-parkour",
+  "version": "0.1.0",
+  "private": true,
+  "description": "手行者 · 跑酷 —— 基于小说《手行者》改编的 three.js 跑酷游戏（单文件 HTML）",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "validate": "tsx scripts/validate-levels.ts",
+    "check:single": "node scripts/check-single.mjs",
+    "check:owners": "node scripts/check-owners.mjs",
+    "e2e:smoke": "node scripts/e2e-smoke.mjs",
+    "e2e:chapters": "node scripts/e2e-chapters.mjs",
+    "e2e:perf": "node scripts/e2e-perf.mjs",
+    "e2e:visual": "node scripts/e2e-visual.mjs",
+    "e2e:touch": "node tests/e2e-touch.mjs",
+    "e2e:audio": "node tests/unit/audio/browser/run.mjs",
+    "bot:difficulty": "tsx scripts/bot-difficulty.mjs",
+    "shot": "node scripts/shot.mjs",
+    "verify": "node scripts/verify.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "@types/three": "0.186.0",
+    "happy-dom": "20.14.5",
+    "playwright-core": "1.63.0",
+    "three": "0.186.1",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.1",
+    "vite-plugin-singlefile": "2.3.3",
+    "vitest": "5.0.3"
+  }
+}
