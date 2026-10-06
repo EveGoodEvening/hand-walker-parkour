@@ -1,6 +1,5 @@
-// tests/unit/npc/upper.test.ts —— 腰带顶面不再是黑盖子；站立段和人墙画上身（U6）。
-// 以前站着的人读成带盖的垃圾桶（腰带的顶面用的是头发的黑），站立视线和近处人墙看到的是齐腰截断的裤腿柱。
-// 上身按组 / 段决定（人群段 2-2 / 5-6 的人墙、梦里的人；站立段要显示的组只在站立段进行时），与玩家远近、画面上还有谁无关。
+// tests/unit/npc/upper.test.ts —— 普通 NPC 的弱化轮廓；人墙、梦里与站立段的完整着色。
+// 上身始终连着腰部，显示风格按段决定，不随远近变化；特殊人物不叠加第二个上身。
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import type { ChapterId, QualityTier, SimSnapshot } from '../../../src/core/types';
@@ -9,9 +8,9 @@ import { getChapter } from '../../../src/levels/chapters/index';
 import type { ChapterDef } from '../../../src/levels/schema';
 import { C } from '../../../src/render/npc/colors';
 import { expandChapter } from '../../../src/render/npc/crowds';
-import { HIPS_LOW, HIPS_SPECIAL, LOW_UPPER, LegForest, newPerson } from '../../../src/render/npc/LegForest';
+import { HIPS_LOW, HIPS_SPECIAL, LOW_UPPER, LegForest } from '../../../src/render/npc/LegForest';
 import { isCrowdSegment, isStandGroup, isWallGroup, isWallSegment, standRevealOf } from '../../../src/render/npc/ObstacleView';
-import { HIPS, lookFor, specialLook } from '../../../src/render/npc/specials';
+import { HIPS } from '../../../src/render/npc/specials';
 import { ViewDriver, fakeCtx, makeView } from './helpers';
 
 const _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
@@ -50,7 +49,7 @@ describe('腰带的顶面（U6）', () => {
         expect(up.some(isHair), `${tier} ${name}`).toBe(false);
       }
     }
-    // 伸脚的人（footOut 原型）同样：坐着的人腰带顶面不是黑的；坐着的人只建到腰带（没有上身变体）
+    // 伸脚的人与轮廓同属 seated，转身、收脚时保持连在一起。
     const { view } = makeView('high');
     const fo = view.pools.get('footOut');
     expect(fo).toBeDefined();
@@ -58,7 +57,6 @@ describe('腰带的顶面（U6）', () => {
       const seated = upFaceColors(fo.geo, fo.variantIndex('seated'));
       expect(seated.length).toBeGreaterThan(0);
       expect(seated.some(isHair)).toBe(false);
-      expect(fo.variantIndex('upper')).toBe(-1);
     }
   });
 
@@ -86,10 +84,10 @@ describe('腰带的顶面（U6）', () => {
 type View = ReturnType<typeof makeView>['view'];
 
 /** 本帧画出来的人（以髋部实例为准；垂着的手、低画质 special 里人墙的上身是附属实例，不算）：位置、髋离地高度、模型最高点（离地）。 */
-function people(view: View, snap: SimSnapshot): Array<{ s: number; x: number; hip: number; top: number; d: number }> {
+function people(view: View, snap: SimSnapshot): Array<{ s: number; x: number; hip: number; top: number; d: number; scale: number }> {
   const f = view.forest;
   const uppers = (['torso', 'head', 'upper', 'special'] as const).map((id) => f.pool(id));
-  const out: Array<{ s: number; x: number; hip: number; top: number; d: number }> = [];
+  const out: Array<{ s: number; x: number; hip: number; top: number; d: number; scale: number }> = [];
   const lowArms = HIPS_LOW.indexOf(HIPS.arms);
   for (const hp of f.hipsPools()) {
     for (let i = 0; i < hp.n; i++) {
@@ -99,6 +97,7 @@ function people(view: View, snap: SimSnapshot): Array<{ s: number; x: number; hi
       if (hp === f.pool('hips') && v === HIPS.arms) continue;
       hp.matrixAt(i, _m); _v.setFromMatrixPosition(_m);
       const px = _v.x, pz = _v.z, hip = _v.y - snap.player.floorY;
+      const scale = _v.setFromMatrixColumn(_m, 1).length();
       let top = -Infinity;
       // 陈默的上身就在自己的髋部件里（special / hips 的 fullUpper）
       for (const pool of [...uppers, hp]) {
@@ -114,7 +113,7 @@ function people(view: View, snap: SimSnapshot): Array<{ s: number; x: number; hi
           }
         }
       }
-      out.push({ s: -pz, x: px, hip, top: top - snap.player.floorY, d: Math.hypot(-pz - snap.player.s, px - snap.player.x) });
+      out.push({ s: -pz, x: px, hip, top: top - snap.player.floorY, d: Math.hypot(-pz - snap.player.s, px - snap.player.x), scale });
     }
   }
   return out;
@@ -122,6 +121,19 @@ function people(view: View, snap: SimSnapshot): Array<{ s: number; x: number; hi
 
 /** 站着的人（髋离地 > 0.7 m；坐着的人髋高 0.46 m）。 */
 const standing = (p: { hip: number }) => p.hip > 0.7;
+
+/** 完整着色的上身数量（弱化轮廓不计入，头与躯干不重复计数）。 */
+function detailedUppers(f: LegForest): number {
+  let n = 0;
+  for (const id of ['torso', 'upper', 'special'] as const) {
+    const pool = f.pool(id);
+    for (let i = 0; i < pool.n; i++) {
+      if (id === 'special' && pool.variantAt(i) !== LOW_UPPER) continue;
+      if (pool.glowAt(i) >= 0) n++;
+    }
+  }
+  return n;
+}
 
 describe('人墙的组与段（U6）', () => {
   it('人墙段 = 人群段 = 2-2、5-6（一直画上身）；站立段 4-3、5-8 显示前一个跑段 4-2、5-7 的组（只在站立段进行时画上身）', () => {
@@ -162,7 +174,7 @@ describe('站立段与人墙：上身和没有五官的头（U6）', () => {
         const all = people(view, snap).filter(standing);
         const near = all.filter((p) => p.d <= 6);
         // 跑段只看本段里的人（前一段走过来的路人不是人墙）；站立段看身边的人（前一个跑段的组。5-8 前方 37 m 外是 5-11 走廊里的人腿障碍，
-        // 那是 5-11 的人，只到腰带）
+        // 那是 5-11 的人，仍用弱化轮廓）
         const mine = sg && snap.segKind === 'run' ? all.filter((p) => p.s >= sg.s0 + 2 && p.s <= sg.s1) : all.filter((p) => p.s <= (sg?.s0 ?? 0) + 10);
         rows.push(`${seg}@${beat} ${snap.segKind}: 近处 ${near.length} 人，最低 ${Math.min(...near.map((p) => p.top)).toFixed(2)} m；本段 ${mine.length} 人，最远 ${Math.max(...mine.map((p) => p.d)).toFixed(1)} m`);
         expect(near.length, `${tier} ${seg}@${beat}`).toBeGreaterThan(2);
@@ -174,7 +186,7 @@ describe('站立段与人墙：上身和没有五官的头（U6）', () => {
     });
   }
 
-  it('5-7 爬行时路边的同学和「排队同学的腿」只到腰带（不论远近、画质）；进 5-8 站立段的第一帧起它们才有上身', () => {
+  it('5-7 爬行时同学有弱化轮廓；进 5-8 后恢复完整着色，远近与画质都不造成截断', () => {
     for (const tier of ['low', 'medium', 'high'] as QualityTier[]) {
       const { view } = makeView(tier);
       // 从 @10 起看（再往前，身后 5 m 内还有 5-6 人群段的人墙，它们一直有上身）
@@ -184,7 +196,6 @@ describe('站立段与人墙：上身和没有五官的头（U6）', () => {
       expect(sg).toBeDefined();
       const legs = new Set((sg?.obstacles ?? []).filter((o) => o.archetype === 'legs').map((o) => o.id));
       expect(legs.size).toBe(2);
-      const uppers = () => { const c = view.forest.counts(); return c.torso + c.head + c.upper + view.forest.lowUppers(); };
       let frames = 0, seen = 0, far = 0, near = 0, legFrames = 0;
       let snap = vd.d.snap;
       // 每 tick 渲染一帧，好拿到站立段的第一帧
@@ -192,11 +203,11 @@ describe('站立段与人墙：上身和没有五官的头（U6）', () => {
         snap = vd.step(1);
         if (snap.segKind !== 'run') break;
         frames++;
-        expect(uppers(), `${tier} 5-7 t=${snap.t.toFixed(2)}`).toBe(0);
+        expect(detailedUppers(view.forest), `${tier} 5-7 t=${snap.t.toFixed(2)}`).toBe(0);
         if (k % 60 === 0) {
           for (const p of people(view, snap).filter(standing)) {
             seen++; if (p.d > 10) far++; if (p.d <= 6) near++;
-            expect(p.top, `${tier} 5-7 t=${snap.t.toFixed(2)} d=${p.d.toFixed(1)}`).toBeLessThan(1.3);
+            expect(p.top, `${tier} 5-7 t=${snap.t.toFixed(2)} d=${p.d.toFixed(1)}`).toBeGreaterThanOrEqual(1.35);
           }
         }
         // 「排队同学的腿」（5-7 @24、@58 的 legs 障碍）在画面里
@@ -208,42 +219,44 @@ describe('站立段与人墙：上身和没有五官的头（U6）', () => {
       expect(far, tier).toBeGreaterThan(10);
       expect(near, tier).toBeGreaterThan(0);
       expect(seen, tier).toBeGreaterThan(40);
-      // 最后一帧 5-7 → 第一帧 5-8：画面此时才给 5-7 的组加上身。镜头这一帧还在追尾的位置，马老师和近处的同学就在画面里，
+      // 5-7 → 5-8：轮廓恢复完整着色。镜头这一帧还在追尾的位置，马老师和近处的同学就在画面里，
       // 所以界面在这一帧用黑场切进 5-8（ui/hud/overlays.ts 的 segmentCut，standCut.test.ts，修复轮 B3 r2）
       expect(snap.segKind, tier).toBe('stand');
-      // 身边的人（5-7 的组）；前方 37 m 外 5-11 走廊里的人腿障碍是 5-11 的人，只到腰带
+      // 身边的人（5-7 的组）；前方 5-11 走廊里的人继续保持弱化轮廓。
       const st = people(view, snap).filter((p) => standing(p) && p.s <= snap.player.s + 10);
-      expect(uppers(), tier).toBeGreaterThan(2);
+      expect(detailedUppers(view.forest), tier).toBeGreaterThan(2);
       expect(st.length, tier).toBeGreaterThan(2);
       for (const p of st) expect(p.top, `${tier} 5-8 第一帧 d=${p.d.toFixed(1)}`).toBeGreaterThanOrEqual(1.35);
     }
   });
 
-  it('别处（1-2 走廊）和坐着的人（2-2 餐桌边、伸脚的人）只到腰带，不论离玩家多近', () => {
-    for (const tier of ['low', 'high'] as QualityTier[]) {
-      // 1-2：路边的人和障碍里的人走到身边也不长出上身（陈默的上身是他自己的髋部件）
+  it('走廊路人和坐着的人始终有连接腰部的弱化上身，走近也不切换成完整着色', () => {
+    for (const tier of ['low', 'medium', 'high'] as QualityTier[]) {
+      // 陈默的完整上身属于他自己的髋部件，不叠加轮廓。
       const { view } = makeView(tier);
       const vd = new ViewDriver(view, getChapter('ch1') as ChapterDef, { segment: '1-2', beat: 20 });
       vd.d.sim.setInvincible(true);
       let seen = 0, near = 0;
       for (let k = 0; k < 40; k++) {
         const snap = vd.step(6);
-        const c = view.forest.counts();
-        expect(c.torso + c.head + c.upper, `${tier} 1-2 t=${snap.t.toFixed(2)}`).toBe(0);
-        expect(view.forest.lowUppers(), `${tier} 1-2 t=${snap.t.toFixed(2)}`).toBe(0);
-        for (const p of people(view, snap)) { seen++; if (p.d < 3) near++; if (p.hip > 0.7) expect(p.top, `${tier} 1-2`).toBeLessThan(1.3); }
+        expect(detailedUppers(view.forest), `${tier} 1-2 t=${snap.t.toFixed(2)}`).toBe(0);
+        for (const p of people(view, snap)) {
+          seen++; if (p.d < 3) near++;
+          // 越过的障碍会整体收拢；上身必须与髋保持同一缩放，不能提前消失。
+          expect(p.top - p.hip, `${tier} 1-2`).toBeGreaterThanOrEqual(0.7 * p.scale - 1e-6);
+        }
       }
       expect(seen).toBeGreaterThan(40);
       expect(near).toBeGreaterThan(0);
     }
-    // 2-2 坐着的人（餐桌边、伸脚的人）只到腰带
+    // 餐桌边坐着的人同样保留完整高度的轮廓。
     const { view } = makeView('high');
     const vd = new ViewDriver(view, getChapter('ch2') as ChapterDef, { segment: '2-2', beat: 40 });
     vd.d.sim.setInvincible(true);
     const snap = vd.step(20);
     const seated = people(view, snap).filter((p) => !standing(p));
     expect(seated.length).toBeGreaterThan(3);
-    for (const p of seated) expect(p.top).toBeLessThan(0.9);
+    for (const p of seated) expect(p.top - p.hip).toBeGreaterThan(0.7);
   });
 
   it('人墙的上身从远到近都是同一个样子（不从腰里长出来）：5-6 一路走过去，每一帧站着的人都有上身、上身不缩放', () => {
@@ -273,38 +286,4 @@ describe('站立段与人墙：上身和没有五官的头（U6）', () => {
     }
   });
 
-  it('低画质：人墙的上身和特殊人物在同一个 special 部件里，同一帧谁也不让（仍 ≤ 3 次 draw call），drawRange 只盖住用到的变体', () => {
-    const f = new LegForest(); f.init(fakeCtx('low'));
-    const sp = f.pool('special');
-    const up = sp.variantRange(LOW_UPPER), chen = sp.variantRange(HIPS_SPECIAL.indexOf(HIPS.fullUpper)), zhou = sp.variantRange(HIPS_SPECIAL.indexOf(HIPS.jacket));
-    expect(up?.[0]).toBe(0);                                                  // 上身排在最前面
-    const upTris = ((up?.[1] ?? 0) - (up?.[0] ?? 0)) / 3;
-    expect(upTris).toBe(42);
-    const wall = newPerson(lookFor('student', 1, 'wall'));
-    wall.wall = true;
-    const chenMo = newPerson(specialLook('chenMo'));
-    const visible = () => f.meshes.filter((m) => m.visible && m.count > 0).length;
-    const geo = sp.mesh.geometry;
-    // 只有人墙：每个上身只付 42 个三角形
-    f.begin(); for (let i = 0; i < 5; i++) f.add(wall); f.end();
-    expect(f.lowUppers()).toBe(5);
-    expect([geo.drawRange.start, geo.drawRange.count]).toEqual([up?.[0], (up?.[1] ?? 0) - (up?.[0] ?? 0)]);
-    expect(sp.triangles()).toBe(5 * upTris);
-    // 陈默也在画面里：上身照样画（以前这一帧上身被整池清掉），drawRange 盖住两段
-    f.begin(); for (let i = 0; i < 5; i++) f.add(wall); f.add(chenMo); f.end();
-    expect(f.lowUppers()).toBe(5);
-    expect(sp.n).toBe(6);
-    expect(geo.drawRange.start).toBe(0);
-    expect(geo.drawRange.start + geo.drawRange.count).toBe(chen?.[1]);
-    expect(visible()).toBeLessThanOrEqual(3);
-    // 只有周主任：只画夹克那一段
-    const zhouP = newPerson(specialLook('directorZhou'));
-    f.begin(); f.add(zhouP); f.end();
-    expect([geo.drawRange.start, geo.drawRange.start + geo.drawRange.count]).toEqual(zhou);
-    expect(f.lowUppers()).toBe(0);
-    // 不是人墙的人（wall = false）低画质不画上身，中、高画质也只在 upper（梦里、站立段）时画
-    const plain = newPerson(lookFor('student', 1, 'plain'));
-    f.begin(); f.add(plain); f.end();
-    expect(sp.n).toBe(0);
-  });
 });

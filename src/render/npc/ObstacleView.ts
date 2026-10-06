@@ -16,9 +16,8 @@
 // 以底面中心为原点缩小到 0（之后不画）；回头（lookBack > 0）或镜头转向身后（turnBack 机位）时照常画，身后保留 14 m。
 // 人墙（U6）：人群段（2-2、5-6，数据注释里的「人墙」）里站着的人（路边的组和人腿障碍）每个画质都画上身和没有五官的头
 // （isWallSegment，读章时定）；梦里（plaza）的人中、高画质本来就有上身，低画质也画。
-// 站立段（4-3、5-8）只显示紧挨着的前一个跑段（4-2、5-7）的组（§10.2）：这些组里站着的人只在站立段进行时画上身（每个画质；
-// 按组和当前段的种类定，不按远近）。爬行的时候它们和别处一样只到腰带（5-7 是「排队同学的腿」，§4）；进站立段时镜头正在升起，
-// 这些人在站立机位的身后（审查 r2 验收）。别处的路边的人、障碍，以及所有坐着的人、伸脚的人只到腰带。
+// 站立段（4-3、5-8）显示紧挨着的前一个跑段（4-2、5-7）的组，站立期间恢复完整着色，规则与远近无关。
+// 普通跑段、坐着的人和伸脚的人用弱化上身轮廓；不再把「看不清上身」画成模型齐腰截断。
 import * as THREE from 'three';
 import type { ArchetypeId, QualityProfile, ViewContext, ViewSystem } from '../../core/contracts';
 import { LANE_WIDTH } from '../../core/constants';
@@ -621,7 +620,7 @@ export class ObstacleView implements ViewSystem {
       // 障碍里的人只转鞋尖和腿（上身扭过去会让垂着的手伸出碰撞盒）
       this.applyGaze(p, o.id * 8 + i, (o.s0 + o.s1) / 2 + st.ds, f, 'turnShoes', -1, b.type === 'walk', OBSTACLE_GAZE_MAX, 0);
       // 人群段里的人腿障碍（2-2、5-6 的「两侧车道的人墙」）和路边的人一样画上身，梦里的人本来就有上身：每个画质都画（U6）。
-      // 站立段要显示的那一段（5-7「排队同学的腿」）只在站立段进行时画；别处只到腰带
+      // 5-7 的组在站立段才恢复完整着色；其余时间仍有弱化上身轮廓。
       p.wall = kit === 'plaza' || this.wallAt(seg.index, f);
       p.upper = look.upper || p.wall;
       p.outdoor = OUTDOOR_KITS.has(kit);
@@ -680,7 +679,7 @@ export class ObstacleView implements ViewSystem {
   }
 
   /**
-   * 第 seg 段里站着的人这一帧画不画上身（U6）：人群段一直画；站立段要显示的组所在的段（4-2、5-7）只在那个站立段进行时画。
+   * 第 seg 段里站着的人这一帧是否用完整着色：人群段一直用；站立段要显示的组只在那个站立段进行时用。
    * 只看段和当前段的种类，与玩家远近、画面上还有谁无关。调试舞台不算。
    */
   private wallAt(seg: number, f: FrameCtx): boolean {
@@ -807,7 +806,7 @@ export class ObstacleView implements ViewSystem {
       } else this.applyIdle(p, f.tAnim, d.phase);
       this.applyGaze(p, -1 - i, sN, f, d.gaze, gi, d.pose === 'walk');
       const kit = groups[gi]?.kit;
-      // 人墙（U6）：按组所在的段和当前段的种类决定（梦里的人一律算），坐着的人不算（与别处坐着的人、伸脚的人一样只到腰带）
+      // 人墙按组所在的段和当前段的种类决定（梦里的人一律算）；普通坐姿仍用弱化轮廓。
       p.wall = d.pose !== 'seat' && (kit === 'plaza' || this.wallAt(groups[gi]?.seg ?? -1, f));
       p.upper = d.look.upper || kit === 'plaza' || p.wall;
       p.outdoor = kit !== undefined && OUTDOOR_KITS.has(kit);
@@ -944,9 +943,8 @@ export function isWallSegment(segments: ReadonlyArray<Pick<CompiledSegment, 'kin
 
 /**
  * 显示第 i 段的组的站立段（U6）：站立段只显示紧挨着的前一个跑段的组（§10.2），所以 4-2 → 4-3、5-7 → 5-8；没有 = −1。
- * 这一段里站着的人只在那个站立段进行时画上身（§5.4「世界突然『正常』了」、§5.7「躯干和头只在站立段……显示」）；
- * 爬行经过时只到腰带（5-7 是「排队同学的腿」）。审查 r2：以前整段都画，站立段就没有什么可「突然正常」的了。
- * 5-8 第一帧的镜头还在追尾的位置，画面里的人在这一帧长出上身：界面在 5-7 → 5-8 用黑场切盖住（ui/hud/overlays.ts 的 segmentCut，修复轮 B3 r2）。
+ * 这一段里站着的人在站立段恢复完整上身着色；普通爬行段经过时用弱化轮廓。
+ * 5-8 第一帧的镜头还在追尾位置，画面里的人会切换着色：保留 5-7 → 5-8 的黑场切（ui/hud/overlays.ts 的 segmentCut）。
  */
 export function standRevealOf(segments: ReadonlyArray<Pick<CompiledSegment, 'kind'>>, i: number): number {
   return segments[i]?.kind === 'run' && segments[i + 1]?.kind === 'stand' ? i + 1 : -1;

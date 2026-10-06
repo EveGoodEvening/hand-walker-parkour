@@ -167,3 +167,4 @@
 - 暂停要同时冻结模拟与表现：固定步长循环仍需处理菜单输入，剩余累加器的 alpha 会不停变化；只停 Sim 会在最后两个快照之间往返插值。进入暂停时同步 `prev = next`，暂停 tick 不标记画面 dirty，只有设置等显式变更才以 `dt = 0` 刷新 View。验证必须用实时 rAF（不是 `?test=1` 固定 alpha），在 `scene.onAfterRender` 同一任务里连续取画布像素，检查暂停、设置与恢复。
 - 标题页的竖屏菜单会收缩到最小宽度；五字入口「第三方许可」在 `8em` 下会把末字挤到第二行。标题按钮用 `white-space: nowrap` 保持单行，新增菜单项时同时检查竖屏的副标题和菜单包围框。
 - OMP 原生浏览器附加到已过 heavy-gate 的 Chromium 时，`app.cdp_url` 要传 `http://127.0.0.1:<port>` discovery 地址，不是 Chromium 打印的 `ws://…/devtools/browser/…`。在 `tab.run` 内用 `tab.evaluate` 访问游戏主世界的 `window.__game`；底层 `page.evaluate` 的隔离世界看不到它。
+- NPC 上身轮廓（DESIGN §10.7）：`LegForest` 管路人与人腿障碍，`archetypes/footOut.ts` 另建坐着伸脚的人，补上身要同时覆盖两条路径。轮廓复用完整上身几何体，`SOFT_UPPER = -1` 写入 `aHw.y` 或 `iHw.y` 标记弱化着色，不参与自发光；保持不透明与深度写入。three r186 的 `color_vertex` 早于 `defaultnormal_vertex`，不能在那里读 `transformedNormal`，圆滑法线 varying 要在 `defaultnormal_vertex` 之后赋值。人物高度验收要计入越过障碍时的整体缩放，不把正常退场误判成上身缺失。

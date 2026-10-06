@@ -1,7 +1,6 @@
-// tests/unit/npc/standCut.test.ts —— 修复轮 B3 r2：跑段 → 站立段的第一帧，画面里的人会不会当着镜头长出上身。
-// §5.7：5-7 爬行时同学只到腰带，进 5-8 站立段才画上身。可是 5-8 的第一帧镜头还在追尾的位置（站立机位从这里升起），
-// 马老师（teacherMa @66）和左手边最近的同学就在画面里：同一个镜头下，上一帧只有腿，这一帧有了躯干和头。
-// 这里逐 tick 渲染跑过边界（ObstacleView + CameraRig，和游戏的顺序一样），比较最后一帧跑段和第一帧站立段里视锥内每个人的上身：
+// tests/unit/npc/standCut.test.ts —— 跑段 → 站立段的第一帧，人物上身着色不能当着镜头突变。
+// 5-7 的同学原先只有腿，现在有弱化轮廓；进 5-8 后恢复完整着色。第一帧镜头仍在追尾位置，
+// 马老师和近处同学在画面里，所以保留黑场切。这里逐 tick 渲染边界（ObstacleView + CameraRig），比较前后帧的显示风格。
 // 有人变了的边界，界面必须用黑场切（ui/hud/overlays.ts 的 segmentCut）；没人变的边界（4-2 → 4-3 梦里）照旧无缝。
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
@@ -9,7 +8,7 @@ import type { ChapterId, QualityTier, SimSnapshot } from '../../../src/core/type
 import { getChapter } from '../../../src/levels/chapters/index';
 import type { ChapterDef } from '../../../src/levels/schema';
 import { CameraRig } from '../../../src/render/camera/CameraRig';
-import { drawsUpper } from '../../../src/render/npc/LegForest';
+import { drawsDetailedUpper } from '../../../src/render/npc/LegForest';
 import { segmentCut } from '../../../src/ui/hud/overlays';
 import { ViewDriver, makeView } from './helpers';
 
@@ -27,7 +26,7 @@ function acrossBoundary(tier: QualityTier, ch: ChapterId, seg: string, beat: num
   const low = tier === 'low';
   let rec: Seen[] = [];
   const add = view.forest.add.bind(view.forest);
-  view.forest.add = (p) => { rec.push({ x: p.x, y: p.y, z: p.z, up: drawsUpper(p, low) }); add(p); };
+  view.forest.add = (p) => { rec.push({ x: p.x, y: p.y, z: p.z, up: drawsDetailedUpper(p, low) }); add(p); };
   const frustum = new THREE.Frustum(), m = new THREE.Matrix4(), sph = new THREE.Sphere();
   // 上身所在的高度（髋以上 0.14–0.93 m，离地约 1.05–1.83 m）：球心 1.45 m，半径 0.5 m
   const inView = (p: Seen) => { sph.center.set(p.x, p.y + 1.45, p.z); sph.radius = 0.5; return frustum.intersectsSphere(sph); };

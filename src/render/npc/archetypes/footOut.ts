@@ -2,20 +2,20 @@
 // 「有人把腿往过道里伸了伸。不是成心的，只是习惯。」——它早就伸在那里，或者按那个人自己的节律伸缩（stretch），
 // 与玩家是否靠近无关；伸出 / 收回的画面只取决于段内时间和数据给的 period / phase（behaviors.stretchVisual）。
 //
-// 画的是一个完整的人（只到腰带，和所有 NPC 一样）：他侧身坐在车道外沿的一把椅子上，面朝过道，两条腿并排伸直横过车道，
+// 画的是一个完整的人（清晰的腿、弱化的上身轮廓）：他侧身坐在车道外沿的一把椅子上，面朝过道，两条腿并排伸直横过车道，
 // 鞋跟着地、鞋尖翘起。碰撞盒（0.60 宽 × 0.30 深 × 0.16 高）里只有两条小腿和鞋：小腿低低地贴着地面（车道范围内不高于
 // 碰撞上沿 + 5 cm），膝盖在车道外沿，大腿斜着抬到椅面。两条腿并排正好填满碰撞盒的 0.30 深度。
 // 人坐在哪一侧：左道的人坐在 −x 侧、右道坐在 +x 侧；中道按 id 奇偶选一侧，椅子落在两条车道之间的空当里
 // （椅子和人的外沿 ≤ 0.86 m，不伸进相邻车道玩家碰撞盒的 0.88 m）。
 // 收回：人在椅子上转过身，两条腿绕髋部转 80°，朝 +s（教室前方）伸着，离开车道。被碰到（hit）也会缩回去。
-// 两个变体：seated（人：两条腿 + 胯，收回时整体转动；U6：腰带只有侧面是黑的，上面是校服下摆）、chair（椅子，不动）。
-// 坐着的人只建到腰带（「视线里只有膝盖和腰带」，与路边坐着的人一样）。实例坐标系：+x 指向坐着的人；
+// 两个变体：seated（腿、胯和上身轮廓，收回时整体转动）、chair（椅子，不动）。实例坐标系：+x 指向坐着的人；
 // side = −1 时整个实例绕 y 转 180°（几何体关于 z = 0 对称，所以等于左右镜像，三角形绕向不变）。
 import * as THREE from 'three';
 import { defineArchetype, knockProgress, type PlaceCtx } from '../archetype';
 import { stretchVisual } from '../behaviors';
 import { C } from '../colors';
-import type { PartBuilder } from '../material';
+import { SOFT_UPPER, type PartBuilder } from '../material';
+import { lowUpperBody } from '../upperBody';
 
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1), _e = new THREE.Euler();
 const _t = new THREE.Matrix4(), _r = new THREE.Matrix4();
@@ -98,6 +98,9 @@ export default defineArchetype({
         void d;
         for (const z of [-FOOT_HIP.half, FOOT_HIP.half]) leg(b, z);
         pelvis(b);
+        const upper = new THREE.Matrix4().makeRotationY(-Math.PI / 2);
+        upper.setPosition(FOOT_HIP.x + 0.02, FOOT_HIP.y, 0);
+        b.with({ glow: SOFT_UPPER }, () => b.withMatrix(upper, () => lowUpperBody(b, true)));
       },
     },
     { name: 'chair', build: chair },

@@ -6,18 +6,19 @@
 // 顶点着色器把不属于本实例变体的顶点收拢到一点（三角形退化，不光栅化）。仍然是 1 个 InstancedMesh、1 次 draw call。
 //
 // 另外两个逐顶点通道：
-//   aHw.y 自发光（glow）：顶点色 × aHw.y × iHw.y 加进 totalEmissiveRadiance（周主任的烟头、电子栏杆的红灯）。
+//   aHw.y 自发光（glow）：正值 × iHw.y 加进 totalEmissiveRadiance；−1 标记弱化上身（不发光）。
 //   aHw.z 着色（tint）：1 = 顶点色乘 instanceColor（衣服颜色）；0 = 保持顶点色（鞋底、手、粉笔白线）。
 //         three 默认把 instanceColor 乘到所有顶点上，粉笔白线就会被染色；这里只替换 color_vertex 里那一行。
 //
 // 补丁是「串接」的：先调用 WP3 LampField 补丁（MaterialsAPI.lambert 返回的材质自带的 onBeforeCompile），
 // 再做本补丁；customProgramCacheKey 也串接，保证不和别的材质共用着色器程序。
-// 本补丁只动 color_pars_vertex / color_vertex / begin_vertex / color_pars_fragment / emissivemap_fragment，
-// 不碰 LampField 补丁用到的 common / project_vertex / lights_fragment_end。
+// 弱化上身用圆滑顶点法线、去饱和色和少量雾色压低对比；保持不透明和深度写入，不做幽灵式透视。
 import * as THREE from 'three';
 import { GeoBuilder, type V3 } from '../../core/geo';
 
-export const NPC_PROGRAM_KEY = 'hwNpcV1';
+export const NPC_PROGRAM_KEY = 'hwNpcV2';
+/** glow 通道的负值保留给弱化上身；可逐顶点或逐实例指定，不额外增加属性 / draw call。 */
+export const SOFT_UPPER = -1;
 
 /** r186 color_vertex 里被替换的那一行（单元测试会检查它还在）。 */
 export const INSTANCE_COLOR_LINE = 'vColor.rgb *= instanceColor.rgb;';
@@ -26,6 +27,7 @@ const VERT_PARS = /* glsl */`
 attribute vec3 aHw;
 attribute vec2 iHw;
 varying vec3 vHwGlow;
+varying float vHwSoft;
 `;
 
 function colorVertexChunk(): string {
@@ -34,9 +36,18 @@ function colorVertexChunk(): string {
     ? src.replace(INSTANCE_COLOR_LINE, 'vColor.rgb *= mix( vec3( 1.0 ), instanceColor.rgb, aHw.z );')
     : src;
   return `${body}
+	vHwSoft = clamp( max( -aHw.y, -iHw.y ), 0.0, 1.0 );
 	vHwGlow = vec3( 0.0 );
 	#if defined( USE_COLOR ) || defined( USE_COLOR_ALPHA )
-		vHwGlow = color.rgb * aHw.y * iHw.y;
+		vHwGlow = color.rgb * max( aHw.y, 0.0 ) * max( iHw.y, 0.0 );
+		if ( vHwSoft > 0.5 ) {
+			vec3 cloth = color.rgb;
+			#ifdef USE_INSTANCING_COLOR
+				cloth = instanceColor.rgb;
+			#endif
+			float gray = mix( dot( cloth, vec3( 0.2126, 0.7152, 0.0722 ) ), 0.12, 0.55 );
+			vColor.rgb = mix( vec3( gray ), cloth, 0.08 );
+		}
 	#endif
 `;
 }
@@ -54,11 +65,23 @@ export function patchNpcShader(sh: ShaderLike, lit: boolean): boolean {
     if (!src.includes(find)) { ok = false; return src; }
     return src.replace(find, to);
   };
-  sh.vertexShader = rep(sh.vertexShader, '#include <color_pars_vertex>', `#include <color_pars_vertex>\n${VERT_PARS}`);
+  const softNormal = lit ? '\nvarying vec3 vHwSoftNormal;' : '';
+  sh.vertexShader = rep(sh.vertexShader, '#include <color_pars_vertex>', `#include <color_pars_vertex>\n${VERT_PARS}${softNormal}`);
   sh.vertexShader = rep(sh.vertexShader, '#include <color_vertex>', colorVertexChunk());
   sh.vertexShader = rep(sh.vertexShader, '#include <begin_vertex>', BEGIN_VERTEX);
-  sh.fragmentShader = rep(sh.fragmentShader, '#include <color_pars_fragment>', '#include <color_pars_fragment>\nvarying vec3 vHwGlow;');
-  if (lit) sh.fragmentShader = rep(sh.fragmentShader, '#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += vHwGlow;');
+  sh.fragmentShader = rep(sh.fragmentShader, '#include <color_pars_fragment>', `#include <color_pars_fragment>\nvarying vec3 vHwGlow;\nvarying float vHwSoft;${softNormal}`);
+  if (lit) {
+    sh.vertexShader = rep(sh.vertexShader, '#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\n\tvHwSoftNormal = transformedNormal;');
+    sh.fragmentShader = rep(sh.fragmentShader, '#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n\tif ( vHwSoft > 0.5 ) normal = normalize( vHwSoftNormal );');
+    sh.fragmentShader = rep(sh.fragmentShader, '#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += vHwGlow;');
+    sh.fragmentShader = rep(sh.fragmentShader, '#include <fog_fragment>', `#include <fog_fragment>
+	#ifdef USE_FOG
+		if ( vHwSoft > 0.5 ) {
+			float softRim = 1.0 - abs( dot( normal, normalize( vViewPosition ) ) );
+			gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, 0.20 + 0.25 * softRim * softRim );
+		}
+	#endif`);
+  }
   return ok;
 }
 

@@ -1,5 +1,5 @@
 // src/render/npc/specials.ts —— NPC 的外观与特殊 NPC 的识别（DESIGN.md §5.7「特殊 NPC」、附录 A-4）。
-// 所有人都没有五官：头只是皮肤色的块，另外几面是头发。NPC 默认只建到腰带（「视线里只有膝盖和腰带」）。
+// 所有人都没有五官；完整着色的头分皮肤与头发，普通 NPC 的上身弱化成低对比轮廓。
 // 特殊 NPC 靠数据里的 id 识别（ItemDef.id → CompiledObstacle.params.itemId，或 NpcGroupDef.id），大小写不敏感；
 // 推荐直接用 Speaker 名（types.ts）：chenMo、directorZhou、teacherMa、monitor、dreamBoy。
 //   陈默       kind 'chenMo'（能下蹲，全作唯一出现在你视线高度的头）；它身后同车道 4 m 内 id 含 chenmo 的 footOut 是他留在过道里的脚
