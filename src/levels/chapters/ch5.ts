@@ -174,7 +174,7 @@ export default {
       id: '5-4', kind: 'run', kit: 'washroom', variant: 'morning', atmosphere: 'overcast', surface: 'tile',
       beats: 80, stride: 1.0, cadence: 4.8,
       follower: { mode: 'absent' },
-      surfaces: [{ id: 'wcMirror5', kind: 'mirror', side: 'L', from: 38, to: 70, y: [0.25, 1.6], backdrop: 'darkRoom' }],
+      surfaces: [{ id: 'wcMirror5', kind: 'mirror', side: 'L', from: 38, to: 70, y: [0.25, 1.6], backdrop: 'washroom' }],
       // 腿偏移要有代价：被迫换进的左道约 1 s 后有一只拖把桶（R9 只禁止 block），原来的中道是空的——
       // 掰正就什么也不用做，不掰正就得多跳一次
       rows: [

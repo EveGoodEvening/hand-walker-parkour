@@ -222,8 +222,9 @@ describe('anomaly doubles are not hidden behind the protagonist (U5)', () => {
 });
 
 describe('1-3: the reflection that lifts its head half a beat late is readable (U5)', () => {
-  // 洗手台（WP3 washroom kit 的 sink）：台面 0.73–0.87 m，外沿 x = −1.35
-  const COUNTER_TOP = 0.87, COUNTER_X = -1.35;
+  // 镜子下面的洗手盆（WP3 washroom kit 的 mirrorSink）：台面 0.73–0.87 m，外沿 x = −1.8 + 0.37 = −1.43。
+  // （视觉审查 school-sets-5 之后，@35–@50 这一段镜子下面已经不放盆；这条台面线仍按最保守的情形检查。）
+  const COUNTER_TOP = 0.87, COUNTER_X = -1.43;
   // 25 px 只要求 −1、0 两条车道。右道离左墙的镜子最远：倒影在镜中的深度是 0.3 + 0.75 × 玩家到墙的距离，右道的倒影比中道深约 0.8 m，
   // 镜头也离墙远 0.77 m，头只有 19–20 px（验收员 verify-U5-r1/probe-1-3）。把倒影往镜面拉近会被台盆挡住（台面 0.87 m），
   // 所以右道只要求头在台面投影线以上、在画面里（|NDC| < 0.8）。截图（WP5.json u5-1-3-*）和自动驾驶走中道。

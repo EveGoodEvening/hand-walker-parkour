@@ -239,7 +239,7 @@
   "query": "ch=ch1&seg=1-2",
   "ops": [
    {
-    "eval": "__game.ext.wp3Preview({\"kit\": \"washroom\", \"variant\": \"morning\", \"atmosphere\": \"morning\", \"surfaces\": [{\"id\": \"wcMirror\", \"kind\": \"mirror\", \"side\": \"L\", \"from\": 4, \"to\": 60, \"y\": [0.25, 1.6], \"backdrop\": \"darkRoom\"}]})"
+    "eval": "__game.ext.wp3Preview({\"kit\": \"washroom\", \"variant\": \"morning\", \"atmosphere\": \"morning\", \"surfaces\": [{\"id\": \"wcMirror\", \"kind\": \"mirror\", \"side\": \"L\", \"from\": 4, \"to\": 60, \"y\": [0.25, 1.6], \"backdrop\": \"washroom\"}]})"
    },
    {
     "steps": 2
@@ -252,7 +252,7 @@
   "query": "ch=ch1&seg=1-2",
   "ops": [
    {
-    "eval": "__game.ext.wp3Preview({\"kit\": \"washroom\", \"variant\": \"morning\", \"atmosphere\": \"morning\", \"surfaces\": [{\"id\": \"wcMirror\", \"kind\": \"mirror\", \"side\": \"L\", \"from\": 4, \"to\": 60, \"y\": [0.25, 1.6], \"backdrop\": \"darkRoom\"}]})"
+    "eval": "__game.ext.wp3Preview({\"kit\": \"washroom\", \"variant\": \"morning\", \"atmosphere\": \"morning\", \"surfaces\": [{\"id\": \"wcMirror\", \"kind\": \"mirror\", \"side\": \"L\", \"from\": 4, \"to\": 60, \"y\": [0.25, 1.6], \"backdrop\": \"washroom\"}]})"
    },
    {
     "steps": 2
@@ -265,7 +265,7 @@
   "query": "ch=ch1&seg=1-2",
   "ops": [
    {
-    "eval": "__game.ext.wp3Preview({\"kit\": \"washroom\", \"variant\": \"morning\", \"atmosphere\": \"overcast\", \"surfaces\": [{\"id\": \"wcMirror\", \"kind\": \"mirror\", \"side\": \"L\", \"from\": 4, \"to\": 60, \"y\": [0.25, 1.6], \"backdrop\": \"darkRoom\"}]})"
+    "eval": "__game.ext.wp3Preview({\"kit\": \"washroom\", \"variant\": \"morning\", \"atmosphere\": \"overcast\", \"surfaces\": [{\"id\": \"wcMirror\", \"kind\": \"mirror\", \"side\": \"L\", \"from\": 4, \"to\": 60, \"y\": [0.25, 1.6], \"backdrop\": \"washroom\"}]})"
    },
    {
     "steps": 2

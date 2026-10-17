@@ -172,6 +172,31 @@ describe('开口（§5.8，WP3 验收 6）', () => {
     }
   });
 
+  it('厕所镜：洞前的东西都有倒影（不悬在暗处）；替身要被看清的那几段镜子下面不放盆（视觉审查 school-sets-5）', () => {
+    for (const tier of ['low', 'high'] as const) {
+      const seg = segment('washroom', 'morning');
+      const op: Opening = { side: 'L', s0: seg.s0 + 6, s1: seg.s0 + 40, y0: 0.25, y1: 1.6, surfaceId: 'm' };
+      seg.surfaces.push({ id: 'm', kind: 'mirror', side: 'L', from: 6, to: 40, s0: op.s0, s1: op.s1, y: [0.25, 1.6], backdrop: 'washroom', plane: [1, 0, 0, 1.8] } as CompiledSurface);
+      // @18 的 doubleMod → 镜子下面 @15–@30 不放盆（chunk 1 是 s 112–124：只有 112.75 那一个盆在外面）
+      seg.events.push({ at: 18, body: { type: 'doubleMod', target: 'wc', mod: { headLag: 0.6 } } });
+      const { kc, s0 } = chunk(washroomKit, seg, 'morning', 1, tier, { openings: [op] });
+      const p = kc.static.getAttribute('position') as THREE.BufferAttribute;
+      const pts: Array<[number, number, number]> = [];
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), y = p.getY(i), s = s0 - p.getZ(i);
+        if (x > -1.79 && x < -1.0 && y > 0.27 && y < 1.58 && s > op.s0 + 0.3 && s < op.s1 - 0.3) pts.push([x, y, s]);
+      }
+      expect(pts.length).toBeGreaterThan(0);
+      const near = (a: number, b: number) => Math.abs(a - b) < 1e-4;
+      for (const [x, y, s] of pts) {
+        expect(s < 115 || s > 130, `s ${s.toFixed(2)} 在清空段里`).toBe(true);
+        let found = false;
+        for (let i = 0; i < p.count && !found; i++) found = near(p.getX(i), -3.6 - x) && near(p.getY(i), y) && near(s0 - p.getZ(i), s);
+        expect(found, `(${x.toFixed(3)}, ${y.toFixed(3)}, ${s.toFixed(2)}) 没有倒影`).toBe(true);
+      }
+    }
+  });
+
   it('端墙镜：横墙中间留镜子大小的洞，两侧是墙', () => {
     const seg = segment('corridor', 'mirrorEnd', { beats: 30 });
     const op: Opening = { side: 'end', s0: seg.s1, s1: seg.s1, y0: 0.15, y1: 1.9, surfaceId: 'e' };

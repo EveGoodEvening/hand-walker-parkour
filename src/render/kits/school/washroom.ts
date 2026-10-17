@@ -26,6 +26,50 @@ function sink(g: KitGeo, e: Env, s: number): void {
   if (!e.low) g.box([-HW + 0.1, 0.4, z], [0.04, 0.72, 0.04], PAL.steel, { faces: '+x+z-z' }); // 下水管
 }
 
+/**
+ * 镜子下面的洗手盆：镜子开口从 0.25 m 起，盆后面没有墙。盆浅一些（外沿 x = −HW + 0.37），龙头坐在盆的后沿上，
+ * 下水管落到镜框下沿；再按镜面（x = −HW）对称画一份倒影（同一个几何体，不加 draw call）——
+ * 没有倒影时龙头和水管像悬在暗处的棒棒糖，有了倒影才读得出「镜子前的洗手盆」。
+ * 实物和倒影都只画朝镜外的面（+x、上下、两侧）：倒影的 +x 面就是实物贴着镜子的那一面。
+ */
+export const MIRROR_SINK = { depth: 0.34, top: 0.87, bottom: 0.73 } as const;
+function mirrorSink(g: KitGeo, e: Env, s: number, y0: number): void {
+  const z = e.z(s), d = MIRROR_SINK.depth, x = -HW + 0.03 + d / 2;
+  const yc = (MIRROR_SINK.top + MIRROR_SINK.bottom) / 2, hh = MIRROR_SINK.top - MIRROR_SINK.bottom;
+  const m = (xx: number) => -2 * HW - xx;                                                 // 镜像 x
+  g.box([x, yc, z], [d, hh, 0.5], SCHOOL.porcelain, { faces: '+x+y-y+z-z', bottomShade: 0.85 });
+  g.box([m(x), yc, z], [d, hh, 0.5], SCHOOL.porcelain, { faces: '+x+y-y+z-z', bottomShade: 0.85 });
+  g.box([x + 0.03, MIRROR_SINK.top + 0.005, z], [d - 0.12, 0.01, 0.36], 0xb9c3c6, { faces: '+y' });   // 盆里的阴影
+  g.box([m(x + 0.03), MIRROR_SINK.top + 0.005, z], [d - 0.12, 0.01, 0.36], 0xb9c3c6, { faces: '+y' });
+  // 龙头：坐在盆后沿（离镜面 4–8 cm），出水口朝外
+  g.box([-HW + 0.06, MIRROR_SINK.top + 0.035, z], [0.04, 0.07, 0.05], PAL.steel, { faces: '+x+y+z-z' });
+  g.box([-HW + 0.12, MIRROR_SINK.top + 0.06, z], [0.1, 0.02, 0.02], PAL.steel, { faces: '+y-y+z-z+x' });
+  g.box([m(-HW + 0.06), MIRROR_SINK.top + 0.035, z], [0.04, 0.07, 0.05], PAL.steel, { faces: '+x+y+z-z' });
+  g.box([m(-HW + 0.12), MIRROR_SINK.top + 0.06, z], [0.1, 0.02, 0.02], PAL.steel, { faces: '+y-y+z-z' });
+  if (!e.low) {
+    // 下水管：盆底到镜框下沿
+    const yb = Math.max(0.04, y0), yt = MIRROR_SINK.bottom;
+    g.box([-HW + 0.08, (yb + yt) / 2, z], [0.04, yt - yb, 0.04], PAL.steel, { faces: '+x+z-z' });
+    g.box([m(-HW + 0.08), (yb + yt) / 2, z], [0.04, yt - yb, 0.04], PAL.steel, { faces: '+x+z-z' });
+  }
+}
+
+/**
+ * 镜子里的替身要被看清的那几段（DESIGN §4.1 1-3「倒影晚了半拍」、§4.5 5-4「身后站着另一个人」）：
+ * 从改动替身的事件（doubleMod，或站在别的替身身后的 attachBehind）前 3 拍到后 12 拍，镜子下面不放洗手盆。
+ * 追尾镜头在主角身后 2.35 m，倒影在主角身边，挡住它的只会是这段里程上的盆；前 3 拍留给镜头与倒影之间的那一截。
+ */
+export function mirrorClearSpans(e: Env): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (const ev of e.ctx.seg.events ?? []) {
+    const b = ev.body;
+    if (b.type === 'doubleMod' || (b.type === 'double' && b.spec.attachBehind)) {
+      out.push([e.segS0 + (ev.at - 3) * e.stride, e.segS0 + (ev.at + 12) * e.stride]);
+    }
+  }
+  return out;
+}
+
 function urinal(g: KitGeo, e: Env, s: number): void {
   const z = e.z(s), x = -HW + 0.17;
   g.box([x, 0.75, z], [0.3, 0.7, 0.4], SCHOOL.porcelain, { faces: '+x+y-y+z-z', bottomShade: 0.9 });
@@ -69,10 +113,16 @@ export function buildWashroom(ctx: HwKitChunkContext): KitChunk {
   // 左墙：洗手池（镜子下面也有）、小便池（没有镜子的地方）
   const holesL: Hole[] = sideHoles(e, 'L');
   sideWall(stat, e, -1, WALL, holesL, -HW, () => 0, e.s0 - e.back, e.s1);
-  const mirrorAt = (s: number) => holesL.some((h) => s > h.s0 - 0.3 && s < h.s1 + 0.3);
+  const mirrorAt = (s: number) => holesL.find((h) => s > h.s0 - 0.3 && s < h.s1 + 0.3);
+  const clear = mirrorClearSpans(e);
   for (const s of stepsIn(e, e.period / 2, e.period / 4, 0.4)) {
-    if (mirrorAt(s)) sink(stat, e, s);
-    else if (rng.next() < 0.5) urinal(stat, e, s);
+    const h = mirrorAt(s);
+    if (!h) { if (rng.next() < 0.5) urinal(stat, e, s); continue; }
+    // 镜子下面：盆的间距加倍（每个墙面周期一个），替身要被看清的那几段不放
+    const k = Math.round((s - e.segS0 - e.period / 4) / (e.period / 2));
+    if (k % 2 !== 0 || clear.some(([a, b]) => s > a && s < b)) continue;
+    if (s > h.s0 && s < h.s1) mirrorSink(stat, e, s, h.y0);
+    else sink(stat, e, s);
   }
   for (const h of holesL) {
     // 镜框：一圈窄不锈钢

@@ -117,7 +117,7 @@ export default {
       id: '1-3', kind: 'run', kit: 'washroom', variant: 'morning', atmosphere: 'morning', surface: 'tile',
       beats: 72, stride: 1.0, cadence: 4.4,
       follower: { mode: 'hidden' },
-      surfaces: [{ id: 'wcMirror', kind: 'mirror', side: 'L', from: 8, to: 60, y: [0.25, 1.6], backdrop: 'darkRoom' }],
+      surfaces: [{ id: 'wcMirror', kind: 'mirror', side: 'L', from: 8, to: 60, y: [0.25, 1.6], backdrop: 'washroom' }],
       // @19：左、中两道各一只拖把桶，右道是来回荡的坏锁门——撑跃过去，或者在门荡开的间隙里从右道过去（评审 p13）
       rows: [[14, '.W.', 3], [19, 'LL.'], [27, '.L.'], [49, 'W..', 3], [49, '..L'], [54, '.H.'], [63, 'L..']],
       items: [
