@@ -13,13 +13,19 @@ import { liveList } from './lib/live';
 import { SetBuild, glowDisc, roomShell } from './lib/setkit';
 
 const X0 = -2.7, X1 = 2.7, Z0 = -5.6, Z1 = 2.6, H = 2.7;
+/**
+ * 卫生间门的横向位置（视觉修订）：homeCrawl 镜头贴地在身后，门在正中时整扇被主角的头和肩挡住，十二掌的终点一直看不见。
+ * 挪到 +0.8：让开头和左上方的计数，又不进右墙电视的光里（> 1.0 会被电视的冷光吃掉）。
+ */
+export const HOME_DOOR_X = 0.8;
 /** 吊灯挂在裂缝上（「从墙角延伸到吊灯」）：天花板贴图铺满整个房间（u 沿 x、v 沿 z，画布第 0 行在 z = Z1）。 */
 export const HOME_LAMP: readonly [number, number] = [0.4, Z0 + (1 - riverYAt((0.4 - X0) / (X1 - X0))) * (Z1 - Z0)];
-/** 烘焙光源：没关的电视（冷蓝）、窗外的夜色、卫生间门缝下一线更暗的光。 */
+/** 烘焙光源：没关的电视（冷蓝）、窗外的夜色、卫生间门缝下一线更暗的光，以及门前一点极弱的冷光（让门框和门板从墙上分出来）。 */
 export const HOME_LIGHTS: readonly BakeLight[] = [
   { p: [2.4, 1.2, -1.4], color: 0x7f98a8, intensity: 1.4, radius: 4.6 },
   { p: [-2.5, 1.6, -3.3], color: 0x3a4a55, intensity: 0.9, radius: 3.2 },
-  { p: [0, 0.05, -5.4], color: 0x2c3a44, intensity: 0.8, radius: 1.6 },
+  { p: [HOME_DOOR_X, 0.05, -5.4], color: 0x2c3a44, intensity: 1.2, radius: 2.2 },
+  { p: [HOME_DOOR_X, 1.0, -5.0], color: 0x3a4a55, intensity: 0.8, radius: 2.0 },
 ];
 const HOME_AMBIENT = 0x0d1216;
 
@@ -32,10 +38,11 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   // 地板的木条缝（每 0.18 m，沿 z）
   for (let x = X0 + 0.18; x < X1; x += 0.18) g.flat(0.001, x - 0.004, x + 0.004, Z1, Z0, 0x161c20);
   // 卫生间的门（尽头，关着）：门框 + 门板 + 门把
-  g.box([0, 1.02, Z0 + 0.03], [0.96, 2.04, 0.04], 0x2d363c, { faces: '+z' });
-  g.box([0, 2.08, Z0 + 0.04], [1.08, 0.08, 0.06], 0x39434a, { faces: '+z-y' });
-  for (const x of [-0.52, 0.52]) g.box([x, 1.04, Z0 + 0.04], [0.06, 2.08, 0.06], 0x39434a, { faces: '+z+x-x' });
-  g.box([0.36, 1.0, Z0 + 0.07], [0.12, 0.03, 0.04], 0x5b6468);
+  const dx = HOME_DOOR_X;
+  g.box([dx, 1.02, Z0 + 0.03], [0.96, 2.04, 0.04], 0x2d363c, { faces: '+z' });
+  g.box([dx, 2.08, Z0 + 0.04], [1.08, 0.08, 0.06], 0x39434a, { faces: '+z-y' });
+  for (const x of [-0.52, 0.52]) g.box([dx + x, 1.04, Z0 + 0.04], [0.06, 2.08, 0.06], 0x39434a, { faces: '+z+x-x' });
+  g.box([dx - 0.36, 1.0, Z0 + 0.07], [0.12, 0.03, 0.04], 0x5b6468);
   // 沙发（左）：座、靠背、扶手
   g.box([-2.2, 0.22, -0.8], [0.9, 0.44, 2.2], C.sofa);
   g.box([-2.55, 0.62, -0.8], [0.25, 0.8, 2.2], shade(C.sofa, 0.9));
@@ -66,12 +73,14 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   // 发光：没关的电视（冷蓝白，没有画面）、窗
   const e = new OGeo();
   e.wallX(2.585, -0.84, -1.96, 0.88, 1.52, 0x5d7382, -1);
-  e.wallZ(Z0 + 0.06, -0.46, 0.46, 0.0, 0.012, 0x2c3a44, 1);
+  // 门缝下的一线光：2.5 cm 高，冷、暗，但在贴地的镜头里看得出来
+  e.wallZ(Z0 + 0.06, HOME_DOOR_X - 0.46, HOME_DOOR_X + 0.46, 0.0, 0.025, 0x4a5e6b, 1);
   e.wallX(X0 + 0.012, -2.62, -3.98, 1.0, 2.1, 0x2b3942, 1);
   b.emissive(e);
   // 光晕：电视照在地上、茶几上、沙发上；窗光在地上；窗上的雨痕
   const gl = new OGeo();
   glowDisc(gl, [2.55, 1.2, -1.4], 1.0, 0x1c262d, 16, [-1, 0, 0]);
+  glowDisc(gl, [HOME_DOOR_X, 0.002, Z0 + 0.4], 0.6, 0x16202a, 12, [0, 1, 0], 0.6);   // 门缝漏到地板上的一点光
   const rng = keyRng('home', 'rain');
   for (let i = 0; i < 22; i++) {
     const z = -2.65 - rng.next() * 1.3, y = 1.1 + rng.next() * 0.8, l = 0.06 + rng.next() * 0.2;

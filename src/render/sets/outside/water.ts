@@ -19,7 +19,7 @@ import { OGeo, keyRng } from '../../kits/outside/lib/geo';
 import { Tone } from '../../kits/outside/lib/tone';
 import { liveList } from './lib/live';
 import { stencilInside, stencilWrite } from './lib/mats';
-import { SetBuild, crawlerFigure } from './lib/setkit';
+import { SetBuild, submergedWalker } from './lib/setkit';
 
 export const WATER_EDGE_Z = 0.2;
 /**
@@ -103,17 +103,19 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
     const rng = keyRng('water', 'crowd');
     const n = ctx.quality.tier === 'low' ? 14 : 26;
     const cx = 0, cz = WATER_DOUBLE_Z;
-    // 围着中间站着的「我」爬的人（修复轮 U5）：缩小到 0.6、压暗，离得远一些；水面叠加层越远越浅，像隔着一层雾
+    // 围着中间站着的「我」用手走路的人（修复轮 U5）：水面叠加层越远越浅，像隔着一层雾。
+    // 视觉修订：0.57 的 crawlerFigure 从下面看只剩两根带浅色帽的立柱，像漂着的凳子；换成从下面看也读得出人的
+    // submergedWalker，放大到 0.72、离中间近一点，身上的颜色往水色靠（泡在水里），头是深色的一团，全都朝着中间。
     cg.mirrored(new THREE.Matrix4().makeScale(1, -1, 1), () => {
       for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2 + rng.next() * 0.3, r = 1.3 + rng.next() * 3.0;
+        const a = (i / n) * Math.PI * 2 + rng.next() * 0.3, r = 1.1 + rng.next() * 2.6;
         const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r * 0.8;
         if (z > WATER_EDGE_Z - 0.4) continue;
         // 镜头（岸上，斜着往下看）和它的脸之间不放人（修复轮 U5 第三轮：中画质 26 个人时，有一个正好挡住半张脸和一只眼睛）
         if (z > cz - 0.2 && Math.abs(x - cx) < CROWD_CLEAR_X) continue;
         const yaw = Math.atan2(-(cx - x), -(cz - z));
         const tone = rng.next();
-        crawlerFigure(cg, x, z, yaw, mix(0x5c656c, 0x4c555c, tone), mix(C.skin, 0x7a8286, 0.75), 0.57, 0x454c52);
+        submergedWalker(cg, x, z, yaw, mix(mix(0x5c656c, 0x4c555c, tone), C.plazaWater, 0.3), mix(C.hair, C.plazaWater, 0.35), 0.72, 0x454c52);
       }
     });
     tone.applyArrays(cg.col, cg.nor, cg.pos, 'static');
