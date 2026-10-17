@@ -206,11 +206,13 @@ function schoolGate(w: ChunkWork): void {
       w.stat.box([sx * 2.3, 1.45, z], [0.62, 2.9, 0.62], 0x3f484e);
       w.stat.box([sx * 2.3, 2.96, z], [0.74, 0.12, 0.74], 0x4a545a);
     }
+    // 顶梁压在柱帽上（帽顶 3.02，梁底 3.01，多搭 1 cm 免得低画质下漏出一道缝）；两对立柱各一根，门才连成一体
+    w.stat.box([0, 3.26, z], [5.3, 0.5, 0.4], 0x353e44);
+    // 门牌（没有字）只在朝来路的那一根上
+    if (s === gate0) w.stat.box([0, 3.26, z + 0.201], [4.2, 0.28, 0.01], 0x2a3136, { faces: '+z' });
   }
   if (w.owns(gate0)) {
     const z = w.z(gate0);
-    w.stat.box([0, 3.35, z], [5.3, 0.5, 0.4], 0x353e44);
-    w.stat.box([0, 3.35, z + 0.201], [4.2, 0.28, 0.01], 0x2a3136, { faces: '+z' });
     // 沿校界的栅栏（横向，出了立柱往两边去）
     fenceAcross(w.stat, z, -12, -2.62, 2.0, w.q === 0 ? 0.3 : 0.18, C.iron);
     fenceAcross(w.stat, z, 2.62, 12, 2.0, w.q === 0 ? 0.3 : 0.18, C.iron);
@@ -418,40 +420,45 @@ function shopStreet(w: ChunkWork): void {
   panelsIfAny(w, 'R', 'nightStreet', C.wallNight);
 }
 
-/** 卷帘门上的手掌涂鸦：掌心 + 五指朝下 + 拇指，冷白色喷漆，边缘有流挂。画在 x = −HALF 的墙面上。 */
+/**
+ * 卷帘门上的手掌涂鸦：手腕在上、掌、四指朝下几乎贴地、拇指斜着伸出去，冷白色喷漆，指尖下有流挂。画在 x = −HALF 的墙面上。
+ * 追尾机位从斜后方掠过这面墙，横向会被压扁，所以整只手偏瘦高（宽 ≤ 3.9 m，高 2.6 m），四指几乎并拢、和掌一样长。
+ * 范围：s ∈ sc ± 1.95（开间柱子在 sc ± 2.02–2.38，会挡住更外面的东西）；y ∈ [0.02, 2.65]（2.7 起是卷帘盒）。
+ */
 function graffitiHand(w: ChunkWork, sc: number): void {
   const x = -HALF + 0.016;
   const paint = 0xc3ccd0, paint2 = 0xaab4b9;
   const n: [number, number, number] = [1, 0, 0];
-  const P = (s: number, y: number): [number, number, number] => [x, y, w.z(s)];
-  // 掌心：圆角的宽块（s 方向 4.2 m，y 1.35–2.55）
-  const pw = 2.1, py0 = 1.35, py1 = 2.55;
-  const palm: Array<[number, number, number]> = [];
-  const segs = 14;
-  for (let i = 0; i <= segs; i++) {
-    const a = Math.PI + (i / segs) * Math.PI;           // 上半圆角
-    palm.push(P(sc + Math.cos(a) * pw, py1 - 0.35 + Math.abs(Math.sin(a)) * 0.35 + (i === 0 || i === segs ? -0.35 : 0)));
-  }
-  palm.push(P(sc + pw, py0));
-  palm.push(P(sc - pw, py0));
-  w.stat.fan(palm, paint, n);
-  // 四指 + 小指：朝下，指尖接近地面
+  const P = (ds: number, y: number, dx = 0): [number, number, number] => [x + dx, y, w.z(sc + ds)];
+  // 纹路叠在白漆上：再离墙 3 mm，免得和底下的漆面打架
+  const bar = (a: number, b: number, y: number, h: number) => w.stat.fan([P(a, y + h, 0.003), P(b, y + h, 0.003), P(b, y - h, 0.003), P(a, y - h, 0.003)], paint2, n);
+  // 手腕：上窄下宽，压在掌上 3 cm
+  w.stat.fan([P(-0.72, 2.62), P(0.72, 2.62), P(0.86, 2.25), P(-0.86, 2.25)], paint, n);
+  // 掌：上沿 ±1.0，往下放宽到 ±1.22，下角圆
+  const palm: Array<[number, number]> = [[-1.0, 2.28], [1.0, 2.28], [1.17, 1.88], [1.22, 1.62], [1.17, 1.47], [1.02, 1.4], [-1.02, 1.4], [-1.17, 1.47], [-1.22, 1.62], [-1.17, 1.88]];
+  w.stat.fan(palm.map(([a, y]) => P(a, y)), paint, n);
+  // 掌纹、腕横纹
+  bar(-0.75, 0.62, 1.98, 0.018);
+  bar(-0.8, 0.8, 2.27, 0.015);
+  // 四指（拇指一侧在 −s）：食指、中指（最长）、无名指、小指；指缝约 8 cm，指根压进掌里 10 cm
+  const root = 1.5;
   const fingers = [
-    { ds: -1.6, len: 1.05, wd: 0.26 }, { ds: -0.62, len: 1.22, wd: 0.3 }, { ds: 0.38, len: 1.18, wd: 0.3 }, { ds: 1.32, len: 1.0, wd: 0.27 },
+    { c: -0.9, hw: 0.25, len: 1.17 }, { c: -0.3, hw: 0.27, len: 1.32 }, { c: 0.3, hw: 0.27, len: 1.22 }, { c: 0.88, hw: 0.22, len: 0.97 },
   ];
   for (const f of fingers) {
-    const s0 = sc + f.ds;
-    const yb = py0 - f.len;
-    w.stat.fan([P(s0 - f.wd, py0 + 0.05), P(s0 + f.wd, py0 + 0.05), P(s0 + f.wd * 0.85, yb + 0.12), P(s0, yb), P(s0 - f.wd * 0.85, yb + 0.12)], paint, n);
-    // 指节的横纹
-    w.stat.fan([P(s0 - f.wd * 0.8, py0 - f.len * 0.45 + 0.03), P(s0 + f.wd * 0.8, py0 - f.len * 0.45 + 0.03), P(s0 + f.wd * 0.8, py0 - f.len * 0.45 - 0.03), P(s0 - f.wd * 0.8, py0 - f.len * 0.45 - 0.03)], paint2, n);
+    const tip = root - f.len;
+    w.stat.fan([P(f.c - f.hw, root), P(f.c + f.hw, root), P(f.c + f.hw * 0.88, tip + 0.2), P(f.c + f.hw * 0.6, tip + 0.06), P(f.c, tip),
+      P(f.c - f.hw * 0.6, tip + 0.06), P(f.c - f.hw * 0.88, tip + 0.2)], paint, n);
+    // 指节横纹（45%、75%）
+    for (const t of [0.45, 0.75]) bar(f.c - f.hw * 0.62, f.c + f.hw * 0.62, root - f.len * t, 0.016);
     // 流挂
-    w.stat.fan([P(s0 + 0.06, yb + 0.05), P(s0 + 0.1, yb + 0.05), P(s0 + 0.09, yb - 0.35), P(s0 + 0.07, yb - 0.35)], paint2, n);
+    const d0 = Math.max(0.02, tip - 0.3);
+    if (tip - d0 > 0.04) w.stat.fan([P(f.c + 0.04, tip + 0.03, 0.003), P(f.c + 0.08, tip + 0.03, 0.003), P(f.c + 0.07, d0, 0.003), P(f.c + 0.05, d0, 0.003)], paint2, n);
   }
-  // 拇指：从掌的一侧斜着伸向地面
-  w.stat.fan([P(sc + pw - 0.05, py0 + 0.55), P(sc + pw + 0.25, py0 + 0.3), P(sc + pw + 0.75, py0 - 0.55), P(sc + pw + 0.5, py0 - 0.7), P(sc + pw - 0.2, py0 + 0.05)], paint, n);
-  // 掌根的纹路
-  w.stat.fan([P(sc - 1.2, 1.9), P(sc + 0.9, 2.05), P(sc + 0.9, 1.99), P(sc - 1.2, 1.84)], paint2, n);
+  // 拇指：从掌侧斜着朝下、朝外伸出去（凸多边形，指尖在 −1.86，不过开间柱）
+  w.stat.fan([P(-1.0, 2.05), P(-1.55, 1.45), P(-1.9, 0.98), P(-1.86, 0.78), P(-1.7, 0.72), P(-1.55, 0.92), P(-1.2, 1.45)], paint, n);
+  bar(-1.72, -1.5, 1.2, 0.016);
+  w.stat.fan([P(-1.79, 0.76, 0.003), P(-1.75, 0.76, 0.003), P(-1.76, 0.45, 0.003), P(-1.78, 0.45, 0.003)], paint2, n);
 }
 
 /** 小区门口：门卫室（亮着冷光，没人）、栏杆机箱与灯、两侧门柱。red = 是否亮红灯（只在第三章）。 */
@@ -521,12 +528,35 @@ function compound(w: ChunkWork): void {
     if (s < sBar + 2 || skipR(s)) return;
     streetLamp(w, s, { x: 2.35, h: 3.8, arm: 0.35, working: true, flicker: false, head: C.lampGold, reflect: true });
   });
-  // 段尾：单元门（通向 3-8 楼道），门上一盏暗暗的冷灯
+  // 段尾：单元门（通向 3-8 楼道），门上一盏暗暗的冷灯。门开在自家那栋楼的一楼：楼面从 cmpL（x = −6.5）连到 cmpR（x = 8），
+  // 往上 15–18 m，有窗；两侧折回 10 m、有屋顶，镜头摆动时不像一块立着的板。
   if (w.owns(endS - 2.5)) {
     const z = w.z(endS - 0.5);
-    w.stat.wallZ(z, -6, -1.1, 0, 3.4, C.wallNight, 1);
-    w.stat.wallZ(z, 1.1, 6, 0, 3.4, C.wallNight, 1);
+    const xa = -6.5, xb = 8, depth = 10;
+    w.stat.wallZ(z, xa, -1.1, 0, 3.4, C.wallNight, 1);
+    w.stat.wallZ(z, 1.1, xb, 0, 3.4, C.wallNight, 1);
     w.stat.wallZ(z, -1.1, 1.1, 2.3, 3.4, C.wallNight, 1);
+    const brng = keyRng(w.segId, 'cmpEnd', 0);
+    const top = 15 + brng.next() * 3;
+    w.stat.wallZ(z, xa, xb, 3.4, top, C.wallNightDark, 1);
+    w.stat.box([(xa + xb) / 2, 3.4, z + 0.06], [xb - xa, 0.15, 0.12], shade(C.wallNight, 0.8));
+    w.stat.flat(top, xa, xb, z, z - depth, shade(C.wallNightDark, 0.8), true);
+    w.stat.wallX(xa, z, z - depth, 0, top, shade(C.wallNightDark, 0.85), -1);
+    w.stat.wallX(xb, z, z - depth, 0, top, shade(C.wallNightDark, 0.85), 1);
+    // 窗：每层 3 m，四列；正中一列是楼道的窄窗（半层高处），亮着几扇冷光。低画质只画两层、不画窗棂
+    const rows = Math.min(Math.floor((top - 4.3 - 1.5) / 3) + 1, w.q === 0 ? 2 : 99);
+    for (let f = 0; f < rows; f++) {
+      const y0 = 4.3 + f * 3;
+      for (const cx of [-5.0, -2.8, 3.1, 5.6]) {
+        const lit = brng.next() < 0.12;
+        (lit ? w.emi : w.stat).wallZ(z + 0.012, cx - 0.55, cx + 0.55, y0, y0 + 1.3, lit ? C.windowLitCold : C.windowDark, 1);
+        if (!lit && w.q > 0) w.stat.wallZ(z + 0.018, cx - 0.02, cx + 0.02, y0, y0 + 1.3, shade(C.wallNightDark, 0.7), 1);
+      }
+      const ys = y0 + 1.6;
+      if (ys + 0.9 > top - 0.4) continue;
+      const litS = brng.next() < 0.35;
+      (litS ? w.emi : w.stat).wallZ(z + 0.012, -0.3, 0.3, ys, ys + 0.9, litS ? C.windowLitCold : C.windowDark, 1);
+    }
     w.stat.wallZ(z - 0.6, -1.1, 1.1, 0, 2.3, 0x0d1216, 1);
     w.stat.wallX(-1.1, z, z - 0.6, 0, 2.3, 0x1c2328, 1);
     w.stat.wallX(1.1, z, z - 0.6, 0, 2.3, 0x1c2328, -1);
@@ -576,7 +606,14 @@ function dawn(w: ChunkWork): void {
     w.stat.box([-HALF + 0.06, 1.35, z], [0.12, 2.7, 0.3], shade(C.dawnWall, 0.8));
   });
   // 右：梧桐（每 7 m）、停着的汽车、路灯（冷色，还亮着）
-  w.grid(7, 3, (s, k) => {
+  // 树干在 x 2.41–2.69、树坑到 2.85；车停在 x = 3.8（车身 2.95–4.65），和树的网格怎么对上都不会让树干穿过车身。
+  // 路灯和树的网格每 112 m 重合一次（灯座 2.2–2.4 贴着树干）：落在树位 0.6 m 内的灯往前挪 1.5 m。
+  const TREE_STEP = 7, TREE_PHASE = 3;
+  const nearTree = (s: number, pad: number) => {
+    const d = ((s - seg.s0 - TREE_PHASE) % TREE_STEP + TREE_STEP) % TREE_STEP;
+    return d < pad || d > TREE_STEP - pad;
+  };
+  w.grid(TREE_STEP, TREE_PHASE, (s, k) => {
     if (s < sBar + 3 || skipR(s) || (s > stopA - 1 && s < stopB + 1)) return;
     const rng = keyRng(w.segId, 'plane', k);
     tree(w.stat, 2.55, w.z(s), rng, { trunk: C.trunk, trunk2: C.trunkPale, canopy: C.canopy, canopy2: C.canopy2, h: 7.5, q: w.q });
@@ -586,12 +623,15 @@ function dawn(w: ChunkWork): void {
     if (s < sBar + 5 || skipR(s) || s > stopA - 4) return;
     const rng = keyRng(w.segId, 'car', k);
     if (rng.next() < 0.3) return;
-    parkedCar(w.stat, 3.35, w.z(s), mix(C.car, C.car2, rng.next()), C.carGlass);
+    parkedCar(w.stat, 3.8, w.z(s), mix(C.car, C.car2, rng.next()), C.carGlass);
   });
-  w.grid(16, 11, (s) => {
-    if (s < sBar + 3 || skipR(s)) return;
+  // 挪过的灯按挪过之后的里程归属 chunk（LampSpec 的 s 必须落在本 chunk 里）
+  for (let k = Math.floor((w.s0 - seg.s0 - 11) / 16) - 1; seg.s0 + 11 + k * 16 < w.s1 + 2; k++) {
+    const a = seg.s0 + 11 + k * 16;
+    const s = nearTree(a, 0.6) ? a + 1.5 : a;
+    if (!w.owns(s) || s < sBar + 3 || skipR(s)) continue;
     streetLamp(w, s, { x: 2.3, h: 4.8, arm: 0.6, working: true, flicker: false, head: C.dawnLamp, reflect: false });
-  });
+  }
   // 公交站（段尾，§4.5 @212「公交站：停」）：顶棚、立柱、站牌、长椅
   if (w.owns((stopA + stopB) / 2)) {
     const za = w.z(stopA), zb = w.z(stopB), zc = (za + zb) / 2;
