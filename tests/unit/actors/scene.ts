@@ -27,9 +27,11 @@ export const ASPECT = 16 / 9;
 export interface Scene {
   ctx: ViewContext; f: ActorRigFactory; actor: PlayerActor; surf: ReflectSurfaces; dbl: DoubleSystem; shadow: PlanarShadowSystem; cam: CameraRig;
   ch: CompiledChapter; camera: THREE.PerspectiveCamera;
+  /** 画面宽高比（缺省 16:9；竖屏 390 / 844）。 */
+  aspect: number;
 }
 
-export async function scene(def: ChapterDef, tier: 'low' | 'medium' = 'low'): Promise<Scene> {
+export async function scene(def: ChapterDef, tier: 'low' | 'medium' = 'low', aspect = ASPECT): Promise<Scene> {
   const ctx = fakeCtx(tier);
   const f = new ActorRigFactory(ctx);
   (ctx as { rig: unknown }).rig = f;
@@ -39,9 +41,10 @@ export async function scene(def: ChapterDef, tier: 'low' | 'medium' = 'low'): Pr
   const shadow = new PlanarShadowSystem(); shadow.init(ctx);
   const cam = new CameraRig(); cam.init(ctx);
   const ch = compile(def);
-  await actor.loadChapter(ch); await surf.loadChapter(ch); await dbl.loadChapter(ch);
+  await actor.loadChapter(ch); await surf.loadChapter(ch); await dbl.loadChapter(ch); await cam.loadChapter(ch);
   WP5.poseTest = null; WP5.debugCam = null; WP5.focus = null;
-  return { ctx, f, actor, surf, dbl, shadow, cam, ch, camera: new THREE.PerspectiveCamera(55, ASPECT, 0.05, 300) };
+  (ctx.camera as THREE.PerspectiveCamera).aspect = aspect;
+  return { ctx, f, actor, surf, dbl, shadow, cam, ch, camera: new THREE.PerspectiveCamera(55, aspect, 0.05, 300), aspect };
 }
 
 /** 静场在 t 秒时的快照。 */
@@ -67,6 +70,7 @@ export function fire(w: Scene, e: Ev, s: SimSnapshot): void {
     case 'camera': w.cam.setShot(b.shot, b.seconds, s.t); break;
     case 'actor': w.actor.playClip(b.clip, b.seconds, s.t); break;
     case 'shadow': w.shadow.setMode(b.mode, b.seconds, s.t); break;
+    case 'memory': w.dbl.memory(b.surface, b.seconds, s); break;
     default: break;
   }
 }
@@ -77,9 +81,9 @@ export function frame(w: Scene, prev: SimSnapshot, next: SimSnapshot, dt = 1 / 6
   w.surf.frame(prev, next, 1, dt);
   w.dbl.frame(prev, next, 1, dt);
   w.shadow.frame(prev, next, 1, dt);
-  const o = w.cam.compute(prev, next, 1, dt, ASPECT, { ...DEFAULT_SETTINGS });
+  const o = w.cam.compute(prev, next, 1, dt, w.aspect, { ...DEFAULT_SETTINGS });
   const c = w.camera;
-  c.aspect = ASPECT; c.fov = o.fov; c.position.copy(o.pos); c.up.set(0, 1, 0); c.lookAt(o.look);
+  c.aspect = w.aspect; c.fov = o.fov; c.position.copy(o.pos); c.up.set(0, 1, 0); c.lookAt(o.look);
   if (o.roll) c.rotateZ(o.roll);
   c.updateProjectionMatrix(); c.updateMatrixWorld(true);
   // 游戏里 CameraRig.frame 写 ctx.camera（下一帧的替身读它）：这里同步过去

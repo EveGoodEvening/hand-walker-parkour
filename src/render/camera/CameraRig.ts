@@ -17,7 +17,8 @@ import type { GameEvent } from '../../core/events';
 import { clamp, DEG, easeInOutSine, frac, lerp, springStep } from '../../core/math';
 import type { Settings } from '../../core/settings';
 import type { ShotId, SimSnapshot } from '../../core/types';
-import type { CompiledSegment, StillSegmentDef } from '../../levels/schema';
+import type { CompiledChapter, CompiledSegment, StillSegmentDef } from '../../levels/schema';
+import { ChapterGround } from '../actors/ground';
 import { WP5 } from '../actors/shared';
 import {
   FOLLOW, PUDDLE_GAZE, RUN_SHOT_OFFSETS, SEGMENT_SHOTS, SET_DEFAULT_SHOT, SET_SHOT_LATE, SET_SHOT_PORTRAIT, SET_SHOT_RETURN, SET_SHOTS, STAND_SHOTS, STILL_TURN_BACK,
@@ -41,6 +42,11 @@ const CHASE_MAX_TURN = 10 * DEG;
 export function vFromH(hDeg: number, aspect: number): number {
   return (2 * Math.atan(Math.tan((hDeg * DEG) / 2) / aspect)) / DEG;
 }
+
+/** 摔倒之后多久切到 trackSky（秒；摔倒的动作 1.2 s，smoothstep(0.3, 1) 混到仰躺，0.9 s 时已经倒下约 70%）。 */
+export const TRACK_SKY_DELAY = 0.9;
+/** 下楼时镜头抬高「镜头下方台阶比玩家脚下高出的部分」的比例。 */
+export const STAIR_CAM_RAISE = 0.6;
 
 export class CameraRig implements ViewSystem {
   readonly id = 'camera';
@@ -66,6 +72,8 @@ export class CameraRig implements ViewSystem {
   /** 上一帧是不是 2-10 穿玻璃的侧面机位（它结束、又没有别的替身可看时，直接切回追尾）。 */
   private wasThrough = false;
   private standBlend = 0;
+  /** 站立段摔倒的模拟时刻（-1 = 还没摔）。 */
+  private fallT0 = -1;
   private roll = 0;
   private fovExtra = 0;
   private landT = 9;
@@ -77,7 +85,11 @@ export class CameraRig implements ViewSystem {
   private lastSimT = 0;
   readonly out: CamPose = { pos: new THREE.Vector3(), look: new THREE.Vector3(), roll: 0, fov: 55 };
 
+  private chapter: CompiledChapter | null = null;
+  private readonly ground = new ChapterGround();
+
   init(ctx: ViewContext): void { this.ctx = ctx; }
+  async loadChapter(ch: CompiledChapter): Promise<void> { this.chapter = ch; }
 
   /** camera cue。seconds = 0 表示一直保持到下一次切换（静场）。 */
   setShot(id: ShotId, seconds: number, t: number): void {
@@ -103,11 +115,13 @@ export class CameraRig implements ViewSystem {
     if (c) this.stillTurnPlan = { at: c.at, seconds: Math.max(0, c.seconds), until: cams[i + 1]?.at ?? Infinity };
   }
 
-  onEvent(e: GameEvent): void {
+  onEvent(e: GameEvent, snap?: SimSnapshot): void {
     const rm = this.ctx?.settings.reducedMotion;
+    // 摔倒的时刻按模拟时钟记（与 Actor 一样：无头测试跳着推进、只画最后一帧时，不能从第一次画出来那一帧算）
+    if (e.type === 'stand' && e.data.phase === 'fall' && snap) this.fallT0 = snap.t;
     if (e.type === 'hit' && !rm) this.shake = 0.12;
     if (e.type === 'land') this.landT = 0;
-    if (e.type === 'segment') { this.shot = null; this.stillShot = null; this.standShot = null; this.stillCuts.clear(); this.wasThrough = false; }
+    if (e.type === 'segment') { this.fallT0 = -1; this.shot = null; this.stillShot = null; this.standShot = null; this.stillCuts.clear(); this.wasThrough = false; }
     if (e.type === 'retry') { this.fallBlend = 0; this.shot = null; this.gazeBlend = 0; this.segBlend = 0; this.wasThrough = false; }
   }
 
@@ -193,8 +207,13 @@ export class CameraRig implements ViewSystem {
       this.prevKind = 'stand';
       this.standBlend = clamp(this.standBlend + bdt / 1.2, 0, 1);
       const sx = x + (N.stand?.x ?? 0);
-      const fallen = N.stand?.phase === 'fallen' || this.standShot === 'trackSky';
-      const sh = fallen ? STAND_SHOTS.trackSky : STAND_SHOTS.standEye;
+      // 第 7 步：先在 standEye 里看他往后倒，倒到差不多平躺（TRACK_SKY_DELAY）再切到贴地仰望（视觉修复 actors-3，评审后改：
+      // 以前 cue 一到就切，跪着往后倒的那 1 s 整个人压在低机位的画面上半，读成一个趴着的人）
+      const isFallen = N.stand?.phase === 'fallen';
+      if (isFallen && this.fallT0 < 0) this.fallT0 = next.t;
+      if (!isFallen) this.fallT0 = -1;
+      const fallen = (isFallen || this.standShot === 'trackSky') && (!isFallen || next.t - this.fallT0 >= TRACK_SKY_DELAY);
+      const sh = fallen ? (portrait ? STAND_SHOTS.trackSkyPortrait : STAND_SHOTS.trackSky) : STAND_SHOTS.standEye;
       o.pos.set(sx + sh.pos[0], fy + sh.pos[1], -s + sh.pos[2]);
       o.look.set(sx + sh.look[0], fy + sh.look[1], -s + sh.look[2]);
       const k = easeInOutSine(this.standBlend);
@@ -209,6 +228,14 @@ export class CameraRig implements ViewSystem {
     if (snap || !Number.isFinite(this.sx) || Math.abs(this.sx - x) > 3) { this.sx = x; this.sv = 0; }
     const L = portrait ? FOLLOW.portrait : FOLLOW.landscape;
     let camY = L.h + 0.35 * y - 0.1 * duck;
+    // 下楼：镜头按玩家脚下的坡线定高，身后的台阶却高出一截（3-2 在 2.8 m 处高 0.7 m），镜头只比它所在的台阶高四十几厘米，
+    // 平着看过去，往后拖的腿正对镜头、鞋压在肩上（视觉修复 actors-1）。按镜头下方台阶高出的部分抬高（上楼不变，坡线连续，进出楼梯不跳）
+    // 注视点按「镜头抬高、主角在画面上的位置不变」压低（绕主角转：注视点在主角前方 −lz 处，压低 raise·(back − lz)/back − raise）
+    let stairLook = 0;
+    if (this.ground.active(this.chapter, next.segIndex)) {
+      const raise = STAIR_CAM_RAISE * Math.max(0, this.ground.rampY(s - L.back) - fy);
+      camY += raise; stairLook = raise - (raise * (L.back - L.lz)) / L.back;
+    }
     let lookDy = 0;
     this.landT += bdt;
     if (!rm) {
@@ -219,7 +246,7 @@ export class CameraRig implements ViewSystem {
       if (this.landT < 0.2) camY -= 0.01 * Math.sin(Math.PI * this.landT / 0.2);   // 落地下沉 1 cm
     }
     o.pos.set(L.k * this.sx, fy + camY, -s + L.back);
-    o.look.set(L.lookK * this.sx, fy + L.ly + 0.2 * y + lookDy, -s + L.lz);
+    o.look.set(L.lookK * this.sx, fy + L.ly + 0.2 * y + lookDy + stairLook, -s + L.lz);
     // —— 段内专门追尾机位（5-3 @30–@212：身后追来的影子）——
     const ss = SEGMENT_SHOTS[next.segment];
     const inSeg = !!ss && next.segBeat >= ss.from && next.segBeat < ss.to;

@@ -22,12 +22,16 @@ export const ALL_CLIPS: readonly PoseClipId[] = ['sit', 'sitEat', 'busSeat', 'bu
   'feetArch', 'feetArchDesk', 'answerLean', 'sitMissFeet', 'counterStand', 'sinkLean', 'writeBoard', 'wipeBoard', 'touchPillowDent', 'fistAir',
   'standBehindShoulder', 'smile'];
 
-/** 静场的缺省主角姿势：键 = `${set}.${variant}` 或 `${set}`；null = 不显示主角（镜头在他眼睛里）。 */
+/**
+ * 静场的缺省主角姿势：键 = `${set}.${variant}` 或 `${set}`；null = 不显示主角（镜头在他眼睛里）。
+ * 变体键显式写 null 时连 actor cue 也不画身体（Actor.stillHidden）：5-1「我的脚在被子里动了一下」，腿和膝盖由被子的高度场
+ * （bedroom.ts 的 kneeHeights）表现，画出身体会变成穿着鞋躺在被子上面（视觉修复 actors-2）。
+ */
 export const SET_DEFAULT_CLIP: Partial<Record<string, AnyClip | null>> = {
   deskFeet: 'sitDesk', counter: 'counterStand', canteenWindow: 'sitEatTucked', labBoard: 'sitFloor', bus: 'busSeat', home: 'crawlToward',
   // lead 集成：palmEye 的镜头在他眼睛里（4-4 的手由 WP4 的 set 画），画出身体会挡住整个画面。
   // 修复轮 U5：4-6（water）画按进水里的手臂和手，身体其余部分由 Actor 藏起来（EYE_GROUPS）
-  bathroom: 'sinkLean', palmEye: null, water: 'handsInWater', 'bedroom.feet': 'lieBack', 'bedroom.ceiling': 'lieBack',
+  bathroom: 'sinkLean', palmEye: null, water: 'handsInWater', 'bedroom.feet': null, 'bedroom.ceiling': 'lieBack',
   bedroom: 'lieBack', 'infirmary.bed': 'lieBackHandsIn', 'infirmary.ceiling': 'lieBack', infirmary: 'lieBack', placeholder: 'sitDesk',
 } satisfies Partial<Record<SetId | string, AnyClip | null>>;
 
@@ -66,7 +70,9 @@ function posture(id: AnyClip, t: number): Posture | null {
     // 2-5：主角吃饭时把腿塞进椅子下面的横档（sitEatTucked，静场缺省）；倒影「双腿自然垂落，脚尖点地」（sitEat，替身）
     case 'sitEatTucked': return seated({ tucked: true, lean: 10, L: { t: [-0.16, 0.78, PELVIS_Z - 0.42], pole: [-0.6, -0.2, 1], f: [0.3, 0, -1], n: [0, -1, 0] }, R: { t: [0.16, 0.8, PELVIS_Z - 0.44], pole: [0.6, -0.2, 1], f: [-0.3, 0, -1], n: [0, -1, 0] } });
     case 'sitEat': {
-      const P = seated({ lean: 6, L: { t: [-0.16, 0.74, PELVIS_Z - 0.4], pole: [-0.6, -0.2, 1], f: [0.3, 0, -1], n: [0, -1, 0] }, R: { t: [0.16, 0.76, PELVIS_Z - 0.42], pole: [0.6, -0.2, 1], f: [-0.3, 0, -1], n: [0, -1, 0] } });
+      // 倒影只是坐着，不吃饭：双手放在大腿上（视觉修复 actors-6）。它被转过来朝着玻璃（Doubles 的 STILL_DOUBLE_YAW），
+      // 镜中的桌子在它身后，以前按「手搭在桌上」摆的两只手直直地伸向镜头，加上第三只手，画面里有三条举起的手臂
+      const P = seated({ lean: 3, L: { t: [-0.13, 0.6, PELVIS_Z - 0.36], pole: [-0.6, 0, 1], f: [0, 0, -1], n: [0, -1, 0] }, R: { t: [0.13, 0.6, PELVIS_Z - 0.36], pole: [0.6, 0, 1], f: [0, 0, -1], n: [0, -1, 0] } });
       // 脚尖刚好点在地上（seated 的踝高按平放的脚算，脚尖朝下时会戳进地面约 7 cm）
       P.legL = { ...P.legL, t: [P.legL.t[0], P.legL.t[1] + 0.07, P.legL.t[2]] };
       P.legR = { ...P.legR, t: [P.legR.t[0], P.legR.t[1] + 0.07, P.legR.t[2]] };

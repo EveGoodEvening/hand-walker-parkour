@@ -122,7 +122,9 @@ describe('doubles placement (§5.8)', () => {
     expect(d.kind).toBe('memory');
     expect(d.visible).toBe(true);
     expect(d.head[0]!).toBeLessThan(-1.8);
-    expect(d.head[1]!).toBeGreaterThan(0.7);          // 以手腕为轴悬在窗台附近，头朝下
+    // 以手腕为轴悬在窗台上方，头朝下；整个人在窗洞（1.0–2.2 m）里（视觉修复 actors-7，visfix.test.ts 查全身的顶点）
+    expect(d.head[1]!).toBeGreaterThan(1.0);
+    expect(d.head[1]!).toBeLessThan(2.2);
     run(w, sn, sn.player.s + 5, 0, seg.index, 30);    // 1 s 之后
     expect(w.dbl.active().length).toBe(0);
   });

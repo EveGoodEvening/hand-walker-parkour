@@ -7,7 +7,7 @@ import { ALL_CLIPS, clipPose } from '../../../src/render/actors/clips';
 import { crawlPose, PoseBuilder } from '../../../src/render/actors/handCycle';
 import { readableLight, shadowMatrix } from '../../../src/render/actors/PlanarShadow';
 import { standPose } from '../../../src/render/actors/poses';
-import { applyThirdHand, gestureExtend } from '../../../src/render/actors/ThirdHand';
+import { applyThirdHand, gestureExtend, HAND3_LEN, SHUSH } from '../../../src/render/actors/ThirdHand';
 import { crawlInput, snap } from './helpers';
 
 function finite(p: Pose): boolean {
@@ -85,6 +85,43 @@ describe('third hand (§3)', () => {
     applyThirdHand(b, 'shush', 0, 0.5);
     expect(b.finish().thirdHand).toBe(0);
   });
+});
+
+describe('third hand shush: a finger on the lips (visual fix actors-5)', () => {
+  // 「它把那只手放在嘴唇上。」以前手腕在眼睛高度、掌心朝脸，整只摊开的手盖住了脸，前臂从胸口正中穿过下巴
+  const FWD = new THREE.Vector3(0, 0, -1), UP = new THREE.Vector3(0, 1, 0), DOWN = new THREE.Vector3(0, -1, 0);
+  const cases: Array<[string, (b: PoseBuilder) => void]> = [
+    ['crawling', (b) => { crawlPose(crawlInput({ s: 3, beat: 3.2 }), b); }],
+    ['standing (3-4 puddle double)', (b) => { const out = createPose(); clipPose('standIdle', 0.5, b, out, { x: 0, y: 0, s: 0, yaw: 0 }); b.load(out); }],
+  ];
+  for (const [name, pose] of cases) {
+    it(`${name}: fingertip at the mouth, hand edge-on, forearm clear of the head`, () => {
+      const b = new PoseBuilder();
+      pose(b);
+      applyThirdHand(b, 'shush', 1, 0.5);
+      b.fkAll();
+      const head = b.wp[BONE_INDEX.head]!, hq = b.wq[BONE_INDEX.head]!;
+      const hu = UP.clone().applyQuaternion(hq), hf = FWD.clone().applyQuaternion(hq);
+      const mouth = head.clone().addScaledVector(hu, SHUSH.up).addScaledVector(hf, SHUSH.fwd);
+      const centre = head.clone().addScaledVector(hu, 0.095);       // 头球的中心（rigBuild：关节上方 0.095）
+      const hand = b.wp[BONE_INDEX.arm3Hand]!, wq = b.wq[BONE_INDEX.arm3Hand]!;
+      const tip = hand.clone().addScaledVector(FWD.clone().applyQuaternion(wq), HAND3_LEN);
+      expect(tip.distanceTo(mouth), 'fingertip → mouth').toBeLessThan(0.03);
+      expect(hand.distanceTo(head), 'hand still near the face').toBeLessThan(0.3);
+      // 指尖在嘴的高度（头心以下），不再盖到眼睛和头发
+      expect(tip.clone().sub(centre).dot(hu)).toBeLessThan(-0.02);
+      // 侧着：掌心法线与头的前方几乎垂直
+      expect(Math.abs(DOWN.clone().applyQuaternion(wq).dot(hf)), 'palm normal · head forward').toBeLessThan(0.3);
+      // 前臂不穿过头（肘、腕、前臂中点离头心 > 0.12 m）
+      const fore = b.wp[BONE_INDEX.arm3Fore]!;
+      for (const [k, p] of [['elbow', fore], ['wrist', hand], ['mid', fore.clone().lerp(hand, 0.5)]] as const) {
+        expect(p.distanceTo(centre), k).toBeGreaterThan(0.12);
+      }
+      // 肘往手臂那一侧张开：从头的右方伸上来，不从胸口正中
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(hq);
+      expect(fore.clone().sub(head).dot(right) * SHUSH.side).toBeGreaterThan(0.08);
+    });
+  }
 });
 
 describe('stand segment poses (§3「站起来」)', () => {

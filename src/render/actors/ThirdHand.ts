@@ -1,7 +1,7 @@
 // src/render/actors/ThirdHand.ts —— 第三只手：两骨 IK 与 6 种手势（DESIGN.md §3「第三只手」、§5.5）。WP5。纯函数，Node 可测。
 // 「第三只，从它校服袖子里慢慢伸出来的，苍白、修长、指节分明。」整条骨骼从胸口按伸出程度 0 → 1 缩放，
 // IK 目标沿「胸口 → 手势目标」随伸出程度前进，所以手是慢慢伸过去的。
-// 手势：shush（放在嘴唇上）、palmGlass（掌心贴玻璃）、forehead（穿过玻璃碰额头）、shoulder（搭肩，只在 3-10 / 5-4 的镜子里）、
+// 手势：shush（食指放在嘴唇上）、palmGlass（掌心贴玻璃）、forehead（穿过玻璃碰额头）、shoulder（搭肩，只在 3-10 / 5-4 的镜子里）、
 // point（指向一个方向）、neck（抚摸自己的脖子）。它从不帮你，也从不攻击你；不出现在失败画面和世界空间里（由 Doubles 保证）。
 import * as THREE from 'three';
 import { clamp, easeInOutSine } from '../../core/math';
@@ -16,6 +16,12 @@ const _hf = new THREE.Vector3(), _hu = new THREE.Vector3(), _q = new THREE.Quate
 
 /** 第三只手的手腕到指尖（伸直时，米；rigBuild：掌 0.08 + 两节手指约 0.11）。forehead 手势按它把手腕停在目标前面，指尖正好碰到。 */
 export const HAND3_LEN = 0.19;
+
+/**
+ * shush 手势（相对头骨关节、头的朝向）：指尖点（上方 up、前方 fwd）、手指向后倾 tilt（前方分量）、手臂所在一侧 side（+1 = 头的右方）、
+ * IK 极向量的横向分量 pole。
+ */
+export const SHUSH = { up: 0.045, fwd: 0.125, tilt: 0.3, side: 1, pole: 0.8 } as const;
 
 export interface ThirdHandTarget {
   /** 世界坐标目标点（palmGlass / forehead / shoulder 需要；其余可省略，按身体推算）。 */
@@ -48,9 +54,13 @@ export function applyThirdHand(b: PoseBuilder, g: ThirdHandGesture, extend: numb
   _hu.copy(UP).applyQuaternion(hq);        // 头的上方
   switch (g) {
     case 'shush': {
-      // 食指竖在嘴唇前：目标 = 头心 + 前方 0.13 − 上方 0.0（嘴的位置在头心略下，这里没有嘴，只有位置）
-      _t.copy(head).addScaledVector(_hu, 0.07).addScaledVector(_hf, 0.16);
-      _f.copy(_hu); _n.copy(_hf).negate();
+      // 「它把那只手放在嘴唇上」（视觉修复 actors-5）：指尖落在嘴的位置（头骨关节 + 上 0.045 + 前 0.125，头是关节上方 0.095 的球、
+      // 眼在 0.1；这里没有嘴，只有位置）。手指朝上、略向后点在唇上，手腕在下巴前下方一个手长。手侧过来（掌心朝身体中线），
+      // 从正面看是一根竖在嘴前的细条，不是摊开的手掌。以前手腕在眼睛高度、掌心朝脸，整只手盖住了脸
+      _x.set(1, 0, 0).applyQuaternion(hq);
+      _f.copy(_hu).addScaledVector(_hf, -SHUSH.tilt).normalize();
+      _t.copy(head).addScaledVector(_hu, SHUSH.up).addScaledVector(_hf, SHUSH.fwd).addScaledVector(_f, -HAND3_LEN);
+      _n.copy(_x).multiplyScalar(-SHUSH.side);
       break;
     }
     case 'palmGlass': {
@@ -90,7 +100,10 @@ export function applyThirdHand(b: PoseBuilder, g: ThirdHandGesture, extend: numb
   // 伸出：目标从胸口沿直线移向手势目标；骨段长度随缩放
   _p.copy(S).lerp(_t, e);
   const L = SEG.arm3 * e;
-  const pole = _x.copy(DOWN).addScaledVector(_hf, -0.3).normalize();
+  // shush：肘往手臂那一侧（头的右方）张开，前臂从脸颊外侧上来，不从胸口正中穿过下巴（视觉修复 actors-5）
+  const pole = g === 'shush'
+    ? _x.set(SHUSH.side * SHUSH.pole, 0, 0).applyQuaternion(hq).add(DOWN).addScaledVector(_hf, -0.3).normalize()
+    : _x.copy(DOWN).addScaledVector(_hf, -0.3).normalize();
   b.ik2('arm3Upper', 'arm3Fore', _p, pole, L, L, FWD, DOWN);
   basisQuat(FWD, DOWN, _f, _n, _q);
   b.world('arm3Hand', _q);
