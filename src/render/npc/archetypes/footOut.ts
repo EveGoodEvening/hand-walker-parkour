@@ -12,7 +12,7 @@
 // （外沿 ≤ 0.86 m，不伸进相邻车道玩家碰撞盒的 0.88 m；伸出、收回的每一刻都是）。
 // 收回：两条腿绕髋部转 80°，朝 +s（前方）伸着，离开车道；上身随髋部扭一点（0.3 rad）并坐直，不整体转 80°
 // （整体转会让躯干和手臂伸进相邻车道）。被碰到（hit）也会缩回去。
-// 三个变体：legs（两条腿，收回时绕髋转）、body（胯、腰带、上身轮廓和撑地的两臂）、bodyFull（同 body，上身完整着色，人群段用）。每个人两个实例，都画全部顶点（这个池不按变体裁 drawRange）。
+// 三个变体：legs（两条腿，收回时绕髋转）、body（胯、腰带、上身轮廓和撑地的两臂）、bodyFull（同 body，上身完整着色，人群段用）。每个人两个实例；池子开了 ranges（按本帧用到的变体裁 drawRange，取并集），普通段只付 legs + body，人群段付三段。
 // 实例坐标系：+x 指向坐着的人；side = −1 时整个实例绕 y 转 180°（几何体关于 z = 0 对称，所以等于左右镜像，三角形绕向不变）。
 import * as THREE from 'three';
 import { defineArchetype, knockProgress, type PlaceCtx } from '../archetype';
@@ -154,7 +154,7 @@ export function footLegMatrix(base: THREE.Matrix4, hip: FootPose, legYaw: number
 }
 
 export default defineArchetype({
-  id: 'footOut', material: 'lambert', cap: 48, tileS: false, tileX: false,
+  id: 'footOut', material: 'lambert', cap: 48, tileS: false, tileX: false, ranges: true,
   variants: [
     { name: 'legs', kind: 'footOut', build: (b) => legs(b, FOOT_HIP) },
     { name: 'body', build: (b) => body(b, FOOT_HIP) },
