@@ -557,6 +557,8 @@ export function dataPlates(g: KitGeo, e: Env): void {
 // ——————————————————— 开口与镜中房间（§5.8） ———————————————————
 export interface MirrorRoomStyle { floor: number; wall: number; back: number; ceilingY: number }
 export const DARK_ROOM: MirrorRoomStyle = { floor: 0x3a464d, wall: 0x3e4a52, back: 0x2e3a42, ceilingY: 3.1 };
+/** 厕所镜（backdrop washroom）：暗下来的同一间白瓷砖厕所（WP5 surfaces.ts 的 BACKDROPS.washroom 是同一套颜色）。 */
+export const WASH_ROOM: MirrorRoomStyle = { floor: 0x646e72, wall: 0x646e72, back: 0x56656b, ceilingY: 3.1 };
 /** 镜中房间里灯管倒影的颜色（暗，跟着真实的灯明灭）。 */
 export const MIRROR_TUBE = 0x7c8994;
 
@@ -567,7 +569,7 @@ export function sideHoles(e: Env, side: 'L' | 'R'): Hole[] {
 
 /**
  * 侧墙开口后面的镜中房间：只画朝向开口的内表面（地、顶、背墙、两端）。
- * backdrop：darkRoom / mirrorChunk = 暗；playground / evening / nightStreet = 窗：房间的内表面全是发光的窗外
+ * backdrop：darkRoom / mirrorChunk = 暗；washroom = 暗下来的瓷砖厕所（地砖缝 0.3 m、隔间隔板的竖线）；playground / evening / nightStreet = 窗：房间的内表面全是发光的窗外
  * （天的渐变、楼下的地面、背墙上对面楼的剪影），开口处有与普通窗相同的窗台、竖梃和中横档——
  * 从走廊看过去就是一扇窗，而不是一个暗的壁龛（不提前暴露哪扇窗会出事）；替身仍站在里面的镜像位置。
  */
@@ -575,7 +577,7 @@ export function mirrorRooms(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomSty
   // 镜中房间的暗色是对着画面调的（「暗、但看得见替身」），不走道具的暗色补偿
   stat.withTone(null, () => emi.withTone(null, () => mirrorRoomsRaw(stat, emi, e, st)));
 }
-function mirrorRoomsRaw(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomStyle): void {
+function mirrorRoomsRaw(stat: KitGeo, emi: KitGeo, e: Env, st0: MirrorRoomStyle): void {
   for (const o of e.openings) {
     if (o.side === 'end') continue;
     const sa = Math.max(o.s0, e.s0), sb = Math.min(o.s1, e.s1);
@@ -583,6 +585,7 @@ function mirrorRoomsRaw(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomStyle):
     const side: -1 | 1 = o.side === 'L' ? -1 : 1;
     const su = e.surfaces.find((q) => q.id === o.surfaceId);
     const backdrop = su?.backdrop ?? 'darkRoom';
+    const wash = backdrop === 'washroom', st = wash ? WASH_ROOM : st0;
     const xw = side * (HW + WALL_T), xb = side * (HW + ROOM_DEPTH);
     const za = e.z(sa), zb = e.z(sb), H = st.ceilingY;
     const [xa0, xa1] = side < 0 ? [xb, xw] : [xw, xb];
@@ -590,23 +593,25 @@ function mirrorRoomsRaw(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomStyle):
     if (bright) { windowRoom(stat, emi, e, side, o, backdrop, sa, sb, H); continue; }
     // 地面：暗，带几道反射的地砖线
     stat.quad([xa0, 0, za], [xa1, 0, za], [xa1, 0, zb], [xa0, 0, zb], [st.floor, st.floor, st.floor, st.floor], null, side < 0 ? [0.7, 1, 1, 0.7] : [1, 0.7, 0.7, 1]);
-    for (const s of stepsIn(e, 1.0, 0)) {
+    for (const s of stepsIn(e, wash ? 0.3 : 1.0, 0)) {
       if (s <= sa || s >= sb) continue;
-      stat.quad([xa0, 0.003, e.z(s) + 0.01], [xa1, 0.003, e.z(s) + 0.01], [xa1, 0.003, e.z(s) - 0.01], [xa0, 0.003, e.z(s) - 0.01], 0x55636b);
+      stat.quad([xa0, 0.003, e.z(s) + 0.01], [xa1, 0.003, e.z(s) + 0.01], [xa1, 0.003, e.z(s) - 0.01], [xa0, 0.003, e.z(s) - 0.01], wash ? 0x4a5458 : 0x55636b);
     }
     stat.quad([xa0, H, zb], [xa1, H, zb], [xa1, H, za], [xa0, H, za], st.wall, null, [0.6, 0.6, 0.6, 0.6]);
     if (o.s0 >= e.s0 - 1e-6) stat.quad([xa1, 0, za], [xa0, 0, za], [xa0, H, za], [xa1, H, za], st.wall);
     if (o.s1 <= e.s1 + 1e-6) stat.quad([xa0, 0, zb], [xa1, 0, zb], [xa1, H, zb], [xa0, H, zb], st.wall);
     {
       const c = st.back;
-      if (side < 0) stat.quad([xb, 0, za], [xb, 0, zb], [xb, H, zb], [xb, H, za], [c, c, 0x46545c, 0x46545c], null, [0.8, 0.8, 1.1, 1.1]);
-      else stat.quad([xb, 0, zb], [xb, 0, za], [xb, H, za], [xb, H, zb], [c, c, 0x46545c, 0x46545c], null, [0.8, 0.8, 1.1, 1.1]);
+      const ct = wash ? st.wall : 0x46545c;
+      if (side < 0) stat.quad([xb, 0, za], [xb, 0, zb], [xb, H, zb], [xb, H, za], [c, c, ct, ct], null, [0.8, 0.8, 1.1, 1.1]);
+      else stat.quad([xb, 0, zb], [xb, 0, za], [xb, H, za], [xb, H, zb], [c, c, ct, ct], null, [0.8, 0.8, 1.1, 1.1]);
       // 镜中那一侧的「对面墙」：几道竖向的暗影（门、隔板的倒影），只是比背墙略亮一点
       for (const s of stepsIn(e, 1.2, 0.3)) {
         if (s <= sa + 0.1 || s >= sb - 0.1) continue;
         const xq = xb - side * 0.012, z0 = e.z(s - 0.02), z1 = e.z(s + 0.02);
-        if (side < 0) stat.quad([xq, 0.15, z0], [xq, 0.15, z1], [xq, 1.95, z1], [xq, 1.95, z0], 0x4e5c64);
-        else stat.quad([xq, 0.15, z1], [xq, 0.15, z0], [xq, 1.95, z0], [xq, 1.95, z1], 0x4e5c64);
+        const cs = wash ? 0x485459 : 0x4e5c64;
+        if (side < 0) stat.quad([xq, 0.15, z0], [xq, 0.15, z1], [xq, 1.95, z1], [xq, 1.95, z0], cs);
+        else stat.quad([xq, 0.15, z1], [xq, 0.15, z0], [xq, 1.95, z0], [xq, 1.95, z1], cs);
       }
       // 灯管的倒影：走廊中线那排灯以墙面为对称面映到 x = 2·xw，跟着真实的灯明灭（aSteady = 0）
       const xt = side * (2 * HW);
@@ -616,10 +621,10 @@ function mirrorRoomsRaw(stat: KitGeo, emi: KitGeo, e: Env, st: MirrorRoomStyle):
         emi.quad([xt - 0.04, H - 0.06, zt + 0.55], [xt + 0.04, H - 0.06, zt + 0.55], [xt + 0.04, H - 0.06, zt - 0.55], [xt - 0.04, H - 0.06, zt - 0.55], MIRROR_TUBE);
         emi.quad([xt - 0.04, H - 0.06, zt - 0.55], [xt + 0.04, H - 0.06, zt - 0.55], [xt + 0.04, H - 0.06, zt + 0.55], [xt - 0.04, H - 0.06, zt + 0.55], MIRROR_TUBE);
       }
-      // 镜中那一侧的走廊墙线（暗）：墙裙的上沿
-      const xr = xb - side * 0.01;
-      if (side < 0) stat.quad([xr, 1.08, za], [xr, 1.08, zb], [xr, 1.14, zb], [xr, 1.14, za], 0x26323a);
-      else stat.quad([xr, 1.08, zb], [xr, 1.08, za], [xr, 1.14, za], [xr, 1.14, zb], 0x26323a);
+      // 镜中那一侧的走廊墙线（暗）：墙裙的上沿；厕所镜是隔间顶上的横梁
+      const xr = xb - side * 0.01, [ya, yb] = wash ? [1.95, 2.0] : [1.08, 1.14], cr = wash ? 0x4c585d : 0x26323a;
+      if (side < 0) stat.quad([xr, ya, za], [xr, ya, zb], [xr, yb, zb], [xr, yb, za], cr);
+      else stat.quad([xr, ya, zb], [xr, ya, za], [xr, yb, za], [xr, yb, zb], cr);
     }
   }
 }

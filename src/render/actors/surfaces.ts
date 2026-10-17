@@ -68,6 +68,9 @@ export function endRoomFloor(v: Pick<SurfaceView, 'y0'>): number { return Math.m
 /** 背景配色：镜子（暗）/ 各种窗外景。top、bottom 为背墙上下渐变，floor 为地面。 */
 const BACKDROPS: Record<string, { top: number; bottom: number; floor: number; ceil: number; band?: number }> = {
   darkRoom: { top: 0x1c262c, bottom: 0x121a1f, floor: 0x161f24, ceil: 0x10171b },
+  // 厕所镜（1-3、5-4）：镜子里是同一间白瓷砖厕所，只是暗下来（约为真实墙面亮度的一半）。背墙 = 对面那排隔间的倒影，
+  // 上部 = 隔间上方的灰泥。不能是近黑的「水族箱」，也不能亮到压过替身的浅色上衣（WASH_ROOM 是 kit 那一层的同色）。
+  washroom: { top: 0x6c767a, bottom: 0x5c6c72, floor: 0x6e787c, ceil: 0x5e676b },
   mirrorChunk: { top: 0x3a474d, bottom: 0x24302f, floor: 0x3d4546, ceil: 0x2c3538 },
   evening: { top: 0xb9c4cb, bottom: 0x7d8a92, floor: 0x5d676c, ceil: 0xc4ced4, band: 0x4d585e },
   playground: { top: 0xdce6ec, bottom: 0xa9b8c2, floor: 0x6f7b72, ceil: 0xdce6ec, band: 0x5e6b5a },
@@ -174,8 +177,12 @@ export class ReflectSurfaces implements ViewSystem {
       const [xa, xc] = sign < 0 ? [xb, xi] : [xi, xb];
       // 背墙：渐变；镜子在中高画质画出镜中走廊的墙裙与腰线
       const bands: Array<[number, number, number, number]> = [];
+      const wash = su.kind !== 'window' && su.backdrop === 'washroom';
       if (su.kind !== 'window' && hq && (su.backdrop ?? 'darkRoom') === 'darkRoom') {
         bands.push([0, 1.1, 0x1b2a29, 0x1b2a29], [1.1, 1.15, 0x24302f, 0x24302f], [1.15, H, 0x202a2f, 0x2a353b]);
+      } else if (wash && hq) {
+        // 隔间门下的空隙、门板（0.15–1.95）、顶上的横梁、灰泥
+        bands.push([0, 0.15, bd.floor, bd.floor], [0.15, 1.95, bd.bottom, mixHex(bd.bottom, bd.top, 0.3)], [1.95, 2.0, 0x4c585d, 0x4c585d], [2.0, H, bd.top, bd.top]);
       } else if (bd.band !== undefined) {
         bands.push([0, 0.9, bd.floor, bd.band], [0.9, 1.25, bd.band, bd.bottom], [1.25, H, bd.bottom, bd.top]);
       } else bands.push([0, H, bd.bottom, bd.top]);
@@ -197,7 +204,21 @@ export class ReflectSurfaces implements ViewSystem {
         // 镜中走廊的灯带（每 2 m 一盏，淡）
         for (let s = su.s0 + 1; s < su.s1 - 0.5; s += 2) {
           const xm = sign * (HALF + ROOM * 0.55);
-          g.box([xm, H - 0.02, -s], [0.12, 0.02, 1.0], 0x6d7a80, { faces: '-y' });
+          g.box([xm, H - 0.02, -s], [0.12, 0.02, 1.0], wash ? 0x9aa6ac : 0x6d7a80, { faces: '-y' });
+        }
+      }
+      if (hq && wash) {
+        // 厕所镜：地砖缝（0.3 m 一格）、隔间隔板的竖向暗线（约 1.2 m 一格），读得出「同一间厕所的倒影」
+        const grout = mixHex(bd.floor, 0x3a4448, 0.35);
+        for (let s = su.s0 + 0.3; s < su.s1 - 0.05; s += 0.3) g.quad([xa, 0.006, -s + 0.008], [xc, 0.006, -s + 0.008], [xc, 0.006, -s - 0.008], [xa, 0.006, -s - 0.008], grout);
+        for (let k = 1; k * 0.3 < ROOM - 0.05; k++) {
+          const x = sign * (HALF + k * 0.3), x0 = x - 0.008, x1 = x + 0.008;
+          g.quad([x0, 0.006, z0], [x1, 0.006, z0], [x1, 0.006, z1], [x0, 0.006, z1], grout);
+        }
+        const xq = xb - sign * 0.006;
+        for (let s = su.s0 + 0.6; s < su.s1 - 0.1; s += 1.2) {
+          if (sign < 0) g.quad([xq, 0.15, -s + 0.025], [xq, 0.15, -s - 0.025], [xq, 1.95, -s - 0.025], [xq, 1.95, -s + 0.025], 0x485459);
+          else g.quad([xq, 0.15, -s - 0.025], [xq, 0.15, -s + 0.025], [xq, 1.95, -s + 0.025], [xq, 1.95, -s - 0.025], 0x485459);
         }
       }
       const geo = g.build({ chalk: true });
