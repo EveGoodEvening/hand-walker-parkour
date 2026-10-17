@@ -190,7 +190,8 @@ describe('每种障碍都能正确显示（验收 5）', () => {
         const pool = view.pools.get(a);
         expect(pool, a).toBeDefined();
         if (!pool) continue;
-        const v = pool.variantOf(o.kind);
+        // reach 在游戏里拆成深缝 + 两只按实际跪的位置伸出来的手臂（复审 npc-seated-5），默认变体只留给独立放置和静态检查
+        const v = o.kind === 'reach' ? pool.variantIndex('reachArmL') : pool.variantOf(o.kind);
         let found = false;
         for (let i = 0; i < pool.pool.n; i++) if (pool.pool.variantAt(i) === v) found = true;
         expect(found, `${o.kind} 没有画出来`).toBe(true);

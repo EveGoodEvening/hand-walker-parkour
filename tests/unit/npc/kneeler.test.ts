@@ -5,7 +5,7 @@ import { compile } from '../../../src/levels/compile';
 import { getChapter } from '../../../src/levels/chapters/index';
 import type { ChapterDef, CompiledObstacle } from '../../../src/levels/schema';
 import { ArchetypePoolImpl, createArchetypeMaterial, type PlaceCtx } from '../../../src/render/npc/archetype';
-import { REACH_GAP_X } from '../../../src/render/npc/archetypes/armBar';
+import { REACH_GAP_X, REACH_SHOULDER, REACH_SIDE_X, reachKneelX } from '../../../src/render/npc/archetypes/armBar';
 import { ARCHETYPE_DEFS } from '../../../src/render/npc/defs';
 import { LegForest } from '../../../src/render/npc/LegForest';
 import { SOFT_HIDE, patchNpcShader } from '../../../src/render/npc/material';
@@ -80,7 +80,7 @@ describe('梦里跪着的人（kneeler）', () => {
     expect(Math.max(-box.min.z, box.max.z)).toBeLessThanOrEqual(0.30 + 0.065);
   });
 
-  it('4-5 的 reach 行：跪着的人互相隔开 ≥ 0.4 m，离旁边人腿障碍的中心 ≥ 0.45 m，相邻两道 reach 共用车道缝上的一个人', () => {
+  it('4-5 的 reach 行：跪着的人互相隔开 ≥ 0.4 m，离旁边人腿障碍的中心 ≥ 0.6 m，相邻两道 reach 共用车道缝上的一个人', () => {
     const ch = compile(getChapter('ch4') as ChapterDef);
     const seg = ch.segments.find((s) => s.def.id === '4-5');
     if (!seg) throw new Error('4-5');
@@ -107,7 +107,69 @@ describe('梦里跪着的人（kneeler）', () => {
       for (const q of seg.obstacles) {
         if (q.kind !== 'legs' || Math.abs((q.s0 + q.s1) / 2 - a.s) > 0.5) continue;
         obstacleState(q, 0, -1, st);
-        expect(Math.abs((st.x0 + st.x1) / 2 - a.x), `legs @s ${a.s.toFixed(1)}`).toBeGreaterThanOrEqual(0.45);
+        expect(Math.abs((st.x0 + st.x1) / 2 - a.x), `legs @s ${a.s.toFixed(1)}`).toBeGreaterThanOrEqual(0.6 - 1e-9);
+      }
+    }
+  });
+});
+
+describe('reach 的手臂从实际跪着的人的肩膀伸出来（复审 npc-seated-5）', () => {
+  const ch = compile(getChapter('ch4') as ChapterDef);
+  const seg = ch.segments.find((x) => x.def.id === '4-5');
+  if (!seg) throw new Error('4-5');
+  const arm = pool('armBar');
+  const st = { active: true, ds: 0, x0: 0, x1: 0, amount: 1 };
+  /** 放一个 reach：返回跪着的人（x）和两只手臂（肩膀 x、到车道中心的长度）。 */
+  const place = (o: CompiledObstacle, partX: number) => {
+    const kn: number[] = [];
+    const pc: PlaceCtx = {
+      o, st, floorY: 0, tSeg: 0, beat: -1, t: 0, knockedAt: null, chapter: 'ch4', kit: 'plaza', playerX: 0, playerS: 0, partX, bps: 5,
+      reducedFlicker: false, reachNb: reachNeighbours(o, seg.obstacles),
+      side: (_id, m) => { kn.push(new THREE.Vector3().setFromMatrixPosition(m).x); },
+    };
+    obstacleState(o, 0, -1, st);
+    arm.begin(); arm.placeEx(pc); arm.end();
+    const m = new THREE.Matrix4(), p = new THREE.Vector3(), sc = new THREE.Vector3();
+    const arms: Array<{ s: number; x: number; len: number }> = [];
+    for (let i = 0; i < arm.pool.n; i++) {
+      const v = arm.pool.variantAt(i);
+      if (v !== arm.variantIndex('reachArmL') && v !== arm.variantIndex('reachArmR')) continue;
+      arm.pool.matrixAt(i, m); p.setFromMatrixPosition(m); sc.setFromMatrixColumn(m, 0);
+      arms.push({ s: v === arm.variantIndex('reachArmL') ? -1 : 1, x: p.x, len: sc.length() * (REACH_SIDE_X - REACH_SHOULDER) });
+    }
+    return { kn, arms, cx: (st.x0 + st.x1) / 2 };
+  };
+  const reaches = seg.obstacles.filter((o) => o.kind === 'reach');
+
+  it('每只手臂的肩膀在这一侧跪着的人的肩上（离人中心 0.15 m），手伸到车道中心；共用的人由相邻的另一道画', () => {
+    let gap = 0;
+    for (const o of reaches) {
+      const { kn, arms, cx } = place(o, 0);
+      const nb = reachNeighbours(o, seg.obstacles);
+      expect(arms.length).toBe(2);
+      for (const a of arms) {
+        const kx = reachKneelX(a.s < 0 ? nb.l : nb.r);
+        if (kx !== REACH_SIDE_X) gap++;
+        expect(a.x - cx).toBeCloseTo(a.s * (kx - REACH_SHOULDER), 6);
+        expect(a.len).toBeCloseTo(kx - REACH_SHOULDER, 6);
+        // 这一侧的人：自己画的，或者（左边是 reach 时）左邻画的 reachBoth，位置一样
+        if (!(a.s < 0 && nb.l === 'reach')) expect(kn.some((x) => Math.abs(x - (cx + a.s * kx)) < 1e-6)).toBe(true);
+      }
+    }
+    expect(gap).toBeGreaterThan(0);
+  });
+
+  it('「让一下」：跪着的人不挪（和共用的人对得上），手臂收回去', () => {
+    for (const o of reaches) {
+      const a = place(o, 0), b = place(o, 0.3), c = place(o, 0.6);
+      expect(b.kn).toEqual(a.kn);
+      expect(c.kn).toEqual(a.kn);
+      for (let i = 0; i < a.arms.length; i++) {
+        const [x, y, z] = [a.arms[i], b.arms[i], c.arms[i]] as [{ x: number; len: number }, { x: number; len: number }, { x: number; len: number }];
+        expect(y.x).toBeCloseTo(x.x, 6);
+        expect(y.len).toBeLessThan(x.len);
+        expect(z.len).toBeLessThan(y.len);
+        expect(z.len).toBeGreaterThan(0.05);
       }
     }
   });
