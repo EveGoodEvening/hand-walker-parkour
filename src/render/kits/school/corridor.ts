@@ -95,8 +95,10 @@ export function buildCorridor(ctx: HwKitChunkContext, look: Look): KitChunk {
   for (const h of winHoles) {
     windowPane(emi, stat, e, -1, h, look.windows as WindowStyle, 1.2);
     if (!look.windows?.night && !look.dark) lamps.push({ s: (h.s0 + h.s1) / 2, x: -HW + 0.25, y: 1.8, kind: 'window', flickerable: false });
-    stat.box([-HW + 0.06, h.y0 - 0.02, e.z((h.s0 + h.s1) / 2)], [0.2, 0.04, h.s1 - h.s0 + 0.1], look.dark ? 0x121619 : 0xc3c9c9, { faces: '+y+x' });
-    if (!look.dark) radiator(stat, e, -1, (h.s0 + h.s1) / 2, Math.min(1.3, winW - 0.4));
+    // 窗台只探出墙面 3 cm（前沿 |x| = 1.77）、暖气片往墙里收 5 cm（前沿 1.73）：路边站着的人（中心 1.54–1.6）和
+    // 侧身走过的班长（抱着的本子外沿 1.77）不再穿过它们。以前窗台前沿在 1.64、暖气片在 1.68，正好切进人的胯和腿
+    stat.box([-HW - 0.005, h.y0 - 0.02, e.z((h.s0 + h.s1) / 2)], [0.07, 0.04, h.s1 - h.s0 + 0.1], look.dark ? 0x121619 : 0xc3c9c9, { faces: '+y+x' });
+    if (!look.dark) radiator(stat, e, -1, (h.s0 + h.s1) / 2, Math.min(1.3, winW - 0.4), -HW - 0.05);
   }
   for (const h of holesL) holeRevealSafe(stat, e, -1, h, look);
 
@@ -115,7 +117,7 @@ export function buildCorridor(ctx: HwKitChunkContext, look: Look): KitChunk {
       }));
     } else if (r < 0.62 && look.lockers) {
       lockerBank(stat, e, c, Math.min(e.period - 0.4, 2.4), look);
-      contactShadow(floor, HW - 0.17, e.z(c), 0.34, Math.min(e.period - 0.4, 2.4), floorUV(e), 0x9aa2a6, look.floor, 0.16, 0.0015, chunkZ(e));
+      contactShadow(floor, HW - 0.03, e.z(c), 0.06, Math.min(e.period - 0.4, 2.4), floorUV(e), 0x9aa2a6, look.floor, 0.16, 0.0015, chunkZ(e));
     }
     else if (r < 0.8 && !look.dark) {
       if (look.roster) wallPaper(stat, e, 1, c, 1.55, 0.42, 0.56, ATLAS.roster, (rng.next() - 0.5) * 0.05);
@@ -176,13 +178,17 @@ function holeRevealSafe(stat: KitGeo, e: Env, side: -1 | 1, h: Hole, look: Look)
   if (h.s1 <= e.s1 + 1e-6) stat.quad([x0, h.y0, zb], [x1, h.y0, zb], [x1, h.y1, zb], [x0, h.y1, zb], c);
 }
 
-/** 一排储物柜（贴右墙，深 0.34 m，柜门竖缝与通风孔）。 */
+/**
+ * 一排嵌在右墙里的储物柜（只探出墙面 5 cm，柜门竖缝与通风孔）。
+ * 以前是贴墙放的 0.34 m 深的柜子，前沿在 |x| = 1.46：路边的人（中心 1.54–1.6）一半埋在柜子里。
+ * chunk 池会把同一个模板用在别的里程，kit 不知道人站在哪，所以柜子本身让出位置，不按人群挪。
+ */
 function lockerBank(g: KitGeo, e: Env, c: number, w: number, look: Look): void {
-  const x = HW - 0.17, z = e.z(c), h = 1.8;
+  const d = 0.05, x = HW - d / 2, z = e.z(c), h = 1.8;
   const col = look.dark ? 0x2a3136 : SCHOOL.locker;
-  g.box([x, h / 2, z], [0.34, h, w], col, { faces: '-x+y+z-z', bottomShade: 0.75 });
+  g.box([x, h / 2, z], [d, h, w], col, { faces: '-x+y+z-z', bottomShade: 0.75 });
   const n = Math.max(2, Math.round(w / 0.4));
-  const xf = HW - 0.341;
+  const xf = HW - d - 0.001;
   for (let i = 1; i < n; i++) {
     const zz = z + w / 2 - (i * w) / n;
     g.quad([xf, 0.05, zz - 0.006], [xf, 0.05, zz + 0.006], [xf, h - 0.02, zz + 0.006], [xf, h - 0.02, zz - 0.006], SCHOOL.lockerDark);

@@ -12,7 +12,7 @@
 // （外沿 ≤ 0.86 m，不伸进相邻车道玩家碰撞盒的 0.88 m；伸出、收回的每一刻都是）。
 // 收回：两条腿绕髋部转 80°，朝 +s（前方）伸着，离开车道；上身随髋部扭一点（0.3 rad）并坐直，不整体转 80°
 // （整体转会让躯干和手臂伸进相邻车道）。被碰到（hit）也会缩回去。
-// 两个变体：legs（两条腿，收回时绕髋转）、body（胯、腰带、上身轮廓和撑地的两臂）。每个人两个实例，都画全部顶点（这个池不按变体裁 drawRange）。
+// 三个变体：legs（两条腿，收回时绕髋转）、body（胯、腰带、上身轮廓和撑地的两臂）、bodyFull（同 body，上身完整着色，人群段用）。每个人两个实例，都画全部顶点（这个池不按变体裁 drawRange）。
 // 实例坐标系：+x 指向坐着的人；side = −1 时整个实例绕 y 转 180°（几何体关于 z = 0 对称，所以等于左右镜像，三角形绕向不变）。
 import * as THREE from 'three';
 import { defineArchetype, knockProgress, type PlaceCtx } from '../archetype';
@@ -110,11 +110,18 @@ function legs(b: PartBuilder, hip: FootPose): void {
  * 胯部、腰带与上身轮廓（原点在地面，髋在 hip）：腰带只有四个侧面是黑的，上面 12 cm 校服下摆（U6：以前腰带顶面是黑的，像带盖的桶）。
  * 上身是 lowUpperBody 的躯干和头（同样的尺寸和圆滑法线），两臂不垂着，从肩斜着撑到身边的地面上（坐在地上的人这样坐才稳）。
  */
-function body(b: PartBuilder, hip: FootPose): void {
+function body(b: PartBuilder, hip: FootPose, full = false): void {
   const x = hip.x + 0.01, top = hip.y + 0.105;
   b.box([x, (hip.bottom + top) / 2, 0], [0.2, top - hip.bottom, 0.38], C.trousers, { faces: '+x-x+z-z-y' });
   b.box([x, hip.y + 0.125, 0], [0.208, 0.04, 0.39], C.hair, { faces: '+x-x+z-z' });
   b.box([x, hip.y + 0.205, 0], [0.19, 0.12, 0.37], C.uniform, { faces: '+x-x+z-z+y' });
+  if (full) {
+    // 人群段（PlaceCtx.wall）：同样的轮廓，完整着色——校服、肤色的脸、黑头发（脸朝 −x，后脑勺在 +x），不标 SOFT_UPPER
+    upperBox(b, [x, hip.y + 0.4, 0], [0.22, 0.52, 0.4], C.uniform, { faces: '+x-x+z-z+y' });
+    for (const z of [-0.24, 0.24]) limb(b, [x - 0.02, hip.y + 0.62, z], [x + 0.06, 0.015, z * 1.12], 0.08, 0.075, C.uniform);
+    upperBox(b, [x - 0.01, hip.y + 0.81, 0], [0.18, 0.24, 0.17], C.skin, { colors: { '+y': C.hair, '+x': C.hair } });
+    return;
+  }
   b.with({ glow: SOFT_UPPER }, () => {
     b.with({ tint: 1 }, () => {
       // 躯干：lowUpperBody 的 0.40 宽 × 0.52 高 × 0.22 厚（宽沿 z）
@@ -151,6 +158,8 @@ export default defineArchetype({
   variants: [
     { name: 'legs', kind: 'footOut', build: (b) => legs(b, FOOT_HIP) },
     { name: 'body', build: (b) => body(b, FOOT_HIP) },
+    // 人群段 2-2、5-6 里路边的人都完整着色，伸脚的人也跟着（不做食堂里唯一一个灰的人）；由 PlaceCtx.wall 选
+    { name: 'bodyFull', build: (b) => body(b, FOOT_HIP, true) },
   ],
   place(p, c: PlaceCtx) {
     const o = c.o;
@@ -164,7 +173,7 @@ export default defineArchetype({
     _m.compose(_p, _q, _s);
     // 收腿：两条腿绕髋部转向 +s（世界 −z）
     const yaw = e < 1 ? (side > 0 ? -1 : 1) * (1 - e) * FOOT_RETRACT_YAW : 0;
-    p.push(footBodyMatrix(_m, FOOT_HIP, e, yaw, _b), p.variantIndex('body'), 0);
+    p.push(footBodyMatrix(_m, FOOT_HIP, e, yaw, _b), p.variantIndex(c.wall ? 'bodyFull' : 'body'), 0);
     p.push(footLegMatrix(_m, FOOT_HIP, yaw, _b), p.variantIndex('legs'), 0);
     return true;
   },

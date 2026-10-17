@@ -34,6 +34,9 @@ export interface GroupInfo { def: NpcGroupDef; seg: number; kit: KitId; key: str
 /**
  * 各 kit 路边人群的横向范围 [内沿, 外沿]（米，取绝对值）：人的中心落在这个范围里。
  * 室内走廊墙在 ±1.8，人的身体半宽约 0.2：外沿 1.6，人不穿墙；内沿 1.54，人不伸进右道玩家碰撞盒（外沿 1.32）。
+ * 走廊 kit 的墙边家具都收在 |x| ≥ 1.72 以外（储物柜嵌进墙、窗台和暖气片贴墙，corridor.ts），面朝走廊的人背后不碰它们。
+ * 楼梯（stairs）右侧是扶手栏杆（x = 1.5，外面是楼梯井）：右侧没有合法范围（要 x ≤ 1.30 才不跨栏杆，又会伸进右道），
+ * 楼梯上的组只放在左墙一侧（expandSegment）。
  */
 export function bandOf(kit: KitId): [number, number] {
   switch (kit) {
@@ -64,7 +67,9 @@ export function expandSegment(seed: number, seg: SegLike, out: Decor[], groups: 
     const group = groups.length;
     groups.push({ def: g, seg: seg.index, kit, key });
     const rng = createRng(seed, `npc:${def.id}:${key}`);
-    const sides: Array<-1 | 1> = g.side === 'both' ? [-1, 1] : g.side === 'L' ? [-1] : [1];
+    let sides: Array<-1 | 1> = g.side === 'both' ? [-1, 1] : g.side === 'L' ? [-1] : [1];
+    // 楼梯：右侧是栏杆和楼梯井，路边的人只走左墙（bandOf 的注释）。只写了右侧的组也挪到左侧，不画在栏杆外面
+    if (kit === 'stairs') sides = [-1];
     const sp = specialOfGroup(g);
     const gaze: Decor['gaze'] = g.gaze === 'turnShoes' ? 'turnShoes' : g.gaze === 'center' ? 'center' : 'none';
     const sAt = (b: number) => seg.s0 + b * seg.stride;
@@ -74,11 +79,14 @@ export function expandSegment(seed: number, seg: SegLike, out: Decor[], groups: 
     if (sp === 'monitor') {
       // 班长：一个人，抱着作业本，同向走远（「先轻后重」的脚步声渐远）
       const side = sides[0] ?? 1;
-      push({ kind: 'person', pose: 'walk', s: sAt(g.from), x: side * Math.min(b1, b0 + 0.06), yaw: Math.PI, speed: 1.35, phase: rng.next(), side });
+      // 侧身走（抱着的本子宽 0.46）：贴着内沿走，本子外沿 1.77，不碰窗台（前沿 1.77）和墙
+      push({ kind: 'person', pose: 'walk', s: sAt(g.from), x: side * b0, yaw: Math.PI, speed: 1.35, phase: rng.next(), side });
       return;
     }
     const kind: NpcGroupKind = g.kind;
     const dens = Math.max(0, Math.min(1, g.density));
+    // 窄的路边（走廊、楼梯：外沿 < 2 m）背后就是墙：站着的人面朝走廊，侧身的人贴内沿
+    const narrow = b1 < 2;
     for (const side of sides) {
       const inner = b0 + 0.02, outer = b1;
       const lane = (x: number) => side * x;
@@ -107,8 +115,12 @@ export function expandSegment(seed: number, seg: SegLike, out: Decor[], groups: 
             for (let i = 0; i < n; i++) {
               const x = Math.min(outer, inner + 0.04 + rng.range(0, 0.12) + (outer > 2 ? rng.range(0, outer - inner - 0.2) : 0));
               const s = cs + (i - (n - 1) / 2) * 0.62;
-              // 围成一小圈：彼此相对；单人时面朝走廊或背对
-              const yaw = n > 1 ? (i % 2 ? 0 : Math.PI) + rng.range(-0.5, 0.5) : -side * HALF_PI + rng.range(-0.7, 0.7);
+              // 围成一小圈：彼此相对；单人时面朝走廊或背对。
+              // 窄的路边：一律面朝走廊，两头的人朝中间偏 0.3（加上抖动 ≤ 0.45 rad），肩膀和手臂离墙 ≥ 2 cm；
+              // 以前彼此相对（yaw 0 / π），侧身的手臂伸进墙里 9 cm
+              const off = i - (n - 1) / 2;
+              const yaw = narrow ? -side * HALF_PI + side * 0.3 * Math.sign(off) + rng.range(-0.15, 0.15)
+                : n > 1 ? (i % 2 ? 0 : Math.PI) + rng.range(-0.5, 0.5) : -side * HALF_PI + rng.range(-0.7, 0.7);
               push({ kind: 'person', pose: 'stand', s, x: lane(x), yaw, speed: 0, phase: rng.next(), side });
             }
           }
@@ -119,7 +131,8 @@ export function expandSegment(seed: number, seg: SegLike, out: Decor[], groups: 
             if (rng.next() > dens) continue;
             const dir = rng.next() < 0.5 ? 1 : -1;
             const speed = dir * rng.range(0.9, 1.5);
-            const x = rng.range(inner + 0.02, Math.max(inner + 0.02, Math.min(outer, inner + 0.5)));
+            // 侧身走（手臂外沿离中心 0.28）：窄的路边贴着内沿走，手臂只擦到墙面
+            const x = narrow ? rng.range(b0, b0 + 0.02) : rng.range(inner + 0.02, Math.max(inner + 0.02, Math.min(outer, inner + 0.5)));
             push({ kind: 'person', pose: 'walk', s: sAt(b), x: lane(x), yaw: speed > 0 ? Math.PI : 0, speed, phase: rng.next(), side });
           }
           break;
@@ -132,14 +145,17 @@ export function expandSegment(seed: number, seg: SegLike, out: Decor[], groups: 
           break;
         }
         case 'lineSides': {
-          for (let b = g.from; b <= g.to + 1e-6; b += 0.56 / seg.stride) {
+          // 人墙：间距 0.6 m（上身连手臂宽 0.555），肩膀挨着、不互相穿插；转角抖动 ±0.2
+          for (let b = g.from; b <= g.to + 1e-6; b += 0.6 / seg.stride) {
             if (rng.next() > dens) continue;
-            push({ kind: 'person', pose: 'stand', s: sAt(b), x: lane(Math.min(outer, inner + 0.03 + rng.range(0, 0.05))), yaw: -side * HALF_PI + rng.range(-0.35, 0.35), speed: 0, phase: rng.next(), side });
+            push({ kind: 'person', pose: 'stand', s: sAt(b), x: lane(Math.min(outer, inner + 0.03 + rng.range(0, 0.05))), yaw: -side * HALF_PI + rng.range(-0.2, 0.2), speed: 0, phase: rng.next(), side });
           }
           break;
         }
         case 'onlookerRing': {
-          // 围观的人排成弧：每 9 m 一段弧，弧心朝车道
+          // 围观的人排成弧：每 9 m 一段弧，弧心朝车道。
+          // 抖动后离已经站好的人太近（沿 s < 0.6、横向 < 0.45：肩膀连手臂宽 0.555）的就不放。随机数照常先取完，结果仍是确定的
+          const near: number[] = [];
           for (let b = g.from; b <= g.to + 1e-6; b += 0.7 / seg.stride) {
             if (rng.next() > dens) continue;
             const s = sAt(b);
@@ -148,7 +164,14 @@ export function expandSegment(seed: number, seg: SegLike, out: Decor[], groups: 
             for (let row = 0; row < 2; row++) {
               if (row === 1 && rng.next() > 0.6) continue;
               const x = Math.max(inner, Math.min(outer, arc + row * 0.7 + rng.range(-0.1, 0.1)));
-              push({ kind: 'person', pose: 'stand', s: s + rng.range(-0.2, 0.2), x: lane(x), yaw: -side * HALF_PI + rng.range(-0.4, 0.4), speed: 0, phase: rng.next(), side });
+              const sj = s + rng.range(-0.2, 0.2), yaw = -side * HALF_PI + rng.range(-0.4, 0.4), phase = rng.next();
+              let clash = false;
+              for (let k = Math.max(0, near.length - 16); k < near.length; k += 2) {
+                if (Math.abs((near[k] as number) - sj) < 0.6 && Math.abs((near[k + 1] as number) - x) < 0.45) { clash = true; break; }
+              }
+              if (clash) continue;
+              near.push(sj, x);
+              push({ kind: 'person', pose: 'stand', s: sj, x: lane(x), yaw, speed: 0, phase, side });
             }
           }
           break;

@@ -31,7 +31,7 @@ import type { CompiledChapter, CompiledObstacle, CompiledSegment, RunSegmentDef 
 import { ArchetypePoolImpl, createArchetypeMaterial, type ArchetypeDef, type PlaceCtx } from './archetype';
 import {
   FOOT_CENTER, GAZE_MAX, GAZE_TOTAL, clapClosed, gazeAmount, gazeSince, hash01, idleSway, obstacleTwist, obstacleYaw, partOffset, shiftBlend, silenceClock,
-  silenceLevel, tremble, walkPose, type ShiftBlend, type Sway, type Tremble, type WalkPose,
+  silenceLevel, tremble, walkOnGround, walkPose, type ShiftBlend, type Sway, type Tremble, type WalkPose,
 } from './behaviors';
 import { CRAWL, Crawlers, type Crawler } from './Crawlers';
 import { expandChapter, lowerBound, type Decor, type GroupInfo } from './crowds';
@@ -44,6 +44,7 @@ import { MAX_EXPAND } from './archetype';
 import { obstacleState, type ObstacleState } from './simBridge';
 import { HIPS, crowdOfKit, emberGlow, itemIdOf, lookFor, specialLook, specialOfObstacle, type Look, type SpecialId } from './specials';
 import { OUTDOOR_KITS } from './tone';
+import { treadY } from '../stairTread';
 
 const DEG = Math.PI / 180;
 /**
@@ -120,7 +121,7 @@ export class ObstacleView implements ViewSystem {
   private fadeMarks: number[] = [];
   private decor: Decor[] = [];
   private groups: GroupInfo[] = [];
-  /** 人墙段（U6）：段 → 这一段里站着的人（路边的组、人腿障碍）一直画上身（人群段 2-2、5-6）。读章时定。 */
+  /** 人墙段（U6）：段 → 这一段里的人（路边的组，站着、坐着；人腿障碍；伸脚的人）一直画上身（人群段 2-2、5-6）。读章时定。 */
   private wallSegs: boolean[] = [];
   /** 段 → 显示这一段的组的站立段下标（4-2 → 4-3、5-7 → 5-8；没有 = −1）。这一段里站着的人只在那个站立段进行时画上身。 */
   private standOf: number[] = [];
@@ -145,6 +146,10 @@ export class ObstacleView implements ViewSystem {
   private readonly st2: ObstacleState = { active: true, ds: 0, x0: 0, x1: 0, amount: 1 };
   private readonly person: Person = newPerson(lookFor('student', 1, 'tmp'));
   private readonly walk: WalkPose = { hipL: 0, hipR: 0, kneeL: 0, kneeR: 0, bob: 0 };
+  /** walkOnGround 查落脚点用的地面（构造时建好，热路径里不建闭包）。 */
+  private walkSeg: CompiledSegment | null = null;
+  private readonly segTread = (s: number): number => (this.walkSeg ? treadY(this.walkSeg, s) : 0);
+  private readonly chapterTread = (s: number): number => this.floorAt(s);
   private readonly crawler: Crawler = { x: 0, y: 0, z: 0, yaw: 0, dist: 0, color: new THREE.Color(), phase: 0 };
   private readonly target = new THREE.Vector3();
   private readonly box: AABB = { x0: 0, x1: 0, y0: 0, y1: 0, s0: 0, s1: 0 };
@@ -159,7 +164,7 @@ export class ObstacleView implements ViewSystem {
     this.defs = defs;
     this.pc = {
       o: null as unknown as CompiledObstacle, st: this.st, floorY: 0, tSeg: 0, beat: -1, t: 0, knockedAt: null,
-      chapter: 'ch1', kit: 'placeholder', playerX: 0, playerS: 0, partX: 0, bps: 5, reducedFlicker: false,
+      chapter: 'ch1', kit: 'placeholder', playerX: 0, playerS: 0, partX: 0, bps: 5, reducedFlicker: false, wall: false,
       side: (id, m, variant, glow, color) => { const p = this.pools.get(id); if (p) p.push(m, p.variantIndex(variant), glow ?? 0, color); },
     };
   }
@@ -466,6 +471,7 @@ export class ObstacleView implements ViewSystem {
     const pc = this.pc;
     const beat = this.stage ? (f.s - this.stage.segment.s0 - shift) / Math.max(0.3, seg.stride) : beatIn;
     pc.kit = kit; pc.tSeg = tSeg; pc.beat = beat;
+    pc.wall = kit === 'plaza' || this.wallAt(seg.index, f);
     for (const o of list) {
       const st = obstacleState(o, tSeg, beat, this.st);
       const s0 = o.s0 + st.ds + shift, s1 = o.s1 + st.ds + shift;
@@ -602,12 +608,18 @@ export class ObstacleView implements ViewSystem {
       const part = this.pc.partX;
       const mid = (lanes - 1) / 2;
       p.x = cx + (lanes > 1 ? Math.abs(part) * (i < mid ? -1 : i > mid ? 1 : Math.sign(part)) : part);
-      p.y = floorY; p.z = zc;
+      // 楼梯上的人站在画出来的踏面上（碰撞盒和 hitbox 仍按坡线 floorY）
+      // 楼梯上的人站在画出来的踏面上（碰撞盒和 hitbox 仍按坡线 floorY）；走路的人在下面按步子取高度
+      const stairs = (seg.def as RunSegmentDef).stairs;
+      p.y = stairs ? treadY(seg, -zc) : floorY; p.z = zc;
       p.arms = look.hips !== HIPS.jacket && look.hips !== HIPS.books && look.hips !== HIPS.fullUpper;
       if (b.type === 'walk') {
         p.yaw = b.speed > 0 ? Math.PI : 0;
         // 走路的人在「安静的一秒」里也不停：碰撞盒按段内时间继续移动，步态按走过的距离（= 碰撞盒的位移），画面和碰撞一起动
-        walkPose(Math.abs(b.speed) * this.pc.tSeg + i * 0.3 + o.id, this.walk);
+        const dist = Math.abs(b.speed) * this.pc.tSeg + i * 0.3 + o.id;
+        // 楼梯：踏面高度是台阶函数，按里程取会让人每走 0.6 m 整个跳一级，和步子对不上；按落脚点取（walkOnGround）
+        if (stairs) { this.walkSeg = seg; p.y = walkOnGround(dist, -zc, b.speed > 0 ? 1 : -1, this.segTread, this.walk); }
+        else walkPose(dist, this.walk);
         this.applyWalk(p);
       } else {
         p.yaw = sp ? 0 : obstacleYaw(o.id, i);
@@ -782,7 +794,8 @@ export class ObstacleView implements ViewSystem {
         : d.seg <= this.segIndex ? f.tAnim - silenceClock(this.segStartAt(d.seg, f.t), this.silences) : 0;
       const sN = d.s + shift + d.speed * Math.max(0, segT);
       if (sN > f.s + f.ahead || sN < f.s - f.behind) continue;
-      const floorY = this.floorAt(sN);
+      // 站着、坐着、跪着的人按踏面；爬行的人按坡线（贴着地爬，没有落脚点，按踏面会每 0.6 m 跳一级）；走路的人在下面按步子取
+      const floorY = this.floorAt(sN, d.kind !== 'crawler');
       const gi = d.group;
       const gs = this.groupState[gi];
       if (d.kind === 'crawler') {
@@ -804,7 +817,10 @@ export class ObstacleView implements ViewSystem {
       if (this.forest.people >= npcMax) continue;
       this.resetPerson(p, d.look);
       p.x = d.x; p.y = floorY; p.z = -sN; p.yaw = d.yaw;
-      if (d.pose === 'walk') { walkPose(Math.abs(d.speed) * Math.max(0, segT) + d.phase * 2, this.walk); this.applyWalk(p); }
+      if (d.pose === 'walk') {
+        p.y = walkOnGround(Math.abs(d.speed) * Math.max(0, segT) + d.phase * 2, sN, d.speed >= 0 ? 1 : -1, this.chapterTread, this.walk);
+        this.applyWalk(p);
+      }
       else if (d.pose === 'seat') {
         // 椅子（chairBar 原型的 seat 变体）；坐在教室、食堂 kit 自己的椅子 / 圆凳上的人不另画
         const chairs = d.kitSeat ? undefined : this.pools.get('chairBar');
@@ -816,8 +832,8 @@ export class ObstacleView implements ViewSystem {
       } else this.applyIdle(p, f.tAnim, d.phase);
       this.applyGaze(p, -1 - i, sN, f, d.gaze, gi, d.pose === 'walk');
       const kit = groups[gi]?.kit;
-      // 人墙按组所在的段和当前段的种类决定（梦里的人一律算）；普通坐姿仍用弱化轮廓。
-      p.wall = d.pose !== 'seat' && (kit === 'plaza' || this.wallAt(groups[gi]?.seg ?? -1, f));
+      // 人墙按组所在的段和当前段的种类决定（梦里的人一律算），站着、坐着一样：同一个人群段里不能一半人完整着色、一半是灰的轮廓。
+      p.wall = kit === 'plaza' || this.wallAt(groups[gi]?.seg ?? -1, f);
       p.upper = d.look.upper || kit === 'plaza' || p.wall;
       p.outdoor = kit !== undefined && OUTDOOR_KITS.has(kit);
       const applaud = (gs && gs.applaud >= 0) || this.globalOp.applaud >= 0;
@@ -840,18 +856,22 @@ export class ObstacleView implements ViewSystem {
       const k = OVERTAKE[i] as OvertakeCrawler;
       const sN = s0 - 6 - k.back + k.v * Math.max(0, dt - k.delay);
       if (sN > f.s + f.ahead || sN < f.s - f.behind) continue;
-      c.x = k.x; c.y = this.floorAt(sN); c.z = -sN; c.yaw = 0;
+      c.x = k.x; c.y = this.floorAt(sN, false); c.z = -sN; c.yaw = 0;
       c.dist = k.v * dt + k.phase * 2; c.phase = k.phase;
       c.color.setHex(k.color);
       this.crawlers.add(c);
     }
   }
 
-  private floorAt(s: number): number {
+  /**
+   * 画面上 s 处的地面高度。tread = true：楼梯段取所在踏面的高度（台阶函数，给不动的人、给 walkOnGround 查落脚点）；
+   * false：坡线（连续，给沿 s 移动又没有落脚点的东西，例如爬行的人）。
+   */
+  private floorAt(s: number, tread = true): number {
     if (this.stage) return this.stage.segment.floorY(s);
     const ch = this.chapter;
     if (!ch) return 0;
-    for (const seg of ch.segments) if (seg.kind === 'run' && s >= seg.s0 && s <= seg.s1) return seg.floorY(s);
+    for (const seg of ch.segments) if (seg.kind === 'run' && s >= seg.s0 && s <= seg.s1) return tread ? treadY(seg, s) : seg.floorY(s);
     const last = ch.segments[this.segIndex];
     return last ? last.floorY(s) : 0;
   }

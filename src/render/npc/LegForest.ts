@@ -8,7 +8,7 @@
 // 上身复用已有几何体：普通跑段用弱化轮廓（SOFT_UPPER），梦里、站立段和人墙保留完整着色。
 // 陈默的上身在髋部件里（低画质在 special 里），不叠加轮廓。所有人都没有五官。
 // U6：腰带只有四个侧面是黑的，上面加 12 cm 衬衫下摆（着衣服色），顶面不再是黑盖子（站着看下去以前像带盖的垃圾桶）。
-// 人墙（Person.wall：人群段 2-2、5-6 里站着的人，梦里的人，以及站立段 4-3、5-8 进行时它要显示的前一个跑段 4-2、5-7 的组）
+// 人墙（Person.wall：人群段 2-2、5-6 里的人（站着、坐着），梦里的人，以及站立段 4-3、5-8 进行时它要显示的前一个跑段 4-2、5-7 的组）
 // 每个画质都画上身和没有五官的头，按组 / 段决定，与玩家远近、画面上还有谁无关（不会因为你走近而长出来，也不会因为陈默出现而让出去）。
 // 低画质的上身是 special 几何体里的一个小变体（42 个三角形，排在顶点最前面）；special、hipsLow 按本帧用到的变体裁剪
 // drawRange（InstPool.trackVariantRanges），只有上身时每个实例只付这 42 个三角形，和特殊人物同帧也不让，仍然最多 3 次 draw call。
@@ -19,6 +19,7 @@ import { applyNpcPatch, PartBuilder, SOFT_UPPER } from './material';
 import { C } from './colors';
 import { HIPS, LEGV, type HipsVariant, type Look } from './specials';
 import { NpcTone } from './tone';
+import { LEG } from './behaviors';
 import { lowUpperBody, upperBox } from './upperBody';
 
 /**
@@ -30,7 +31,7 @@ export function drawsDetailedUpper(p: Pick<Person, 'upper' | 'wall' | 'look'>, l
 }
 
 /** 骨架尺寸（米）。站立时髋关节高 0.905，腰带在 1.03–1.07。 */
-export const BODY = { thigh: 0.43, shin: 0.4, ankle: 0.075, stance: 0.115, belt: 0.14 } as const;
+export const BODY = { thigh: LEG.thigh, shin: LEG.shin, ankle: 0.075, stance: 0.115, belt: 0.14 } as const;
 export const STAND_HIP = BODY.thigh + BODY.shin + BODY.ankle;
 
 /** 每帧交给 LegForest 的一个人的姿势（复用同一个对象，不分配）。角度单位：弧度。 */
@@ -48,7 +49,7 @@ export interface Person {
   /** 是否给躯干和头完整着色（梦里、站立段；中、高画质），否则画弱化轮廓。 */
   upper: boolean;
   /**
-   * 人墙（U6）：人群段 2-2、5-6 里站着的人（路边的组、人腿障碍）、梦里的人，以及站立段 4-3、5-8 进行时前一个跑段 4-2、5-7 的组。
+   * 人墙（U6）：人群段 2-2、5-6 里的人（路边的组，站着、坐着；人腿障碍）、梦里的人，以及站立段 4-3、5-8 进行时前一个跑段 4-2、5-7 的组。
    * 每个画质都给躯干和头完整着色，按组 / 段和当前段的种类决定（ObstacleView），与玩家远近、画面上还有谁无关。
    */
   wall: boolean;
