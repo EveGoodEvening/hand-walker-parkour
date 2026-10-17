@@ -1,7 +1,7 @@
 // src/render/textures/school.ts —— 校园程序纹理（DESIGN.md §5.9，WP3）。
 // terrazzo（底色加两层值噪声；每平方米约 2900 颗 3–6 边形石子，半径 0.6–3.5 px（按 256 px/m 计，随边长缩放），
 //   颜色按 35 / 30 / 15 / 12 / 8% 抽取；每 1 m 一道 2 px 铜条）、plaster（水渍、发丝裂纹）、
-//   wainscot（离地 5–15 cm 处有黑色鞋踢痕，正好在主角视线高度）、ceiling、tile、chalkboard(text)（每个字按 ±0.8 px 偏移、
+//   wainscot（离地 5–15 cm 处有细长、大致水平的黑色鞋踢痕，正好在主角视线高度）、ceiling、tile、chalkboard(text)（每个字按 ±0.8 px 偏移、
 //   以 0.35 不透明度画 5 遍，再随机擦掉斑点；tremble 时最后一个字抖动，拖出一道粉笔灰）、doorPlate(text)、dutyRoster。
 // 另有 schoolAtlas：chunk 的 static 几何体共用的一张贴图集（墙面灰度细节 + 门牌 + 值日表 + 告示 + 白色区），
 // 一个 chunk 仍然只有 1 个 static 材质 = 1 次 draw call。布局见 ATLAS。
@@ -127,12 +127,34 @@ function paintWainscot(g: G, x0: number, y0: number, w: number, h: number, hM: n
   clipRect(g, x0, y0, w, h, () => {
     // 竖向滚筒纹
     for (let i = 0; i < 60; i++) { g.fillStyle = gray(rng.next() < 0.5 ? 0.9 : 1, 0.05); g.fillRect(x0 + rng.next() * w, y0, Math.max(1, w / 300), h); }
-    // 鞋踢痕：离地 5–15 cm
-    for (let i = 0; i < 26; i++) {
-      const cx = x0 + rng.next() * w, cy = yAt(0.05 + rng.next() * 0.1);
-      const len = w * (0.006 + rng.next() * 0.02), th = Math.max(1, h * (0.004 + rng.next() * 0.01));
-      g.fillStyle = gray(0.08 + rng.next() * 0.15, 0.2 + rng.next() * 0.35);
-      g.beginPath(); g.ellipse(cx, cy, len, th, (rng.next() - 0.5) * 0.35, 0, Math.PI * 2); g.fill();
+    // 鞋踢痕：离地 5–15 cm。画成细长、低不透明度、大致水平的擦痕（2–3 笔叠在一起，外加一笔更宽更淡的晕边）；
+    // 以前是 26 个实心椭圆，长短比常常不到 2:1、边缘锐利，一排排像趴在墙根的甲虫。
+    // 用单独的随机数流：贴图集里后面的区域（灰泥、天花板、门牌……）共用 rng，这里照旧消耗 26 × 6 次，后面的图案不变。
+    for (let i = 0; i < 26 * 6; i++) rng.next();
+    const sr = texRng('wainscotScuff');
+    const pxM = h / hM;                                                          // 竖向每米多少 px（横向几乎相同）
+    g.lineCap = 'round';
+    for (let i = 0; i < 14; i++) {
+      const cx = x0 + sr.next() * w, cy = yAt(0.05 + sr.next() * 0.1);
+      const len = (0.04 + sr.next() * 0.09) * pxM;                               // 4–13 cm
+      const th = Math.max(0.6, (0.005 + sr.next() * 0.005) * pxM);               // 0.5–1.0 cm，至少比长度细 4 倍
+      const ang = (sr.next() - 0.5) * 0.3, ca = Math.cos(ang), sa = Math.sin(ang);
+      const v = 0.1 + sr.next() * 0.15, a = 0.18 + sr.next() * 0.2;
+      const strokes = 2 + (sr.next() < 0.5 ? 1 : 0);
+      for (let k = 0; k <= strokes; k++) {
+        // k = 0：宽而淡的晕边；之后几笔沿擦痕方向错开、略短
+        const l = len * (k === 0 ? 1 : 0.55 + sr.next() * 0.4), off = k === 0 ? 0 : (sr.next() - 0.5) * len * 0.35;
+        const dy = k === 0 ? 0 : (sr.next() - 0.5) * th * 1.6;
+        const mx = cx + off * ca, my = cy + off * sa + dy;
+        g.strokeStyle = gray(v, k === 0 ? a * 0.35 : a);
+        g.lineWidth = k === 0 ? th * 2.4 : th * (0.6 + sr.next() * 0.5);
+        g.beginPath(); g.moveTo(mx - (l / 2) * ca, my - (l / 2) * sa); g.lineTo(mx + (l / 2) * ca, my + (l / 2) * sa); g.stroke();
+        // 擦痕跨过区域左右边界时在另一边补画，贴图平铺时不断开
+        for (const dx of [mx - l < x0 ? w : 0, mx + l > x0 + w ? -w : 0]) {
+          if (!dx) continue;
+          g.beginPath(); g.moveTo(mx + dx - (l / 2) * ca, my - (l / 2) * sa); g.lineTo(mx + dx + (l / 2) * ca, my + (l / 2) * sa); g.stroke();
+        }
+      }
     }
     // 掉漆的小点（露出底下的浅色）
     for (let i = 0; i < 10; i++) { g.fillStyle = gray(1, 0.35); g.beginPath(); g.arc(x0 + rng.next() * w, yAt(0.1 + rng.next() * 0.8), Math.max(1, w / 500), 0, Math.PI * 2); g.fill(); }
