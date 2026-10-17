@@ -232,7 +232,7 @@ export class ObstacleView implements ViewSystem {
   }
 
   /**
-   * 伸脚的人坐在车道外沿自己的椅子上（archetypes/footOut.ts）。路边 seatedRow 里坐在同一个位置的人去掉，免得两个人、两把椅子叠在一起。
+   * 伸脚的人坐在车道外沿的地上（archetypes/footOut.ts）。路边 seatedRow 里坐在同一个位置的人去掉，免得两个人叠在一起（他的椅子留着，像是从椅子上滑到了地上）。
    */
   private withoutSeatClash(decor: Decor[], obstacles: readonly CompiledObstacle[]): Decor[] {
     const seats: Array<{ x: number; s: number }> = [];
@@ -643,7 +643,8 @@ export class ObstacleView implements ViewSystem {
     const at = b.type === 'yield' ? b.atBeat : Number.POSITIVE_INFINITY;
     const beat = this.pc.beat;
     // 起身：at − 2.6 → at − 1.6 拍；让开：at − 1.6 → at − 0.6 拍。画面先于碰撞（先看见、后碰到）：
-    // 他留在过道里的脚从 at − 1.3 拍起就在画面上，第一章按 1-2 的减速曲线算，离接触还有 ≥ 1.2 s（R4）。
+    // 他留在过道里的脚从 at − 1.6 + CHEN_FOOT.from 拍起就在画面上，第一章按 1-2 的减速曲线算，离接触还有 ≥ 1.2 s（R4）。
+    // 太早伸出去（以前从 step 0.3 起），人还在 1.5 m 外，直腿被拉到上限 1.25 倍，横着一大截。
     const rise = clamp01((beat - (at - 2.6)) / 1.0);
     const step = clamp01((beat - (at - 1.6)) / 1.0);
     const cx = (o.lanes.reduce<number>((acc, l) => acc + l, 0) / Math.max(1, o.lanes.length)) * LANE_WIDTH;
@@ -665,15 +666,24 @@ export class ObstacleView implements ViewSystem {
     p.footYawL = -S.footYaw * (1 - r); p.footYawR = S.footYaw * (1 - r);
     p.lean = lerp(S.lean, 0, r);
     p.squat = rise < 0.5; p.seated = false;
-    if (foot && step > 0.3) {
-      // 留在过道里的脚：左腿伸直指向脚的位置（碰撞盒中心），鞋尖朝过道另一侧
-      this.target.set(fx - side * 0.06, floorY + BODY.ankle, -fs);
+    let w = 0;
+    if (foot && step > CHEN_FOOT.from) {
+      // 留在过道里的脚：左腿伸直指向碰撞盒里靠他这一侧的脚踝位置，鞋尖朝过道另一侧（鞋盖住车道靠他的一半）。
+      // 以前指向车道中心再往外 6 cm，髋—踝 1.01 m，直腿被拉长到 1.22 倍，像僵直的侧踢（审查 npc-seated-9）
+      this.target.set(fx + side * CHEN_FOOT.pull, floorY + BODY.ankle, -(fs + CHEN_FOOT.back));
       if (side > 0) { p.targetL = this.target; p.footYawL = -Math.PI / 2; }
       else { p.targetL = this.target; p.footYawL = Math.PI / 2; }
       p.stance = 0.12;
+      w = easeInOutSine(clamp01((step - CHEN_FOOT.from) / (1 - CHEN_FOOT.from)));
     }
     p.upper = true;
     if (rise >= 1) this.applyIdle(p, f.tAnim, 0.37);
+    if (w > 0) {
+      // 重心落在右腿上：髋降一点、右膝微屈（脚仍踩在地面上），上身略前倾、朝右腿一侧偏一点
+      p.hipH -= CHEN_FOOT.drop * w;
+      p.hipR = CHEN_FOOT.hip * w; p.kneeR = 2 * CHEN_FOOT.hip * w;
+      p.lean += 0.04 * w; p.roll -= side * 0.04 * w;
+    }
     this.forest.add(p);
     void st; void seg; void cur;
   }
@@ -876,6 +886,12 @@ export interface ChenDest { x: number; s: number; side: 1 | -1; fx: number; fs: 
  * 陈默让开的距离：横向最多 aside；站在脚后面 back（沿 +s）；身体（含垂着的手臂、重心摆动）半宽 half；离相邻障碍的视觉内沿留 margin。
  */
 export const CHEN_STEP = { aside: 0.56, back: 0.3, half: 0.33, margin: 0.02, reach: 0.35 } as const;
+/**
+ * 陈默留在过道里的那只脚：让开走到 from（0.65）时伸出去，人已经离脚不远；脚踝在碰撞盒中心朝他一侧 pull、朝他身后 back（都在 0.60 × 0.30 的盒子里）；
+ * 髋降 drop，右腿髋角 hip、膝角 2·hip，让右脚仍落在地面上（cos(hip) = (STAND_HIP − drop − ankle) / (thigh + shin)）。
+ * 伸出去的直腿约为腿长的 1.08 倍（LegForest 的直腿按髋—踝距离缩放，上限 1.25）。
+ */
+export const CHEN_FOOT = { from: 0.65, pull: 0.12, back: 0.06, drop: 0.025, hip: Math.acos((STAND_HIP - 0.025 - BODY.ankle) / (BODY.thigh + BODY.shin)) } as const;
 
 /**
  * 陈默让到哪里（§4.1 1-2「他让开了，一只脚还留在过道里」）。默认让到脚所在车道的一侧 0.56 m；

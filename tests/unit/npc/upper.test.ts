@@ -49,14 +49,16 @@ describe('腰带的顶面（U6）', () => {
         expect(up.some(isHair), `${tier} ${name}`).toBe(false);
       }
     }
-    // 伸脚的人与轮廓同属 seated，转身、收脚时保持连在一起。
+    // 伸脚的人：胯、腰带与上身轮廓同属一个变体（body），收脚时随髋部扭一点；腿是单独的变体，绕髋部转开。
     const { view } = makeView('high');
     const fo = view.pools.get('footOut');
     expect(fo).toBeDefined();
     if (fo) {
-      const seated = upFaceColors(fo.geo, fo.variantIndex('seated'));
-      expect(seated.length).toBeGreaterThan(0);
-      expect(seated.some(isHair)).toBe(false);
+      for (const name of ['body']) {
+        const seated = upFaceColors(fo.geo, fo.variantIndex(name));
+        expect(seated.length, name).toBeGreaterThan(0);
+        expect(seated.some(isHair), name).toBe(false);
+      }
     }
   });
 

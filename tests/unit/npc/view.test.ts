@@ -10,8 +10,8 @@ import type { ChapterDef } from '../../../src/levels/schema';
 import { customStage, makeStage, toStage, type StageName } from '../../../src/render/npc/stage';
 import { chapter, runSeg } from '../core/helpers';
 import { ViewDriver, faceBack, fakeCtx, instancedBounds, makeView, stageView } from './helpers';
-import { FEET, LegForest, newPerson } from '../../../src/render/npc/LegForest';
-import { EMBER_PEAK, emberGlow, lookFor, specialLook } from '../../../src/render/npc/specials';
+import { BODY, FEET, LegForest, newPerson } from '../../../src/render/npc/LegForest';
+import { EMBER_PEAK, HIPS, emberGlow, lookFor, specialLook } from '../../../src/render/npc/specials';
 import { LAMP_PEAK, lampGlow } from '../../../src/render/npc/archetypes/armBar';
 import { reducedPulse } from '../../../src/render/npc/behaviors';
 import { OVERTAKE_LIFE } from '../../../src/render/npc/ObstacleView';
@@ -160,12 +160,21 @@ describe('陈默（§4.1 1-2）：蹲在过道里 → 起身 → 让开，脚留
     const seg = vd.ch.segments.find((x) => x.def.id === '1-2');
     const foot = seg?.obstacles.find((o) => o.params.itemId === 'chenmoFoot');
     expect(foot).toBeDefined();
-    let tSeen = -1, tContact = -1;
-    const ankle = new THREE.Vector3();
+    let tSeen = -1, tContact = -1, stretch = 0;
+    const ankle = new THREE.Vector3(), now = new THREE.Vector3(), m = new THREE.Matrix4(), hipL = new THREE.Vector3();
+    const hips = view.forest.pool('hips');
     for (let i = 0; i < 120 * 12 && tContact < 0; i++) {
       const snap = vd.step(1);
       if (tSeen < 0 && view.forest.lastTargetL(ankle)) tSeen = snap.t;
       if (snap.player.s + 0.25 >= (foot?.s0 ?? 0)) tContact = snap.t;
+      // 伸出去的那条直腿：左髋 = 他的髋（fullUpper 实例的位置，朝向 0）往 −x 偏 stance（0.12）
+      if (!view.forest.lastTargetL(now)) continue;
+      for (let k = 0; k < hips.n; k++) {
+        // 越过之后缩小消失（U6）的那几帧不算
+        if (hips.variantAt(k) !== HIPS.fullUpper || hips.matrixAt(k, m).getMaxScaleOnAxis() < 0.999) continue;
+        hipL.setFromMatrixPosition(m).x -= 0.12;
+        stretch = Math.max(stretch, hipL.distanceTo(now) / (BODY.thigh + BODY.shin));
+      }
     }
     expect(tSeen).toBeGreaterThan(0);
     expect(tContact - tSeen).toBeGreaterThanOrEqual(1.2);
@@ -173,6 +182,9 @@ describe('陈默（§4.1 1-2）：蹲在过道里 → 起身 → 让开，脚留
     expect(Math.abs(ankle.x)).toBeLessThan(foot?.halfW ?? 0);
     expect(-ankle.z).toBeGreaterThanOrEqual(foot?.s0 ?? 0);
     expect(-ankle.z).toBeLessThanOrEqual(foot?.s1 ?? 0);
+    // 让开以后伸出去的那条直腿不被拉得太长：髋—踝距离 ≤ 腿长的 1.10 倍（审查 npc-seated-9：以前约 1.22 倍，像僵直的侧踢）
+    expect(stretch).toBeGreaterThan(0.9);
+    expect(stretch).toBeLessThanOrEqual(1.1);
   });
 });
 
