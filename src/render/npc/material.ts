@@ -6,7 +6,8 @@
 // 顶点着色器把不属于本实例变体的顶点收拢到一点（三角形退化，不光栅化）。仍然是 1 个 InstancedMesh、1 次 draw call。
 //
 // 另外两个逐顶点通道：
-//   aHw.y 自发光（glow）：正值 × iHw.y 加进 totalEmissiveRadiance；−1 标记弱化上身（不发光）。
+//   aHw.y 自发光（glow）：正值 × iHw.y 加进 totalEmissiveRadiance；−1 标记弱化上身（不发光）；
+//         −2（SOFT_HIDE）标记「弱化轮廓里不画」的部分（头发片）：实例是弱化上身时收拢成一点，完整着色时照常画。
 //   aHw.z 着色（tint）：1 = 顶点色乘 instanceColor（衣服颜色）；0 = 保持顶点色（鞋底、手、粉笔白线）。
 //         three 默认把 instanceColor 乘到所有顶点上，粉笔白线就会被染色；这里只替换 color_vertex 里那一行。
 //
@@ -19,6 +20,11 @@ import { GeoBuilder, type V3 } from '../../core/geo';
 export const NPC_PROGRAM_KEY = 'hwNpcV2';
 /** glow 通道的负值保留给弱化上身；可逐顶点或逐实例指定，不额外增加属性 / draw call。 */
 export const SOFT_UPPER = -1;
+/**
+ * 逐顶点：弱化上身里不画的部分（只用于从不发光的顶点）。头上的头发片在完整着色里靠黑发和肤色的对比读成头发，
+ * 弱化成同一种灰以后像贴在后脑上的第二个盒子（审查 npc-standing-4），所以弱化实例直接把它收掉。
+ */
+export const SOFT_HIDE = -2;
 
 /** r186 color_vertex 里被替换的那一行（单元测试会检查它还在）。 */
 export const INSTANCE_COLOR_LINE = 'vColor.rgb *= instanceColor.rgb;';
@@ -36,7 +42,7 @@ function colorVertexChunk(): string {
     ? src.replace(INSTANCE_COLOR_LINE, 'vColor.rgb *= mix( vec3( 1.0 ), instanceColor.rgb, aHw.z );')
     : src;
   return `${body}
-	vHwSoft = clamp( max( -aHw.y, -iHw.y ), 0.0, 1.0 );
+	vHwSoft = clamp( max( aHw.y < -1.5 ? 0.0 : -aHw.y, -iHw.y ), 0.0, 1.0 );
 	vHwGlow = vec3( 0.0 );
 	#if defined( USE_COLOR ) || defined( USE_COLOR_ALPHA )
 		vHwGlow = color.rgb * max( aHw.y, 0.0 ) * max( iHw.y, 0.0 );
@@ -54,6 +60,7 @@ function colorVertexChunk(): string {
 
 const BEGIN_VERTEX = /* glsl */`#include <begin_vertex>
 	if ( aHw.x >= 0.0 && abs( aHw.x - iHw.x ) > 0.5 ) transformed = vec3( 0.0 );
+	if ( aHw.y < -1.5 && iHw.y < -0.5 ) transformed = vec3( 0.0 );
 `;
 
 export interface ShaderLike { vertexShader: string; fragmentShader: string }
@@ -137,7 +144,8 @@ export class PartBuilder {
   box(center: V3, size: V3, hex: number, opts: { faces?: string; colors?: Partial<Record<string, number>> } = {}): this {
     this.g.box(center, size, hex, opts); this.sync(); return this;
   }
-  segment(a: V3, b: V3, w: number, h: number, hex: number, opts: { colors?: Partial<Record<string, number>> } = {}): this {
+  /** opts.faces 按线段自己的坐标系：−z 指向 b，+y 大致朝上（水平的线段）。 */
+  segment(a: V3, b: V3, w: number, h: number, hex: number, opts: { faces?: string; colors?: Partial<Record<string, number>> } = {}): this {
     this.g.segment(a, b, w, h, hex, opts); this.sync(); return this;
   }
   quad(a: V3, b: V3, c: V3, d: V3, hex: number): this { this.g.quad(a, b, c, d, hex); this.sync(); return this; }

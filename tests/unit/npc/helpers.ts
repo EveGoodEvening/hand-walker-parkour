@@ -69,7 +69,8 @@ export class ViewDriver {
 }
 
 /**
- * 实例化网格在世界坐标里的包围盒：按每个实例的变体过滤顶点（和顶点着色器的收拢规则相同：aHw.x ≥ 0 且与 iHw.x 不同的顶点不画）。
+ * 实例化网格在世界坐标里的包围盒：按每个实例的变体过滤顶点（和顶点着色器的收拢规则相同：aHw.x ≥ 0 且与 iHw.x 不同的顶点不画，
+ * 弱化实例 iHw.y < 0 里 aHw.y = SOFT_HIDE 的顶点不画）。
  * yMax / yMin 只统计这个高度范围内的顶点（例如玩家碰撞盒最高 0.85 m 以下的部分）。
  */
 export function instancedBounds(meshes: readonly THREE.InstancedMesh[], o: { yMax?: number; yMin?: number; only?: (i: number, mesh: THREE.InstancedMesh) => boolean } = {}): THREE.Box3 {
@@ -80,10 +81,12 @@ export function instancedBounds(meshes: readonly THREE.InstancedMesh[], o: { yMa
     for (let i = 0; i < mesh.count; i++) {
       if (o.only && !o.only(i, mesh)) continue;
       mesh.getMatrixAt(i, m);
-      const variant = ihw.getX(i);
+      const variant = ihw.getX(i), soft = ihw.getY(i) < -0.5;
       for (let k = 0; k < pos.count; k++) {
         const vi = hw.getX(k);
         if (vi >= 0 && Math.abs(vi - variant) > 0.5) continue;
+        // 弱化实例不画 SOFT_HIDE 的顶点（头发片），同顶点着色器
+        if (soft && hw.getY(k) < -1.5) continue;
         v.set(pos.getX(k), pos.getY(k), pos.getZ(k)).applyMatrix4(m);
         if (o.yMax !== undefined && v.y > o.yMax) continue;
         if (o.yMin !== undefined && v.y < o.yMin) continue;
