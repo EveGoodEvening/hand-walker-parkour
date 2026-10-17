@@ -320,6 +320,10 @@ const SIDES = [-1, 1] as const;
 const _root = new THREE.Matrix4(), _m = new THREE.Matrix4(), _a = new THREE.Matrix4(), _b = new THREE.Matrix4();
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1);
 const _col = new THREE.Color(), _col2 = new THREE.Color(), _d = new THREE.Vector3();
+const _t = new THREE.Matrix4();
+/** 合并腿（长 thigh + shin）缩成大腿 / 小腿的比例；大腿多 0.07（小腿厚度的一半）。 */
+const LOW_THIGH_K = (BODY.thigh + 0.07) / (BODY.thigh + BODY.shin);
+const LOW_SHIN_K = BODY.shin / (BODY.thigh + BODY.shin);
 const DOWN = new THREE.Vector3(0, -1, 0);
 const TIGHTS = 0x2a3136;
 
@@ -398,6 +402,7 @@ export class LegForest {
       // 髋关节（世界坐标）
       _a.makeTranslation(p.dx + s * p.stance, p.hipH + p.bob, 0).premultiply(_root);
       const target = s < 0 ? p.targetL : null;
+      const bent = low && !target && (p.seated || p.squat);
       if (target) {
         _v.copy(target);
         this.hadTarget = true; this.targetSeen.copy(target);
@@ -406,11 +411,15 @@ export class LegForest {
         _a.multiply(_b.makeRotationY(legYaw));
         _m.copy(_a).multiply(_b.makeRotationX(-hip));
         if (!low) P.thigh.push(_m, legV, 0, _col);
+        // 低画质下膝盖弯着的人（坐着、蹲着；走路、站着的人仍是一根）：大腿、小腿各一段合并腿，不画成一根从髋斜到脚踝的直棍
+        // （坐着的人斜着的腿在追尾镜头里像伸进过道的脚）。大腿多伸半个小腿厚度，没有端面的断口藏进小腿里。
+        if (low && bent) { _t.copy(_m).multiply(_b.makeScale(1, LOW_THIGH_K, 1)); P.feet.push(_t, FEET.leg, 0, _col); }
         _m.multiply(_b.makeTranslation(0, -BODY.thigh, 0)).multiply(_b.makeRotationX(knee));
         if (!low) P.shin.push(_m, legV, 0, _col);
+        else if (bent) { _t.copy(_m).multiply(_b.makeScale(1, LOW_SHIN_K, 1)); P.feet.push(_t, FEET.leg, 0, _col); }
         _v.set(0, -BODY.shin, 0).applyMatrix4(_m);
       }
-      if (target || low) {
+      if (target || (low && !bent)) {
         // 一根直腿从髋关节指向脚踝（低画质的合并腿；或陈默伸进过道的那条腿）
         _w.setFromMatrixPosition(_a);
         _d.copy(_v).sub(_w);
