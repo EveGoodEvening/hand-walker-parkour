@@ -7,7 +7,6 @@ import type { EnvKit, KitChunk, LampSpec } from '../../../core/contracts';
 import { registerKit } from '../../../core/registry';
 import { markSchoolAtlas, type HwKitChunkContext } from '../../kitContext';
 import { PAL, SCHOOL } from '../../palette';
-import { stairStepCentre } from '../../../levels/compile';
 import {
   CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_LIFT, NIGHT_WINDOW, beatsIn, crossWall, dataPlates, geos, makeEnv, mirrorRooms, sideHoles, sideWall,
   stepsIn, type Hole, type WallStyle, type WindowStyle,
@@ -44,7 +43,7 @@ export function buildStairs(ctx: HwKitChunkContext, look: Look): KitChunk {
     const sc = e.segS0 + k * st;
     const a = Math.max(e.s0 - e.back, sc - st / 2), b = Math.min(e.s1, sc + st / 2);
     if (b <= a + 1e-5) continue;
-    const y = base(stairStepCentre(sc, e.segS0, e.segS1, st));   // 与主角按在台阶上的手同一个公式（levels/compile.ts）
+    const y = base(Math.min(Math.max(sc, e.segS0), e.segS1));
     const za = e.z(a), zb = e.z(b);
     const va = (a - e.s0) / st, vb = (b - e.s0) / st;
     floor.quad([-HW, y, za], [HW, y, za], [HW, y, zb], [-HW, y, zb], 0xffffff, [[-1.3, va], [2.3, va], [2.3, vb], [-1.3, vb]], [0.7, 0.7, 1, 1]);
