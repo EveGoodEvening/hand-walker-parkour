@@ -174,7 +174,7 @@ export default {
         { id: 'ring5', kind: 'onlookerRing', from: 0, to: 250, side: 'both', density: 0.5, gaze: 'none' },
         { id: 'crawlers5', kind: 'crawlerStream', from: 20, to: 260, side: 'both', density: 0.6, gaze: 'none' },
       ],
-      surfaces: [{ id: 'plazaMirror', kind: 'mirror', side: 'R', from: 196, to: 206, y: [0.1, 2.6], backdrop: 'darkRoom' }],
+      surfaces: [{ id: 'plazaMirror', kind: 'mirror', side: 'R', from: 196, to: 206, y: [0.1, 2.6], backdrop: 'plaza' }],
       rows: [
         // 第二轮加密（第 3 轮重排，复验后再调）：§4.4 的定点部件是 @40 和 @176 的三连撑（patterns：两侧围观的腿夹出中道、间隔 4 拍，
         // 前后各空出约 6 拍）。别处的跪着的人最多两排连撑（间隔 3.5 拍），中间夹着只留一条缝的围观的腿（换道）、
@@ -239,7 +239,7 @@ export default {
       ],
       events: [
         { at: 0, type: 'ambience', amb: 'dream', level: 1, seconds: 1.5 },
-        { at: 0, type: 'fog', near: 20, far: 28, seconds: 45 },                         // 越来越深的灰
+        { at: 0, type: 'fog', near: 8, far: 28, seconds: 45 },                          // 越来越深的灰；near 收到 8 m，地面一路灰到天边，不出现一道硬的地平线（§10.8）
         { at: 0, type: 'text', line: ['c4.slow', 'c4.better'] },                         // 「我开始跑。很慢，很慢。但比站着好。」
         { at: 9, type: 'text', line: 'c4.follows' },
         { at: 18, type: 'text', line: 'c4.notChasing' },

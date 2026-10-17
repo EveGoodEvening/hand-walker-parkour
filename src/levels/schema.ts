@@ -100,7 +100,7 @@ export interface SurfaceDef {
   side: 'L' | 'R' | 'end' | 'floor';
   from: number; to: number;                        // 拍
   lane?: Lane; y?: [number, number]; chipped?: boolean;
-  backdrop?: 'darkRoom' | 'mirrorChunk' | 'playground' | 'nightStreet' | 'evening';
+  backdrop?: 'darkRoom' | 'mirrorChunk' | 'playground' | 'nightStreet' | 'evening' | 'plaza';   // plaza：镜中房间由广场 kit 画，WP5 只画玻璃
   text?: string;                                   // doorPlate 专用：「高二（7）班」
 }
 export interface WindowDef { id?: string; from: number; to: number; type: 'rest' | 'lookBack' | 'ask'; auto?: boolean; gain?: 0 | 1; then?: TimedEventDef[] }

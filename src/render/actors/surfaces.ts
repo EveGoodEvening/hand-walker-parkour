@@ -167,6 +167,14 @@ export class ReflectSurfaces implements ViewSystem {
       const sign = su.side === 'L' ? -1 : 1;
       const xw = sign * HALF;
       const v: SurfaceView = { ...base, kind: 'side', sign, planeX: xw, planeS: 0, reflect: reflectX(xw) };
+      // 广场的镜碑（4-5）：镜中房间由 plaza kit 画（和广场同一种地面、会随 4-5 的灰一起变暗），这里只画玻璃。
+      // 再叠一个走廊式的房间会比 kit 的镜碑高出一截、端墙重叠打架（深色盒子套着发白的屏）。
+      if (su.backdrop === 'plaza') {
+        v.glass = this.sideGlass(su, v, sign, floorY);
+        group.add(v.glass);
+        this.ctx.scene.add(group);
+        return v;
+      }
       const bd = BACKDROPS[su.backdrop ?? (su.kind === 'window' ? 'evening' : 'darkRoom')] ?? (BACKDROPS.darkRoom as (typeof BACKDROPS)['darkRoom']);
       const g = new GeoBuilder();
       const z0 = -(su.s0 + 0.02), z1 = -(su.s1 - 0.02);
@@ -193,8 +201,8 @@ export class ReflectSurfaces implements ViewSystem {
       g.quad([xa, H, z1], [xc, H, z1], [xc, H, z0], [xa, H, z0], bd.ceil);
       g.quad([xa, 0, z1], [xc, 0, z1], [xc, H, z1], [xa, H, z1], mixHex(bd.floor, bd.bottom, 0.5));
       g.quad([xc, 0, z0], [xa, 0, z0], [xa, H, z0], [xc, H, z0], mixHex(bd.floor, bd.bottom, 0.5));
-      if (hq && su.kind !== 'window') {
-        // 镜中走廊的灯带（每 2 m 一盏，淡）
+      if (hq && su.kind !== 'window' && ((su.backdrop ?? 'darkRoom') === 'darkRoom' || su.backdrop === 'mirrorChunk')) {
+        // 镜中走廊的灯带（每 2 m 一盏，淡；只有走廊式的暗房间有）
         for (let s = su.s0 + 1; s < su.s1 - 0.5; s += 2) {
           const xm = sign * (HALF + ROOM * 0.55);
           g.box([xm, H - 0.02, -s], [0.12, 0.02, 1.0], 0x6d7a80, { faces: '-y' });
@@ -208,13 +216,7 @@ export class ReflectSurfaces implements ViewSystem {
       room.matrixAutoUpdate = false; room.updateMatrix();
       group.add(room);
       // 玻璃叠加层
-      const gg = new THREE.PlaneGeometry(su.s1 - su.s0, v.y1 - v.y0);
-      this.geos.push(gg);
-      const glass = new THREE.Mesh(gg, su.kind === 'window' ? this.windowGlassMat : this.glassMat);
-      glass.position.set(sign * (HALF - 0.004), floorY + (v.y0 + v.y1) / 2, -(su.s0 + su.s1) / 2);
-      glass.rotation.y = sign < 0 ? Math.PI / 2 : -Math.PI / 2;
-      glass.renderOrder = RENDER_ORDER.glass;
-      glass.updateMatrix(); glass.matrixAutoUpdate = false;
+      const glass = this.sideGlass(su, v, sign, floorY);
       group.add(glass);
       room.position.y = floorY; room.updateMatrix();
       if (su.chipped) group.add(this.chip(sign * (HALF - 0.006), floorY + v.y1 - 0.25, -(su.s1 - 0.3), sign < 0 ? Math.PI / 2 : -Math.PI / 2));
@@ -299,6 +301,18 @@ export class ReflectSurfaces implements ViewSystem {
       return v;
     }
     return null;
+  }
+
+  /** 侧面镜子 / 窗的玻璃叠加层（贴在墙面内侧 4 mm）。 */
+  private sideGlass(su: CompiledSurface, v: SurfaceView, sign: -1 | 1, floorY: number): THREE.Mesh {
+    const gg = new THREE.PlaneGeometry(su.s1 - su.s0, v.y1 - v.y0);
+    this.geos.push(gg);
+    const glass = new THREE.Mesh(gg, su.kind === 'window' ? this.windowGlassMat : this.glassMat);
+    glass.position.set(sign * (HALF - 0.004), floorY + (v.y0 + v.y1) / 2, -(su.s0 + su.s1) / 2);
+    glass.rotation.y = sign < 0 ? Math.PI / 2 : -Math.PI / 2;
+    glass.renderOrder = RENDER_ORDER.glass;
+    glass.updateMatrix(); glass.matrixAutoUpdate = false;
+    return glass;
   }
 
   private chip(x: number, y: number, z: number, ry: number): THREE.Mesh {

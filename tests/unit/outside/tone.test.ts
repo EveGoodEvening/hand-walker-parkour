@@ -8,7 +8,7 @@ import { getKit } from '../../../src/core/registry';
 import { createRng } from '../../../src/core/rng';
 import type { KitId } from '../../../src/core/types';
 import { C, hsv } from '../../../src/render/kits/outside/lib/colors';
-import { HALF } from '../../../src/render/kits/outside/lib/kit';
+import { HALF, ROOM_DEPTH } from '../../../src/render/kits/outside/lib/kit';
 import { DARK_LIFT, Tone, darkLift, lin, neutralInverse, neutralTone, presetOf, screenColor, type Lin3 } from '../../../src/render/kits/outside/lib/tone';
 import '../../../src/render/kits/outside/plaza';
 import '../../../src/render/kits/outside/street';
@@ -170,15 +170,21 @@ describe('发光体的 aSteady（WP3 的 kit 约定：窗不跟灯走，灯头�
     expect(zero).toBeGreaterThan(0);
     expect(one).toBeGreaterThan(0);
   });
-  it('梦里的镜中广场（雾色的背墙）不跟灯走：没有灯，也不能被 LampField 压暗', () => {
+  // 视觉修订（VIS-outside）：镜中广场的背墙以前是 emissive 的雾色，4-5 的灰一路加深时它还亮着，成了黑盒子里的一块白屏。
+  // 现在背墙是 Lambert（会进雾、跟着 dreamGray 的半球光一起变暗），广场上也没有灯：LampField 压不到它。
+  it('梦里的镜中广场（雾色的背墙）不发光、不跟灯走：背墙在 static 里，发光体（若有）都不跟灯', () => {
     const ch = chunks('plaza', 'gray', 'low', { kit: 'plaza', variant: 'gray', beats: 60, surfaces: [mirror('bigMirror', 'R', 130, 138, [0.1, 2.6])] });
-    let n = 0;
+    let back = 0;
     for (const k of ch) {
-      if (!k.emissive) continue;
-      const st = k.emissive.getAttribute('aSteady');
-      expect(st).toBeTruthy();
-      for (let i = 0; i < st.count; i++) { expect(st.getX(i)).toBe(1); n++; }
+      expect(k.lamps).toEqual([]);
+      if (k.emissive) {
+        const st = k.emissive.getAttribute('aSteady');
+        expect(st).toBeTruthy();
+        for (let i = 0; i < st.count; i++) expect(st.getX(i)).toBe(1);
+      }
+      const pos = k.static.getAttribute('position');
+      for (let i = 0; i < pos.count; i++) if (Math.abs(pos.getX(i) - (HALF + ROOM_DEPTH - 0.02)) < 1e-3) back++;
     }
-    expect(n).toBeGreaterThan(0);
+    expect(back).toBeGreaterThan(0);
   });
 });
