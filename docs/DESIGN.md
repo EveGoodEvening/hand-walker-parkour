@@ -622,7 +622,7 @@ export function patchLambert(mat: THREE.MeshLambertMaterial, u: LampFieldUniform
 | 归属 | 纹理 |
 |---|---|
 | WP3 `textures/common.ts` | `noise`、`chalkNoise`、`note`（空白 / 简笔画 / 折叠 / 背面字）、`dirtyGlass`、`crackLine`、`lampStreak`、`lightPool`、`ring`、`blobShadow` |
-| WP3 `textures/school.ts` | `terrazzo`（底色加两层值噪声；每平方米约 2900 颗 3–6 边形石子，半径 0.6–3.5 px，颜色按 35 / 30 / 15 / 12 / 8% 抽取；每 1 m 一道 2 px 铜条）、`plaster`（水渍、发丝裂纹）、`wainscot`（离地 5–15 cm 处有黑色鞋踢痕，正好在主角视线高度）、`ceiling`、`tile`、`chalkboard(text)`（每个字按 ±0.8 px 偏移、以 0.35 不透明度画 5 遍，再随机擦掉斑点；`tremble` 时最后一个字抖动，拖出一道粉笔灰）、`doorPlate(text)`、`dutyRoster` |
+| WP3 `textures/school.ts` | `terrazzo`（底色加两层值噪声；每平方米约 2900 颗 3–6 边形石子，半径 0.6–3.5 px，颜色按 35 / 30 / 15 / 12 / 8% 抽取；每 1 m 一道 2 px 铜条）、`plaster`（水渍、发丝裂纹）、`wainscot`（离地 5–15 cm 处有细长、大致水平的黑色鞋踢痕，正好在主角视线高度）、`ceiling`、`tile`、`chalkboard(text)`（每个字按 ±0.8 px 偏移、以 0.35 不透明度画 5 遍，再随机擦掉斑点；`tremble` 时最后一个字抖动，拖出一道粉笔灰）、`doorPlate(text)`、`dutyRoster` |
 | WP4 `textures/outdoor.ts` | `asphaltWet`、`graffitiHand`（卷帘门上的巨大手掌，五指朝下）、`adRunner`（跑鞋广告剪影，边角翘起）、`trackRubber`（橡胶颗粒加白色车道线）、`plazaTile`、`ceilingCrack`（形状：河或手）、`palmEye`（生命线与智慧线交叉处的眼，4 帧眨眼）、`bedSheet`、`skyGradient`、`busInterior` |
 
 - **雨**（WP4）：一个 `LineSegments`，用自定义 `ShaderMaterial`：`y = mod(y0 − t·speed, H)`，落在一个跟随镜头的盒子里，雾在着色器里手算。线段数：高 1200 / 中 600 / 低 250。**1 次 draw call。** 水洼涟漪走地面贴花。
@@ -1338,7 +1338,7 @@ export interface SurfaceDef {
   side: 'L' | 'R' | 'end' | 'floor';
   from: number; to: number;                        // 拍
   lane?: Lane; y?: [number, number]; chipped?: boolean;
-  backdrop?: 'darkRoom' | 'mirrorChunk' | 'playground' | 'nightStreet' | 'evening';
+  backdrop?: 'darkRoom' | 'washroom' | 'mirrorChunk' | 'playground' | 'nightStreet' | 'evening';
   text?: string;                                   // doorPlate 专用：「高二（7）班」
 }
 export interface WindowDef { id?: string; from: number; to: number; type: 'rest' | 'lookBack' | 'ask'; auto?: boolean; gain?: 0 | 1; then?: TimedEventDef[] }
@@ -1656,7 +1656,7 @@ export default {
       id: '1-3', kind: 'run', kit: 'washroom', variant: 'morning', atmosphere: 'morning', surface: 'tile',
       beats: 72, stride: 1.0, cadence: 4.4,
       follower: { mode: 'hidden' },
-      surfaces: [{ id: 'wcMirror', kind: 'mirror', side: 'L', from: 8, to: 60, y: [0.25, 1.6], backdrop: 'darkRoom' }],
+      surfaces: [{ id: 'wcMirror', kind: 'mirror', side: 'L', from: 8, to: 60, y: [0.25, 1.6], backdrop: 'washroom' }],
       rows: [[14, '.W.', 3], [27, '.L.'], [49, 'W..', 3], [49, '..L'], [54, '.H.'], [63, 'L..']],
       items: [
         { at: 20, lane: 1, kind: 'stallDoor', behavior: { type: 'swing', period: 1.8, phase: 0 } },
@@ -2595,3 +2595,8 @@ export const QUALITY: Record<QualityTier, Omit<QualityProfile, 'pixelRatio'> & {
 - 原本完整着色的场景与陈默不叠加轮廓。5-7 → 5-8 仍用黑场遮住弱化轮廓到完整着色的切换；梦中 4-2 → 4-3 仍无缝。
 - 复用现有人物几何体与实例池：腿的森林低 / 中 / 高画质最多 3 / 5 / 6 次 draw call，低画质五章跑段与站立段按采样帧检查 ≤ 8k 三角形。
 
+### 10.8 厕所镜与墙裙踢痕（2026-10-17，视觉审查 school-sets-5/6/7）
+
+- 厕所镜（1-3 `wcMirror`、5-4 `wcMirror5`）的 `backdrop` 改为 `washroom`：镜中房间仍比真实房间暗（约为瓷砖墙面亮度的一半），但画成同一间厕所的倒影——浅灰地砖与 0.3 m 砖缝、背墙上对面隔间门板与隔板竖线、隔间顶上的横梁与灰泥、亮一些的灯带倒影。kit 层（`shell.ts` 的 `WASH_ROOM`）与 WP5 层（`BACKDROPS.washroom`）用同一套颜色。走廊端墙镜、凹处镜仍用 `darkRoom`。仍是「墙上开洞 + 镜中房间」，不用模板。
+- 镜子下面的洗手盆：盆浅一些（外沿 x = −HW + 0.37），龙头坐在盆后沿，下水管落到镜框下沿；kit 按镜面对称画出盆、龙头、水管的倒影（同一个几何体，不加 draw call），洞前的东西都有倒影，不悬在暗处。镜子下面的盆每个墙面周期一个；替身要被看清的那几段（`doubleMod`、带 `attachBehind` 的 `double` 前 3 拍到后 12 拍：1-3 @35–@50，5-4 @43–@58）不放盆，5-4 @62 附近仍有盆（滴水声）。
+- 墙裙踢痕：每个 3.2 m 周期 14 道细长、低不透明度、大致水平的擦痕（长 4–13 cm，粗 0.5–1.0 cm，倾斜 ±0.15 rad），不再是实心椭圆。
