@@ -19,7 +19,7 @@ import { OGeo, keyRng } from '../../kits/outside/lib/geo';
 import { Tone } from '../../kits/outside/lib/tone';
 import { liveList } from './lib/live';
 import { stencilInside, stencilWrite } from './lib/mats';
-import { SetBuild, crawlerFigure } from './lib/setkit';
+import { SetBuild, submergedWalker } from './lib/setkit';
 
 export const WATER_EDGE_Z = 0.2;
 /**
@@ -29,8 +29,25 @@ export const WATER_EDGE_Z = 0.2;
  * 修复轮 U5 第二轮：−0.6 → −2.1（§10.2 是 −1.9）。替身离镜头太近时只能从正上方看，倒影先露出两只鞋底，头藏在肩膀后面。
  */
 export const WATER_DOUBLE_Z = -2.1;
-/** 人群在替身前方（靠岸、靠镜头的一侧）让开的半宽（米）：镜头看它的脸的视线从这条走廊里穿过。 */
-export const CROWD_CLEAR_X = 1.0;
+/**
+ * 人群在替身前方（靠岸、靠镜头的一侧）让开的半宽（米）：镜头看它的脸的视线从这条走廊里穿过。
+ * 视觉修订第二轮：1.0 → 0.6。1.0 把画面中段两边能放人的地方全占了（那里的画面半宽只有 1.2–1.5 m），人群只剩画面上沿一排；
+ * 人只有 0.2 m 深，视线只在替身跟前才那么浅，0.6 足够（compose.test 的「脸前没人」三档都过）。
+ */
+export const CROWD_CLEAR_X = 0.6;
+/** 水里的人的缩放。 */
+export const CROWD_SCALE = 0.62;
+/**
+ * 水里的人能不能放在 (x, z)：落在 waterDown 横屏画面里（镜头在 z = 0.55、高 0.85 m：z ∈ [−4.0, −0.7]；该处画面半宽约 0.83 + 0.68·|z|，
+ * 留 15% 和 0.45 m（半个人长）的边，按 4-6 的镜头投影量的），也不在替身前面那条让给视线的走廊里、不叠在它的腿上（修复轮 U5 第三轮：中画质时有一个正好挡住半张脸和一只眼睛）。
+ */
+export function crowdSpotOk(x: number, z: number): boolean {
+  if (z > -0.7 || z < -4.0) return false;
+  if (Math.abs(x) > 0.85 * (0.83 + 0.68 * -z) - 0.45) return false;
+  if (z > WATER_DOUBLE_Z - 0.2 && Math.abs(x) < CROWD_CLEAR_X) return false;
+  // 替身倒着的两条腿（画面上在它的头上方）也留出来，不让人叠在腿上
+  return !(z > WATER_DOUBLE_Z - 1.1 && Math.abs(x) < 0.6);
+}
 /** 双手按进水里的位置（相对 STILL_ORIGIN，与 WP5 handsInWater 的手一致）：开场的涟漪从这两点扩散。 */
 export const WATER_HAND_X = 0.3, WATER_HAND_Z = -0.07;
 /** 水面范围 [x0, z0, x1, z1]（y = 0 平面，z0 < z1）。 */
@@ -101,19 +118,27 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   if (ctx.stencil) {
     const cg = new OGeo();
     const rng = keyRng('water', 'crowd');
-    const n = ctx.quality.tier === 'low' ? 14 : 26;
+    const spots: Array<[number, number]> = [];
+    const n = ctx.quality.tier === 'low' ? 10 : 18;   // 画面里能放下的大约就是这么多（再多就挤成一堆）
     const cx = 0, cz = WATER_DOUBLE_Z;
-    // 围着中间站着的「我」爬的人（修复轮 U5）：缩小到 0.6、压暗，离得远一些；水面叠加层越远越浅，像隔着一层雾
+    // 围着中间站着的「我」用手走路的人（修复轮 U5）：水面叠加层越远越浅，像隔着一层雾。
+    // 视觉修订：0.57 的 crawlerFigure 从下面看只剩两根带浅色帽的立柱，像漂着的凳子；换成从下面看也读得出人的
+    // submergedWalker（和 4-5 广场上的人同一身灰校服、肤色的头和手），CROWD_SCALE 倍，头全都朝着中间。
+    // 第二轮：以前按圆环随便撒，离镜头 1 m 的人在只有 0.85 m 高的镜头里大得出画，画面两边是一个个被切掉一半的箱子。
+    // 现在只放在 waterDown 横屏画面里看得到的那片水上（crowdSpotOk），整个人落在画面里。
     cg.mirrored(new THREE.Matrix4().makeScale(1, -1, 1), () => {
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2 + rng.next() * 0.3, r = 1.3 + rng.next() * 3.0;
+      let placed = 0;
+      for (let k = 0; k < 600 && placed < n; k++) {
+        const a = rng.next() * Math.PI * 2, r = 1.0 + rng.next() * 2.6, tone = rng.next();
         const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r * 0.8;
-        if (z > WATER_EDGE_Z - 0.4) continue;
-        // 镜头（岸上，斜着往下看）和它的脸之间不放人（修复轮 U5 第三轮：中画质 26 个人时，有一个正好挡住半张脸和一只眼睛）
-        if (z > cz - 0.2 && Math.abs(x - cx) < CROWD_CLEAR_X) continue;
+        if (!crowdSpotOk(x, z)) continue;
+        // 和已经放下的人至少隔 0.55 m（不叠成一堆）
+        if (spots.some(([px, pz]) => Math.hypot(px - x, pz - z) < 0.55)) continue;
+        spots.push([x, z]);
+        placed++;
         const yaw = Math.atan2(-(cx - x), -(cz - z));
-        const tone = rng.next();
-        crawlerFigure(cg, x, z, yaw, mix(0x5c656c, 0x4c555c, tone), mix(C.skin, 0x7a8286, 0.75), 0.57, 0x454c52);
+        const body = mix(mix(C.crowd, C.crowdDark, tone), C.plazaWater, 0.3);
+        submergedWalker(cg, x, z, yaw, body, mix(C.skin, C.plazaWater, 0.35), mix(C.hair, C.plazaWater, 0.3), CROWD_SCALE, mix(C.pants, C.plazaWater, 0.55));   // 裤子也泡淡：近处两条腿不读成深色的长条
       }
     });
     tone.applyArrays(cg.col, cg.nor, cg.pos, 'static');

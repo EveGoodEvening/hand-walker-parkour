@@ -13,11 +13,15 @@ import type { CompiledSurface } from '../../../../levels/schema';
 import { C, mix, shade } from './colors';
 import { OGeo } from './geo';
 import { Tone } from './tone';
+import { DREAM_GRAY_END } from '../../../atmosphere';
 
 /** 开口所在的墙面：x = ±HALF（与 compile.ts 的 HALF_WALL 一致）。 */
 export const HALF = CORRIDOR_WIDTH / 2;
 /** 镜中房间深度（§5.8：≥ 3.8 m）。 */
 export const ROOM_DEPTH = 3.8;
+
+/** 4-5 镜碑朝来路那一端的外面（受正面主光）的明度系数。 */
+export const NEAR_END_GRAY = 0.6;
 
 export type SideKey = 'L' | 'R';
 export const sideSign = (k: SideKey): -1 | 1 => (k === 'L' ? -1 : 1);
@@ -140,7 +144,7 @@ export function wallWithOpenings(w: ChunkWork, side: SideKey, sa: number, sb: nu
     piece(a, b, 0, o.y0);
     piece(a, b, o.y1, yTop);
     const surf = w.surface(o);
-    const style: RoomStyle = surf?.backdrop === 'playground' || surf?.backdrop === 'evening' ? 'bright' : surf?.backdrop === 'nightStreet' ? 'nightStreet' : room;
+    const style: RoomStyle = surf?.backdrop === 'playground' || surf?.backdrop === 'evening' || surf?.backdrop === 'plaza' ? 'bright' : surf?.backdrop === 'nightStreet' ? 'nightStreet' : room;
     // 开口跨 chunk 时只在真正的两端画端墙，否则房间中间会多出一堵墙
     mirrorRoom(w, side, a, b, style, 3.0, Math.abs(a - o.s0) < 1e-4, Math.abs(b - o.s1) < 1e-4);
     // 窗台（墙厚）
@@ -181,17 +185,31 @@ export function mirrorRoom(w: ChunkWork, side: SideKey, sa: number, sb: number, 
   const inward = (-sg) as 1 | -1;
   if (style === 'bright') {
     // 广场 / 操场：一整块浅灰的「镜碑」，朝车道的一面整面是镜子（「没有边框」）。
-    // 里面：同一片发白的地面，背墙和两端是雾色（从镜子里看过去就是更远的雾）；外面：和地面同样的材质，受光照、会进雾。
+    // 里面：同一片地面（gray 变体用 4-5 那种更灰的地面），背墙和两端是「镜子里更远的雾」。
+    // 外面：和地面同样的材质，受光照、会进雾。
     const top = Math.min(H, 2.75);
     const shell = mix(C.plaza, C.crowd, 0.12);
-    w.stat.flat(0.001, xa0, xa1, za, zb, C.plaza, true);
-    w.emi.wallX(xb - sg * 0.02, za, zb, 0, top, C.dreamFog, inward);
-    if (nearEnd) w.emi.wallZ(za - 0.02, xa0, xa1, 0, top, C.dreamFog, -1);
-    if (farEnd) w.emi.wallZ(zb + 0.02, xa0, xa1, 0, top, C.dreamFog, 1);
+    const gray = w.ctx.variant === 'gray';
+    const floor = gray ? mix(C.plaza, 0xa9b0b3, 0.35) : C.plaza;
+    w.stat.flat(0.001, xa0, xa1, za, zb, floor, true);
+    if (gray) {
+      // 4-5：走到镜子跟前（@186 起）时 dreamGray 的渐变已经走完九成以上，天就是终点的雾色。镜子里的背墙和两端
+      // 直接画成这个雾色的发光面（不受光）：和身后的天一样暗，读成「镜子里的广场一直延伸到雾里」。
+      // Lambert 不行：两端的内面正对着身后的低角度主光，比地面还亮，在变暗的广场上是一块发白的屏（VIS-outside 第二轮）。
+      w.emi.wallX(xb - sg * 0.02, za, zb, 0, top, DREAM_GRAY_END.fog, inward);
+      if (nearEnd) w.emi.wallZ(za - 0.02, xa0, xa1, 0, top, DREAM_GRAY_END.fog, -1);
+      if (farEnd) w.emi.wallZ(zb + 0.02, xa0, xa1, 0, top, DREAM_GRAY_END.fog, 1);
+    } else {
+      w.stat.wallX(xb - sg * 0.02, za, zb, 0, top, C.dreamFog, inward);
+      if (nearEnd) w.stat.wallZ(za - 0.02, xa0, xa1, 0, top, shade(C.dreamFog, 0.96), -1);
+      if (farEnd) w.stat.wallZ(zb + 0.02, xa0, xa1, 0, top, shade(C.dreamFog, 0.96), 1);
+    }
     // 外壳（Lambert）
     w.stat.wallX(xb, za, zb, 0, top, shade(shell, 0.95), (sg as 1 | -1));
     w.stat.flat(top, xa0, xa1, za, zb, shade(shell, 1.04), true);
-    if (nearEnd) w.stat.wallZ(za, xa0, xa1, 0, top, shell, 1);
+    // 朝来路的一端正对着身后的低角度主光（地面只被掠射）。4-5 的半球光一路减弱、主光不变，按原色它会比地面亮出一截，
+    // 读成一块发光的屏：gray 变体压到地面以下（画面上比镜碑前的地面略暗），bright 变体压一点
+    if (nearEnd) w.stat.wallZ(za, xa0, xa1, 0, top, shade(shell, gray ? NEAR_END_GRAY : 0.84), 1);
     if (farEnd) w.stat.wallZ(zb, xa0, xa1, 0, top, shade(shell, 0.9), -1);
     return;
   }

@@ -116,6 +116,27 @@ describe('开口（车窗、镜子、水面）给 WP5 的替身用（§5.8）', 
     expect(names).toContain('blurSilhouette');
     expect(meshes(flat).find((m) => m.name === 'waterMask')!.visible).toBe(false);
   });
+  // 视觉修订第二轮（VIS-outside）：水里的人以前按圆环随便撒，离镜头 1 m 的人大得出画，画面两边是被切掉一半的「箱子」。
+  // 现在每个人整个落在 waterDown 横屏画面里：4-6 镜头（z = 0.55、高 0.85、fov 50）在水面下 0.1 m 处的画面半宽约 0.83 + 0.68·|z|，
+  // 画面上沿约在 z = −4.6（tests/unit/actors 的场景台投影量的）。中画质人更多。
+  it('水里的人整个落在横屏画面里（不在画面边上被切开），中画质比低画质多', () => {
+    const verts = (tier: 'low' | 'medium') => {
+      const root = getSet('water')!.build(viewContext(tier, true), 'default');
+      const crowd = meshes(root).find((m) => m.name === 'waterCrowd')!;
+      return crowd.geometry.getAttribute('position');
+    };
+    const lo = verts('low'), md = verts('medium');
+    for (const p of [lo, md]) {
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), z = p.getZ(i);
+        expect(z).toBeLessThan(-0.2);
+        expect(z).toBeGreaterThan(-4.6);
+        expect(Math.abs(x)).toBeLessThan(0.83 + 0.68 * -z);
+      }
+    }
+    expect(lo.count).toBeGreaterThan(0);
+    expect(md.count).toBeGreaterThanOrEqual(lo.count * 1.4);
+  });
 });
 
 describe('色彩（附录 A-9）：第四、五章的 set 没有暖色；第三章只许路灯碎金', () => {

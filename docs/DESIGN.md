@@ -1338,7 +1338,7 @@ export interface SurfaceDef {
   side: 'L' | 'R' | 'end' | 'floor';
   from: number; to: number;                        // 拍
   lane?: Lane; y?: [number, number]; chipped?: boolean;
-  backdrop?: 'darkRoom' | 'washroom' | 'mirrorChunk' | 'playground' | 'nightStreet' | 'evening';
+  backdrop?: 'darkRoom' | 'washroom' | 'mirrorChunk' | 'playground' | 'nightStreet' | 'evening' | 'plaza';   // plaza：镜中房间由广场 kit 画，WP5 只画玻璃
   text?: string;                                   // doorPlate 专用：「高二（7）班」
 }
 export interface WindowDef { id?: string; from: number; to: number; type: 'rest' | 'lookBack' | 'ask'; auto?: boolean; gain?: 0 | 1; then?: TimedEventDef[] }
@@ -2610,3 +2610,10 @@ export const QUALITY: Record<QualityTier, Omit<QualityProfile, 'pixelRatio'> & {
 - 镜子下面的洗手盆：盆浅一些（外沿 x = −HW + 0.37），龙头坐在盆后沿，下水管落到镜框下沿；kit 按镜面对称画出盆、龙头、水管的倒影（同一个几何体，不加 draw call），洞前的东西都有倒影，不悬在暗处。镜子下面的盆每个墙面周期一个；替身要被看清的那几段（`doubleMod`、带 `attachBehind` 的 `double` 前 3 拍到后 12 拍：1-3 @35–@50，5-4 @43–@58）不放盆，5-4 @62 附近仍有盆（滴水声）。
 - 墙裙踢痕：每个 3.2 m 周期 14 道细长、低不透明度、大致水平的擦痕（长 4–13 cm，粗 0.5–1.0 cm，倾斜 ±0.15 rad），不再是实心椭圆。
 
+
+### 10.8 户外场景视觉修订（2026-10）
+
+- 4-5 大镜子：`SurfaceDef.backdrop` 增加 `'plaza'`。镜中房间只由 plaza kit 画（和 gray 变体同一种地面；背墙、两端是 dreamGray 终点雾色 #5D6468 的发光面，走到镜子跟前（@186 起）时天已经是这个颜色，镜子里读成更远的雾）；镜碑朝来路的一端外面压到地面以下（正对身后的主光，按原色是画面上最亮的一块）；WP5 对这种背景只画玻璃，不再叠走廊式的暗房间（墙裙、灯带）。走廊灯带只给 `darkRoom` / `mirrorChunk`。广场人群带（2.3–6.8 m）和镜中房间重叠：站着不动的路人不放进侧墙镜子的房间里（`npc/crowds.ts` 的 `inMirrorRoom`），镜子里只有一动不动的「我」，不再被站在同一位置的人挡住。
+- 4-5 雾：`fog` cue 的 near 20 → 8（far 仍是 28，ATMO_RAMPS 只按 far 走）。以前 8 m 宽的雾带在追尾机位里只有十几个像素，地面在天边断成一道硬线，提前泄露了 4-6「广场突然到了尽头」。段尾的水映着天：底色往广场浅灰提 30%。
+- 3-3 校门顶梁压在柱帽上，两对立柱各有一根顶梁（门牌只在朝来路的一根上）；3-6 手掌涂鸦按真手的比例重画（瘦高、四指并拢、拇指在开间柱之内）；3-7 段尾的单元门是自家那栋楼的一楼（楼面连到两侧的楼，15–18 m，有冷色的窗）；5-3 停着的车挪到 x = 3.8，不再被梧桐穿过，和树位重合的路灯前移 1.5 m。
+- 3-9 卫生间门挪到 x = +0.8（让开贴地镜头里主角的头），门缝光 2.5 cm、门前一点冷光；4-4 掌心的手改成圆头、并拢的手指，掌心改成圆角轮廓，拇指从大鱼际连出、同色；4-6 水里的人换成从下面看也读得出人的倒影（和 4-5 广场上的人同一身灰校服、肤色的头和手，没有浅色手掌垫、没有深色的大方块头），0.62 倍、头朝着中间，只放在 waterDown 横屏画面里看得见的那片水上（`crowdSpotOk`：整个人在画面里、不挡替身的脸和腿），低 / 中高画质 10 / 18 人；替身前面让给视线的走廊半宽 1.0 → 0.6 m。3-9 第二轮：门板改成浅色（家里的白漆木门）、门框压暗，门缝光 3 cm、冷灰蓝，门前的冷光加强。

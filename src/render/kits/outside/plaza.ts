@@ -86,14 +86,16 @@ function water(w: ChunkWork, sW: number): void {
   const zW = w.z(Math.max(sW, w.s0));
   const zEnd = r ? w.z(w.s1) - 60 : zW;
   if (!r && sW >= w.s1) return;
-  // 一大片灰色的水，一直铺到雾里；水边一道更深的线，水面上几条亮一点的横带（映着天）
-  w.floor.flat(-0.03, -80, 80, zW, zEnd, C.plazaWater);
+  // 一大片灰色的水，一直铺到雾里；水边一道更深的线，水面上几条亮一点的横带（映着天）。
+  // 水映着天：底色往广场的浅灰提一点，远处融进雾色，不在天边留一条深色的硬带
+  const waterCol = mix(C.plazaWater, C.plaza, 0.3);
+  w.floor.flat(-0.03, -80, 80, zW, zEnd, waterCol);
   w.floor.flat(-0.029, -80, 80, zW, zW - 0.12, shade(C.plazaWater, 0.75));
   const rng = keyRng(w.segId, 'water');
   for (let i = 0; i < 6 + w.q * 4; i++) {
     const z = zW - 1.5 - rng.next() * 40, len = 0.1 + rng.next() * 0.3;
     const x0 = -30 + rng.next() * 40, x1 = x0 + 6 + rng.next() * 24;
-    w.floor.flat(-0.028, x0, x1, z, z - len, mix(C.plazaWater, C.plazaSky, 0.18 + rng.next() * 0.12));
+    w.floor.flat(-0.028, x0, x1, z, z - len, mix(waterCol, C.plazaSky, 0.18 + rng.next() * 0.12));
   }
   w.stat.wallZ(zW - 0.001, -80, 80, -0.03, 0, shade(C.plaza, 0.7), 1);
 }

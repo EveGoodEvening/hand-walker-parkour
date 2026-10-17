@@ -599,8 +599,10 @@ export class DoubleSystem implements ViewSystem {
         else r.sAhead += (target - r.sAhead) * (1 - Math.exp(-step / 0.5));
         if (scripted) r.offS = r.offBase + (r.speedFactor - 1) * (sNow - r.spdS0);
         root[0] = v.planeX - v.sign * d;                  // 反射前的位置（走廊里）
-        // 沿 s 限制在镜面范围内（离两端各 0.35 m）：玩家接近镜子远端时，替身停在镜子里，不会提前滑进实墙后面
-        const sD = sNow + r.sAhead + r.offS, m = Math.min(0.35, (v.s1 - v.s0) / 2);
+        // 沿 s 限制在镜面范围内（离两端各 0.6 m）：玩家接近镜子远端时，替身停在镜子里，不会提前滑进实墙后面。
+        // 以前是 0.35 m：根在端墙里 0.35 m，但站姿的胸和头比根靠前约 0.3 m，会从镜中房间的端墙外面戳出来（4-5 的镜碑上
+        // 冒出半个「我」）
+        const sD = sNow + r.sAhead + r.offS, m = Math.min(0.6, (v.s1 - v.s0) / 2);
         root[2] = clamp(sD, v.s0 + m, v.s1 - m);
         if (scripted) {
           // 脚本姿势的根高度（clip 的 lift）加在地面上；记忆里倒立的人以手腕为轴悬在窗台上沿（视觉修复 actors-7：以前在窗台下 0.2 m，

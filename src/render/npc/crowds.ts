@@ -49,6 +49,23 @@ export function bandOf(kit: KitId): [number, number] {
 }
 
 const HALF_PI = Math.PI / 2;
+/** 侧墙镜子的平面（compile.ts HALF_WALL）与镜中房间的深度（kits/outside/lib/kit.ts ROOM_DEPTH）。 */
+const MIRROR_PLANE = 1.8, MIRROR_ROOM = 3.8;
+
+/**
+ * 站着不动的人落在侧面镜子后面的「镜中房间」里（广场的人群带 2.3–6.8 m 和 4-5 的镜碑重叠）：不放。
+ * 以前他们就站在镜碑里，从车道看像镜子里的人群，正好站在替身的位置上，把镜中一动不动的「我」挡得只剩两只袖子。
+ * 镜子里只有「我」（VIS-outside 第二轮）。走廊的镜子人群带在墙里面（≤ 1.6），不受影响。
+ */
+function inMirrorRoom(def: RunSegmentDef, sAt: (b: number) => number, s: number, x: number): boolean {
+  for (const su of def.surfaces ?? []) {
+    if (su.kind !== 'mirror' || (su.side !== 'L' && su.side !== 'R')) continue;
+    if ((su.side === 'L') !== (x < 0)) continue;
+    const ax = Math.abs(x);
+    if (ax > MIRROR_PLANE - 0.1 && ax < MIRROR_PLANE + MIRROR_ROOM + 0.35 && s > sAt(su.from) - 0.4 && s < sAt(su.to) + 0.4) return true;
+  }
+  return false;
+}
 
 type SegLike = Pick<CompiledSegment, 'index' | 's0' | 's1' | 'stride' | 'npcGroups' | 'def' | 'obstacles'>;
 
@@ -74,6 +91,7 @@ export function expandSegment(seed: number, seg: SegLike, out: Decor[], groups: 
     const gaze: Decor['gaze'] = g.gaze === 'turnShoes' ? 'turnShoes' : g.gaze === 'center' ? 'center' : 'none';
     const sAt = (b: number) => seg.s0 + b * seg.stride;
     const push = (d: Omit<Decor, 'group' | 'seg' | 'gaze' | 'special' | 'look'> & { look?: Look }): void => {
+      if (d.speed === 0 && inMirrorRoom(def, sAt, d.s, d.x)) return;
       out.push({ ...d, group, seg: seg.index, gaze, special: sp, look: d.look ?? (sp ? specialLook(sp) : lookFor(crowd, seed, `${def.id}:${key}:${out.length}`)) });
     };
     if (sp === 'monitor') {
