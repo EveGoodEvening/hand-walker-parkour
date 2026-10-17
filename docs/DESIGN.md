@@ -1338,7 +1338,7 @@ export interface SurfaceDef {
   side: 'L' | 'R' | 'end' | 'floor';
   from: number; to: number;                        // 拍
   lane?: Lane; y?: [number, number]; chipped?: boolean;
-  backdrop?: 'darkRoom' | 'mirrorChunk' | 'playground' | 'nightStreet' | 'evening';
+  backdrop?: 'darkRoom' | 'mirrorChunk' | 'playground' | 'nightStreet' | 'evening' | 'plaza';   // plaza：镜中房间由广场 kit 画，WP5 只画玻璃
   text?: string;                                   // doorPlate 专用：「高二（7）班」
 }
 export interface WindowDef { id?: string; from: number; to: number; type: 'rest' | 'lookBack' | 'ask'; auto?: boolean; gain?: 0 | 1; then?: TimedEventDef[] }
@@ -2595,3 +2595,10 @@ export const QUALITY: Record<QualityTier, Omit<QualityProfile, 'pixelRatio'> & {
 - 原本完整着色的场景与陈默不叠加轮廓。5-7 → 5-8 仍用黑场遮住弱化轮廓到完整着色的切换；梦中 4-2 → 4-3 仍无缝。
 - 复用现有人物几何体与实例池：腿的森林低 / 中 / 高画质最多 3 / 5 / 6 次 draw call，低画质五章跑段与站立段按采样帧检查 ≤ 8k 三角形。
 
+
+### 10.8 户外场景视觉修订（2026-10）
+
+- 4-5 大镜子：`SurfaceDef.backdrop` 增加 `'plaza'`。镜中房间只由 plaza kit 画（和 gray 变体同一种地面，背墙、两端是 Lambert 的雾灰，会进雾、随 dreamGray 一起变暗）；WP5 对这种背景只画玻璃，不再叠走廊式的暗房间（墙裙、灯带）。走廊灯带只给 `darkRoom` / `mirrorChunk`。
+- 4-5 雾：`fog` cue 的 near 20 → 8（far 仍是 28，ATMO_RAMPS 只按 far 走）。以前 8 m 宽的雾带在追尾机位里只有十几个像素，地面在天边断成一道硬线，提前泄露了 4-6「广场突然到了尽头」。段尾的水映着天：底色往广场浅灰提 30%。
+- 3-3 校门顶梁压在柱帽上，两对立柱各有一根顶梁（门牌只在朝来路的一根上）；3-6 手掌涂鸦按真手的比例重画（瘦高、四指并拢、拇指在开间柱之内）；3-7 段尾的单元门是自家那栋楼的一楼（楼面连到两侧的楼，15–18 m，有冷色的窗）；5-3 停着的车挪到 x = 3.8，不再被梧桐穿过，和树位重合的路灯前移 1.5 m。
+- 3-9 卫生间门挪到 x = +0.8（让开贴地镜头里主角的头），门缝光 2.5 cm、门前一点冷光；4-4 掌心的手改成圆头、并拢的手指，掌心改成圆角轮廓，拇指从大鱼际连出、同色；4-6 水里的人换成从下面看也读得出人的倒影（深色的头、没有浅色手掌垫），0.75 倍、朝着中间。
