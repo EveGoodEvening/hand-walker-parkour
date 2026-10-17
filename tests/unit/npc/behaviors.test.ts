@@ -1,7 +1,7 @@
 // tests/unit/npc/behaviors.test.ts —— NPC 行为的纯函数（DESIGN.md §5.7 行为表）。
 import { describe, expect, it } from 'vitest';
 import {
-  GAZE, GAZE_TOTAL, PART, SHIFT, SILENCE, WALK, clapClosed, gazeAmount, gazeSince, partOffset, shiftBlend, silenceClock, silenceLevel,
+  GAZE, GAZE_TOTAL, LEG, PART, SHIFT, SILENCE, WALK, clapClosed, gazeAmount, gazeSince, partOffset, shiftBlend, silenceClock, silenceLevel,
   stretchActive, stretchVisual, walkPose,
 } from '../../../src/render/npc/behaviors';
 import { obstacleState } from '../../../src/render/npc/simBridge';
@@ -67,12 +67,32 @@ describe('walk / idle / 让一下 / 人墙移动 / 安静的一秒 / 鼓掌', ()
       walkPose(d, w);
       maxHip = Math.max(maxHip, Math.abs(w.hipL), Math.abs(w.hipR));
       maxKnee = Math.max(maxKnee, w.kneeL, w.kneeR); minKnee = Math.min(minKnee, w.kneeL, w.kneeR);
-      expect(w.hipL).toBeCloseTo(-w.hipR, 9);
+      // 两条腿相差半个周期。支撑期髋角不再是正弦（脚要踩住地面），所以不是 hipL = −hipR，而是右腿 = 左腿走过一步之后的姿势
+      const r = { hipR: w.hipR, kneeR: w.kneeR };
+      walkPose(d + WALK.stepLen, w);
+      expect(r.hipR).toBeCloseTo(w.hipL, 9);
+      expect(r.kneeR).toBeCloseTo(w.kneeL, 9);
     }
     expect(maxHip).toBeCloseTo(WALK.hipAmp, 2);
     expect(maxHip).toBeCloseTo(22 * DEG, 2);
     expect(maxKnee).toBeCloseTo(38 * DEG, 2);
     expect(minKnee).toBeCloseTo(3 * DEG, 2);
+  });
+  it('walk：最低的脚踝一直着地（起伏抵掉髋摆），支撑脚不沿 s 滑', () => {
+    const w = { hipL: 0, hipR: 0, kneeL: 0, kneeR: 0, bob: 0 };
+    // 与 LegForest 的正向运动学一致：大腿转 −hip，小腿再转 +knee；脚踝相对髋的高度、沿朝向的位置
+    const ay = (h: number, k: number) => w.bob - (LEG.thigh * Math.cos(h) + LEG.shin * Math.cos(k - h));
+    const az = (d: number, h: number, k: number) => d + LEG.thigh * Math.sin(h) + LEG.shin * Math.sin(h - k);
+    const stance: number[] = [];
+    for (let d = 0; d < 5; d += 0.004) {
+      walkPose(d, w);
+      expect(w.bob).toBeLessThanOrEqual(1e-9);
+      expect(Math.min(ay(w.hipL, w.kneeL), ay(w.hipR, w.kneeR)) + LEG.thigh + LEG.shin).toBeCloseTo(0, 3);
+      // 左腿第二个支撑期 [2.5, 3.5] 步长（一个周期两步；两头各让 1 cm）
+      if (d > 2.5 * WALK.stepLen + 0.01 && d < 3.5 * WALK.stepLen - 0.01) stance.push(az(d, w.hipL, w.kneeL));
+    }
+    expect(stance.length).toBeGreaterThan(100);
+    expect(Math.max(...stance) - Math.min(...stance)).toBeLessThan(0.01);
   });
   it('让一下：0.5 s 后开始，横移 0.6 m', () => {
     expect(PART).toEqual({ delay: 0.5, move: 0.35, dist: 0.6 });

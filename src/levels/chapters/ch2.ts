@@ -48,7 +48,8 @@ export default {
       id: '2-1', kind: 'run', kit: 'stairs', variant: 'dayDown', atmosphere: 'noon', surface: 'concrete',
       beats: 56, stride: 0.6, cadence: 4.6, stairs: { dir: 'down', risePerBeat: 0.15 },
       follower: { mode: 'absent', steady: 3 },
-      npcs: [{ id: 'stairWalkers', kind: 'walkers', from: 0, to: 56, side: 'both', density: 0.3, gaze: 'none' }],
+      // 楼梯右侧是扶手栏杆和楼梯井：下楼的人只贴左墙走（render/npc/crowds.ts bandOf）
+      npcs: [{ id: 'stairWalkers', kind: 'walkers', from: 0, to: 56, side: 'L', density: 0.55, gaze: 'none' }],
       rows: [
         [14, ['.', 'bag', '.']],                     // 台阶上的书包
         [28, ['.', '.', 'legs']],                    // 站在台阶上的人

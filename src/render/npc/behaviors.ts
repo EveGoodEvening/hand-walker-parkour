@@ -57,18 +57,37 @@ export function stretchVisual(tSeg: number, period: number, phase: number, outFr
   return Math.max(down, up);
 }
 
-/** 走路：腿绕髋摆动 ±22°，摆动腿的膝盖屈 0–35°，身体起伏（§5.7 walk）。dist 为走过的距离（米）。 */
+/** 腿长（米）：大腿、小腿。LegForest 的 BODY 用同一组数，走路的起伏按它算。 */
+export const LEG = { thigh: 0.43, shin: 0.4 } as const;
+
+/**
+ * 走路：腿绕髋摆动 ±22°，摆动腿的膝盖屈 0–35°，身体起伏（§5.7 walk）。dist 为走过的距离（米）。
+ * 支撑腿的脚踩住地面不滑：支撑期（走过一步长）里 sin(髋角) 随距离线性减小，脚踝相对髋的前后位置正好抵掉身体的前移
+ * （2 × 0.83 × sin 22° ≈ 0.62 = 步长）；摆动期按余弦缓入缓出。两条腿相差半个周期（右腿 = 左腿在 dist + 步长 时的姿势）。
+ * 起伏 bob ≤ 0：取两条腿里竖直方向伸得更长的那条，让它的脚踝正好落在地面高度（双支撑时两只脚都着地）。
+ * 以前髋角是正弦、起伏只有 ±0.9 cm：双支撑时两只脚都悬空约 5 cm，支撑脚前后滑 7 cm。
+ */
 export interface WalkPose { hipL: number; hipR: number; kneeL: number; kneeR: number; bob: number }
 export const WALK = { hipAmp: 22 * DEG, kneeMax: 35 * DEG, stepLen: 0.62 } as const;
+const SIN_AMP = Math.sin(WALK.hipAmp);
+/** 一条腿在相位 ph 的髋角与膝角。cos(ph) < 0 为支撑期（髋角从 +22° 减到 −22°），否则为摆动期。 */
+function legAt(ph: number): [number, number] {
+  const p = ph - Math.floor(ph / (2 * Math.PI)) * 2 * Math.PI;                  // [0, 2π)
+  const c = Math.cos(p);
+  let s: number;
+  if (p >= Math.PI / 2 && p < 1.5 * Math.PI) s = SIN_AMP * (1 - 2 * (p - Math.PI / 2) / Math.PI);  // 支撑：线性
+  else s = -SIN_AMP * Math.cos(((p < Math.PI / 2 ? p + Math.PI / 2 : p - 1.5 * Math.PI)));        // 摆动：−A → +A
+  // 摆动腿屈膝，支撑腿几乎伸直
+  return [Math.asin(s), WALK.kneeMax * Math.max(0, c) + 3 * DEG];
+}
+/** 腿在竖直方向的伸展：大腿转 −hip、小腿再转 +knee（与 LegForest 的正向运动学一致）。 */
+const legExt = (hip: number, knee: number) => LEG.thigh * Math.cos(hip) + LEG.shin * Math.cos(knee - hip);
 export function walkPose(dist: number, out: WalkPose): WalkPose {
   const ph = (dist / (2 * WALK.stepLen)) * Math.PI * 2;
-  const s = Math.sin(ph), c = Math.cos(ph);
-  out.hipL = WALK.hipAmp * s;
-  out.hipR = -WALK.hipAmp * s;
-  // 摆动腿（髋角在增大）屈膝，支撑腿几乎伸直
-  out.kneeL = WALK.kneeMax * Math.max(0, c) + 3 * DEG;
-  out.kneeR = WALK.kneeMax * Math.max(0, -c) + 3 * DEG;
-  out.bob = 0.018 * Math.abs(c) - 0.009;
+  const [hl, kl] = legAt(ph), [hr, kr] = legAt(ph + Math.PI);
+  out.hipL = hl; out.kneeL = kl;
+  out.hipR = hr; out.kneeR = kr;
+  out.bob = Math.max(legExt(hl, kl), legExt(hr, kr)) - (LEG.thigh + LEG.shin);
   return out;
 }
 

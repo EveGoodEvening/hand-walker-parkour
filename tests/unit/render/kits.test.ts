@@ -14,6 +14,7 @@ import { labRoomKit } from '../../../src/render/kits/school/labRoom';
 import { stairsKit } from '../../../src/render/kits/school/stairs';
 import { washroomKit } from '../../../src/render/kits/school/washroom';
 import { ATLAS } from '../../../src/render/textures/school';
+import { treadY } from '../../../src/render/stairTread';
 import { fakeCtx, triCount } from './helpers';
 
 const KITS: EnvKit[] = [classroomKit, corridorKit, washroomKit, stairsKit, canteenKit, labRoomKit];
@@ -104,6 +105,46 @@ describe('校园 kit：预算（§5.9、WP3 验收 1）', () => {
     // 走廊的「虚空」变体没有灯（只有掌光）
     const v = chunk(corridorKit, segment('corridor', 'void'), 'void', 1, 'low', { generic: true });
     expect(v.kc.lamps.length).toBe(0);
+  });
+
+  it('走廊墙边的家具（储物柜、窗台、暖气片）都在 |x| ≥ 1.72 以外：路边站着的人（中心 ≤ 1.6，面朝走廊时背后 ≤ 1.72）不埋进去', () => {
+    // 以前储物柜深 0.34（前沿 1.46）、窗台前沿 1.64、暖气片 1.68，人一半在柜子里、胯和腿穿过窗台和暖气片
+    for (const variant of ['morning', 'recess', 'night', 'wet', 'labNorth', 'mirrorEnd']) {
+      for (const tier of ['low', 'high'] as const) {
+        const seg = segment('corridor', variant);
+        let checked = 0;
+        for (let i = 0; i < 6; i++) {
+          const pos = chunk(corridorKit, seg, variant, i, tier, { generic: true }).kc.static.getAttribute('position');
+          for (let k = 0; k < pos.count; k++) {
+            const x = Math.abs(pos.getX(k)), y = pos.getY(k);
+            if (y < 0.1 || y > 1.9 || x < 1.3) continue;
+            checked++;
+            expect(x, `${variant} ${tier} chunk ${i} y=${y.toFixed(2)}`).toBeGreaterThanOrEqual(1.72);
+          }
+        }
+        expect(checked, variant).toBeGreaterThan(100);
+      }
+    }
+  });
+
+  it('楼梯的踏面高度与 stairTread.treadY 一致（站在楼梯上的人按它摆，不浮在坡线上）', () => {
+    for (const variant of ['dayDown', 'stairwellUp']) {
+      const seg = segment('stairs', variant);
+      let n = 0;
+      for (let i = 0; i < 3; i++) {
+        const { kc, s0 } = chunk(stairsKit, seg, variant, i, 'high', { generic: true });
+        const p = kc.floor.getAttribute('position');
+        for (let k = 0; k < p.count; k += 3) {
+          const y = p.getY(k);
+          if (Math.abs(p.getY(k + 1) - y) > 1e-6 || Math.abs(p.getY(k + 2) - y) > 1e-6) continue;   // 只看水平的踏面
+          const s = s0 - (p.getZ(k) + p.getZ(k + 1) + p.getZ(k + 2)) / 3;
+          if (s < seg.s0 || s > seg.s1) continue;
+          n++;
+          expect(y + seg.floorY(s0), `${variant} s=${s.toFixed(2)}`).toBeCloseTo(treadY(seg, s), 6);
+        }
+      }
+      expect(n, variant).toBeGreaterThan(20);
+    }
   });
 
   it('楼梯段地面写深度；其余地面带贴图提示与光泽', () => {

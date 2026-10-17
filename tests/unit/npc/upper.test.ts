@@ -135,6 +135,19 @@ function detailedUppers(f: LegForest): number {
   return n;
 }
 
+/** 弱化轮廓的上身数量（glow 标 SOFT_UPPER）。 */
+function softUppers(f: LegForest): number {
+  let n = 0;
+  for (const id of ['torso', 'upper', 'special'] as const) {
+    const pool = f.pool(id);
+    for (let i = 0; i < pool.n; i++) {
+      if (id === 'special' && pool.variantAt(i) !== LOW_UPPER) continue;
+      if (pool.glowAt(i) < 0) n++;
+    }
+  }
+  return n;
+}
+
 describe('人墙的组与段（U6）', () => {
   it('人墙段 = 人群段 = 2-2、5-6（一直画上身）；站立段 4-3、5-8 显示前一个跑段 4-2、5-7 的组（只在站立段进行时画上身）', () => {
     const crowd: string[] = [], segs: string[] = [], reveal: string[] = [], walls: string[] = [], stands: string[] = [];
@@ -257,6 +270,51 @@ describe('站立段与人墙：上身和没有五官的头（U6）', () => {
     const seated = people(view, snap).filter((p) => !standing(p));
     expect(seated.length).toBeGreaterThan(3);
     for (const p of seated) expect(p.top - p.hip).toBeGreaterThan(0.7);
+  });
+
+  it('人群段 2-2：站着、坐着、伸脚的人都完整着色，同一个食堂里没有一半人是灰的轮廓（§10.8）', () => {
+    for (const tier of ['low', 'medium', 'high'] as QualityTier[]) {
+      const { view } = makeView(tier);
+      const fo = view.pools.get('footOut');
+      expect(fo).toBeDefined();
+      if (!fo) continue;
+      const full = fo.variantIndex('seatedFull'), soft = fo.variantIndex('seated');
+      expect(full).toBeGreaterThan(0);
+      // 完整着色的变体有头发；弱化轮廓的 seated 没有（上面的 U6 用例）
+      expect(upFaceColors(fo.geo, full).some(isHair)).toBe(true);
+      const vd = new ViewDriver(view, getChapter('ch2') as ChapterDef, { segment: '2-2', beat: 40 });
+      vd.d.sim.setInvincible(true);
+      let seated = 0, feet = 0;
+      for (let k = 0; k < 6; k++) {
+        const snap = vd.step(30);
+        if (snap.segKind !== 'run') break;
+        seated += people(view, snap).filter((p) => !standing(p)).length;
+        expect(softUppers(view.forest), `${tier} 2-2 t=${snap.t.toFixed(2)}`).toBe(0);
+        expect(detailedUppers(view.forest), tier).toBeGreaterThan(3);
+        for (let i = 0; i < fo.pool.n; i++) {
+          const v = fo.pool.variantAt(i);
+          if (v === full || v === soft) { feet++; expect(v, tier).toBe(full); }
+        }
+      }
+      expect(seated, tier).toBeGreaterThan(3);
+      expect(feet, tier).toBeGreaterThan(0);
+    }
+    // 普通段（第一章教室）里伸脚的人仍是弱化轮廓
+    const { view } = makeView('high');
+    const fo = view.pools.get('footOut');
+    const vd = new ViewDriver(view, getChapter('ch1') as ChapterDef, { segment: '1-1', beat: 2 });
+    vd.d.sim.setInvincible(true);
+    let feet = 0;
+    for (let k = 0; k < 6; k++) {
+      vd.step(20);
+      if (!fo) break;
+      for (let i = 0; i < fo.pool.n; i++) {
+        const v = fo.pool.variantAt(i);
+        if (v === fo.variantIndex('seatedFull')) throw new Error('1-1 里出现了完整着色的伸脚的人');
+        if (v === fo.variantIndex('seated')) feet++;
+      }
+    }
+    expect(feet).toBeGreaterThan(0);
   });
 
   it('人墙的上身从远到近都是同一个样子（不从腰里长出来）：5-6 一路走过去，每一帧站着的人都有上身、上身不缩放', () => {

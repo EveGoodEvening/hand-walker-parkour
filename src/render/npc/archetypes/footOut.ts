@@ -8,14 +8,15 @@
 // 人坐在哪一侧：左道的人坐在 −x 侧、右道坐在 +x 侧；中道按 id 奇偶选一侧，椅子落在两条车道之间的空当里
 // （椅子和人的外沿 ≤ 0.86 m，不伸进相邻车道玩家碰撞盒的 0.88 m）。
 // 收回：人在椅子上转过身，两条腿绕髋部转 80°，朝 +s（教室前方）伸着，离开车道。被碰到（hit）也会缩回去。
-// 两个变体：seated（腿、胯和上身轮廓，收回时整体转动）、chair（椅子，不动）。实例坐标系：+x 指向坐着的人；
+// 三个变体：seated（腿、胯和上身轮廓，收回时整体转动）、chair（椅子，不动）、seatedFull（同 seated，上身完整着色：
+// 人群段 2-2 里路边的人都完整着色，伸脚的人也跟着，不做食堂里唯一一个灰的人）。实例坐标系：+x 指向坐着的人；
 // side = −1 时整个实例绕 y 转 180°（几何体关于 z = 0 对称，所以等于左右镜像，三角形绕向不变）。
 import * as THREE from 'three';
 import { defineArchetype, knockProgress, type PlaceCtx } from '../archetype';
 import { stretchVisual } from '../behaviors';
 import { C } from '../colors';
 import { SOFT_UPPER, type PartBuilder } from '../material';
-import { lowUpperBody } from '../upperBody';
+import { lowUpperBody, upperBox } from '../upperBody';
 
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1), _e = new THREE.Euler();
 const _t = new THREE.Matrix4(), _r = new THREE.Matrix4();
@@ -78,6 +79,23 @@ function pelvis(b: PartBuilder): void {
   b.box([FOOT_HIP.x + 0.02, FOOT_HIP.y + 0.205, 0], [0.19, 0.12, 0.37], C.uniform, { faces: '+x-x+z-z+y' });
 }
 
+/** 完整着色的上身（人墙段用）：和 lowUpperBody 的轮廓同尺寸，校服、肤色的脸、黑头发；不标 SOFT_UPPER。 */
+function fullUpper(b: PartBuilder): void {
+  upperBox(b, [0, 0.4, 0], [0.4, 0.52, 0.22], C.uniform, { faces: '+x-x+z-z+y' });
+  for (const s of [-1, 1]) upperBox(b, [s * 0.24, 0.38, 0.02], [0.075, 0.5, 0.08], C.uniform, { faces: '+x-x+z-z+y' });
+  upperBox(b, [0, 0.81, 0.01], [0.17, 0.24, 0.18], C.skin, { colors: { '+y': C.hair, '-z': C.hair } });
+}
+
+/** 坐着的人：两条腿、胯，上身按 full 选完整着色或弱化轮廓。 */
+function seatedPerson(b: PartBuilder, full: boolean): void {
+  for (const z of [-FOOT_HIP.half, FOOT_HIP.half]) leg(b, z);
+  pelvis(b);
+  const upper = new THREE.Matrix4().makeRotationY(-Math.PI / 2);
+  upper.setPosition(FOOT_HIP.x + 0.02, FOOT_HIP.y, 0);
+  if (full) b.withMatrix(upper, () => fullUpper(b));
+  else b.with({ glow: SOFT_UPPER }, () => b.withMatrix(upper, () => lowUpperBody(b, true)));
+}
+
 /** 椅子：朝 −x（人面朝过道），椅背在 +x 一侧。 */
 function chair(b: PartBuilder): void {
   const cx = FOOT_CHAIR_X;
@@ -94,16 +112,10 @@ export default defineArchetype({
   variants: [
     {
       name: 'seated', kind: 'footOut',
-      build(b, d) {
-        void d;
-        for (const z of [-FOOT_HIP.half, FOOT_HIP.half]) leg(b, z);
-        pelvis(b);
-        const upper = new THREE.Matrix4().makeRotationY(-Math.PI / 2);
-        upper.setPosition(FOOT_HIP.x + 0.02, FOOT_HIP.y, 0);
-        b.with({ glow: SOFT_UPPER }, () => b.withMatrix(upper, () => lowUpperBody(b, true)));
-      },
+      build(b, d) { void d; seatedPerson(b, false); },
     },
     { name: 'chair', build: chair },
+    { name: 'seatedFull', build: (b) => seatedPerson(b, true) },
   ],
   place(p, c: PlaceCtx) {
     const o = c.o;
@@ -123,7 +135,7 @@ export default defineArchetype({
       _r.makeRotationY(yaw);
       _m.multiply(_t).multiply(_r).multiply(_t.makeTranslation(-FOOT_HIP.x, 0, 0));
     }
-    p.push(_m, 0, 0);
+    p.push(_m, c.wall ? p.variantIndex('seatedFull') : 0, 0);
     return true;
   },
 });

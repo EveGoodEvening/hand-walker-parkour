@@ -6,6 +6,7 @@
 import type { EnvKit, KitChunk, LampSpec } from '../../../core/contracts';
 import { registerKit } from '../../../core/registry';
 import { markSchoolAtlas, type HwKitChunkContext } from '../../kitContext';
+import { treadS } from '../../stairTread';
 import { PAL, SCHOOL } from '../../palette';
 import {
   CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_LIFT, NIGHT_WINDOW, beatsIn, crossWall, dataPlates, geos, makeEnv, mirrorRooms, sideHoles, sideWall,
@@ -37,13 +38,13 @@ export function buildStairs(ctx: HwKitChunkContext, look: Look): KitChunk {
   const rise = Math.abs(e.fy(e.s0 + st) - e.fy(e.s0));
   const up = e.fy(e.s0 + st) > e.fy(e.s0);
 
-  // —— 踏面与踢面：拍 k 的踏面覆盖 [k − 0.5, k + 0.5] 拍，高度 = 坡线在 k 处的值 ——
+  // —— 踏面与踢面：拍 k 的踏面覆盖 [k − 0.5, k + 0.5] 拍，高度 = 坡线在 k 处的值（stairTread.ts，站在楼梯上的人按同一个踏面摆）——
   const k0 = Math.floor((e.s0 - e.back - e.segS0) / st + 0.5), k1 = Math.ceil((e.s1 - e.segS0) / st - 0.5);
   for (let k = k0; k <= k1; k++) {
     const sc = e.segS0 + k * st;
     const a = Math.max(e.s0 - e.back, sc - st / 2), b = Math.min(e.s1, sc + st / 2);
     if (b <= a + 1e-5) continue;
-    const y = base(Math.min(Math.max(sc, e.segS0), e.segS1));
+    const y = base(treadS(sc, e.segS0, e.segS1, st));
     const za = e.z(a), zb = e.z(b);
     const va = (a - e.s0) / st, vb = (b - e.s0) / st;
     floor.quad([-HW, y, za], [HW, y, za], [HW, y, zb], [-HW, y, zb], 0xffffff, [[-1.3, va], [2.3, va], [2.3, vb], [-1.3, vb]], [0.7, 0.7, 1, 1]);

@@ -87,6 +87,73 @@ describe('人群展开（npcs 组 → 路边的人）', () => {
   });
 });
 
+describe('路边的人不穿墙边家具、栏杆和彼此（§10.8）', () => {
+  const synth = (kit: string, kind: string, side: string, stride = 1) => {
+    const seg = { index: 0, s0: 0, stride, def: { id: 's', kit }, npcGroups: [{ id: 'g', kind, from: 0, to: 60, side, density: 1 }] } as unknown as CompiledSegment;
+    const out: Decor[] = [], gi: GroupInfo[] = [];
+    expandSegment(3, seg, out, gi);
+    return out;
+  };
+  it('楼梯：右侧是扶手栏杆（x = 1.5）和楼梯井，所有组都只放在左墙一侧；2-1 下楼的人都在左边', () => {
+    for (const side of ['both', 'L', 'R']) {
+      for (const kind of ['walkers', 'standingCluster', 'queue', 'lineSides'] as const) {
+        const out = synth('stairs', kind, side, 0.6);
+        expect(out.length, `${kind} ${side}`).toBeGreaterThan(3);
+        for (const d of out) { expect(d.x, `${kind} ${side}`).toBeLessThan(0); expect(Math.abs(d.x)).toBeGreaterThanOrEqual(1.54 - 1e-9); }
+      }
+    }
+    const ch2 = compile(getChapter('ch2') as ChapterDef);
+    const { decor, groups } = expandChapter(ch2.seed, ch2.segments);
+    const g = groups.findIndex((x) => x.def.id === 'stairWalkers');
+    const w = decor.filter((d) => d.group === g);
+    expect(w.length).toBeGreaterThan(5);
+    for (const d of w) expect(d.x).toBeLessThan(-1.5);
+  });
+  it('窄的路边（走廊）：站着的人面朝走廊（偏差 ≤ 0.45 rad），侧身走的人贴着内沿（|x| ≤ 1.56）', () => {
+    for (const side of ['L', 'R']) {
+      const st = synth('corridor', 'standingCluster', side);
+      expect(st.length).toBeGreaterThan(10);
+      for (const d of st) {
+        const face = -d.side * Math.PI / 2;
+        expect(Math.abs(Math.atan2(Math.sin(d.yaw - face), Math.cos(d.yaw - face)))).toBeLessThanOrEqual(0.45 + 1e-9);
+        expect(Math.abs(d.x)).toBeLessThanOrEqual(1.6 + 1e-9);
+      }
+      for (const d of synth('corridor', 'walkers', side)) expect(Math.abs(d.x)).toBeLessThanOrEqual(1.56 + 1e-9);
+    }
+    // 3-1 的班长（侧身抱着本子）走在内沿 1.54
+    const ch3 = compile(getChapter('ch3') as ChapterDef);
+    const m = expandChapter(ch3.seed, ch3.segments).decor.filter((d) => d.special === 'monitor');
+    expect(m.length).toBe(1);
+    expect(Math.abs((m[0] as Decor).x)).toBeCloseTo(1.54, 9);
+  });
+  it('人墙（5-6 lineSides）同一侧相邻两人隔 ≥ 0.6 m；围观的弧（第四章）同一侧没有两人沿 s < 0.6 且横向 < 0.45', () => {
+    const ch5 = compile(getChapter('ch5') as ChapterDef);
+    const r5 = expandChapter(ch5.seed, ch5.segments);
+    const gl = r5.groups.findIndex((x) => x.def.id === 'recessSides');
+    for (const side of [-1, 1]) {
+      const ss = r5.decor.filter((d) => d.group === gl && d.side === side).map((d) => d.s).sort((a, b) => a - b);
+      expect(ss.length).toBeGreaterThan(150);
+      for (let i = 1; i < ss.length; i++) expect((ss[i] as number) - (ss[i - 1] as number)).toBeGreaterThanOrEqual(0.6 - 1e-6);
+    }
+    const ch4 = compile(getChapter('ch4') as ChapterDef);
+    const r4 = expandChapter(ch4.seed, ch4.segments);
+    let n = 0;
+    for (const id of ['onlookers', 'ring2', 'ring5']) {
+      const gi = r4.groups.findIndex((x) => x.def.id === id);
+      for (const side of [-1, 1]) {
+        const ps = r4.decor.filter((d) => d.group === gi && d.side === side).sort((a, b) => a.s - b.s);
+        n += ps.length;
+        for (let i = 0; i < ps.length; i++) {
+          for (let j = i + 1; j < ps.length && (ps[j] as Decor).s - (ps[i] as Decor).s < 0.6; j++) {
+            expect(Math.abs((ps[j] as Decor).x - (ps[i] as Decor).x), `${id} s=${(ps[i] as Decor).s.toFixed(2)}`).toBeGreaterThanOrEqual(0.45);
+          }
+        }
+      }
+    }
+    expect(n).toBeGreaterThan(1500);
+  });
+});
+
 describe('特殊 NPC 识别（按数据里的 id）', () => {
   const ob = (kind: CompiledObstacle['kind'], itemId?: string, behavior: CompiledObstacle['behavior'] = { type: 'static' }): CompiledObstacle => ({
     id: 1, kind, cls: 'block', archetype: 'legs', lanes: [0], beat: 0, s0: 0, s1: 0.3, y0: 0, y1: 1.7, halfW: 0.26, behavior, npc: true, params: itemId ? { itemId } : {},

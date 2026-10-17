@@ -67,6 +67,8 @@ export interface PlaceCtx {
   bps: number;
   /** 设置「减少闪烁」（§7.3）：明灭的光源换成 0.5 Hz 平滑明暗。 */
   reducedFlicker: boolean;
+  /** 这一帧这个障碍所在的段是否按人墙完整着色（ObstacleView.wallAt；坐着伸脚的人跟同段路边的人一致）。缺省 = 否。 */
+  wall?: boolean;
   /** 往另一个原型池里放一个附属实例（例如 reach 两侧跪着的人）。 */
   side(id: ArchetypeId, m: THREE.Matrix4, variant: string, glow?: number, color?: THREE.Color): void;
 }
