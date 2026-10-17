@@ -436,11 +436,11 @@ describe('界面', () => {
     const { ui, save } = await mountUI();
     ui.show('title');
     const labels = () => Array.from(document.querySelectorAll('[data-screen="title"] .hw-title-menu button')).map((b) => b.textContent);
-    expect(labels()).toEqual(['开始', '章节', '设置', '纸条']);
+    expect(labels()).toEqual(['开始', '章节', '设置', '纸条', '第三方许可']);
     expect(document.querySelector('[data-screen="title"] .hw-notice')?.textContent).toBe('建议佩戴耳机。本作含灯光闪烁，可在设置中减弱。');
     save.patch({ last: { chapter: 'ch1', segment: '1-2', beat: 96 } });
     ui.show('title');
-    expect(labels()).toEqual(['继续', '章节', '设置', '纸条']);
+    expect(labels()).toEqual(['继续', '章节', '设置', '纸条', '第三方许可']);
     expect(document.querySelector('[data-screen="title"] .hw-notice')).toBeNull();
   });
   it('标题的竖排小字：逐字堆叠，逗号、句号标成 .vp（styles.css 挪到字格右上），别的字不标', async () => {
