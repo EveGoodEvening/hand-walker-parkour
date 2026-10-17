@@ -9,6 +9,7 @@ import { createRng } from '../../../src/core/rng';
 import type { KitId } from '../../../src/core/types';
 import { C, hsv } from '../../../src/render/kits/outside/lib/colors';
 import { HALF, ROOM_DEPTH } from '../../../src/render/kits/outside/lib/kit';
+import { DREAM_GRAY_END } from '../../../src/render/atmosphere';
 import { DARK_LIFT, Tone, darkLift, lin, neutralInverse, neutralTone, presetOf, screenColor, type Lin3 } from '../../../src/render/kits/outside/lib/tone';
 import '../../../src/render/kits/outside/plaza';
 import '../../../src/render/kits/outside/street';
@@ -170,20 +171,28 @@ describe('发光体的 aSteady（WP3 的 kit 约定：窗不跟灯走，灯头�
     expect(zero).toBeGreaterThan(0);
     expect(one).toBeGreaterThan(0);
   });
-  // 视觉修订（VIS-outside）：镜中广场的背墙以前是 emissive 的雾色，4-5 的灰一路加深时它还亮着，成了黑盒子里的一块白屏。
-  // 现在背墙是 Lambert（会进雾、跟着 dreamGray 的半球光一起变暗），广场上也没有灯：LampField 压不到它。
-  it('梦里的镜中广场（雾色的背墙）不发光、不跟灯走：背墙在 static 里，发光体（若有）都不跟灯', () => {
+  // 视觉修订（VIS-outside）：镜中广场的背墙以前是 emissive 的浅雾色（#D9DEE0），4-5 的灰一路加深时它还亮着，成了一块白屏。
+  // 第一轮改成 Lambert，结果两端的内面正对身后的主光，仍然比地面亮。第二轮：gray 变体的背墙和两端是 dreamGray 终点雾色
+  // （#5D6468）的发光面——4-5 走到镜子跟前时天已经是这个颜色，镜子里读成「更远的雾」。不跟灯走（广场上也没有灯）。
+  it('梦里的镜中广场（gray）：背墙是终点雾色的发光面，不跟灯走、不发白', () => {
     const ch = chunks('plaza', 'gray', 'low', { kit: 'plaza', variant: 'gray', beats: 60, surfaces: [mirror('bigMirror', 'R', 130, 138, [0.1, 2.6])] });
     let back = 0;
+    const fog = lin(DREAM_GRAY_END.fog);
     for (const k of ch) {
       expect(k.lamps).toEqual([]);
-      if (k.emissive) {
-        const st = k.emissive.getAttribute('aSteady');
-        expect(st).toBeTruthy();
-        for (let i = 0; i < st.count; i++) expect(st.getX(i)).toBe(1);
+      const sp = k.static.getAttribute('position');
+      for (let i = 0; i < sp.count; i++) expect(Math.abs(sp.getX(i) - (HALF + ROOM_DEPTH - 0.02)) < 1e-3).toBe(false);
+      if (!k.emissive) continue;
+      const st = k.emissive.getAttribute('aSteady'), pos = k.emissive.getAttribute('position'), col = k.emissive.getAttribute('color');
+      expect(st).toBeTruthy();
+      for (let i = 0; i < st.count; i++) {
+        expect(st.getX(i)).toBe(1);
+        if (Math.abs(pos.getX(i) - (HALF + ROOM_DEPTH - 0.02)) > 1e-3) continue;
+        back++;
+        // 发光面只做色调映射的逆：画面上的颜色 = 雾色，不比雾亮
+        const on = neutralTone([col.getX(i), col.getY(i), col.getZ(i)]);
+        for (let c = 0; c < 3; c++) expect(Math.abs((on[c] as number) - (fog[c] as number))).toBeLessThan(0.01);
       }
-      const pos = k.static.getAttribute('position');
-      for (let i = 0; i < pos.count; i++) if (Math.abs(pos.getX(i) - (HALF + ROOM_DEPTH - 0.02)) < 1e-3) back++;
     }
     expect(back).toBeGreaterThan(0);
   });
