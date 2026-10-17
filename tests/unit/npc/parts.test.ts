@@ -78,7 +78,8 @@ describe('人群展开（npcs 组 → 路边的人）', () => {
     const kinds = ['seatedRow', 'standingCluster', 'walkers', 'queue', 'lineSides', 'onlookerRing', 'imitators', 'crawlerStream', 'classmates'] as const;
     for (const kind of kinds) {
       for (const density of [0, 1]) {
-        const seg = { index: 0, s0: 0, stride: 1, def: { id: 's', kit: 'canteen' }, npcGroups: [{ id: 'g', kind, from: 0, to: 30, side: 'both', density }] } as unknown as CompiledSegment;
+        // s1 / obstacles：食堂坐着的人按 kit 的餐桌行找圆凳（kits/school/seats.ts），要整段的长度
+        const seg = { index: 0, s0: 0, s1: 31, stride: 1, obstacles: [], def: { id: 's', kit: 'canteen' }, npcGroups: [{ id: 'g', kind, from: 0, to: 30, side: 'both', density }] } as unknown as CompiledSegment;
         const out: Decor[] = [], gi: GroupInfo[] = [];
         expandSegment(3, seg, out, gi);
         if (density === 0) expect(out.length, kind).toBe(0); else expect(out.length, kind).toBeGreaterThan(3);
