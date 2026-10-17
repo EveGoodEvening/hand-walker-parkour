@@ -28,7 +28,7 @@ import type { AABB, AtmosphereId, ChapterId, CrowdOp, KitId, SimSnapshot } from 
 import { urlParams } from '../../core/urlParams';
 import { OBSTACLES } from '../../levels/obstacles';
 import type { CompiledChapter, CompiledObstacle, CompiledSegment, RunSegmentDef } from '../../levels/schema';
-import { ArchetypePoolImpl, createArchetypeMaterial, type ArchetypeDef, type PlaceCtx } from './archetype';
+import { ArchetypePoolImpl, createArchetypeMaterial, type ArchetypeDef, type PlaceCtx, type ReachNeighbours } from './archetype';
 import {
   FOOT_CENTER, GAZE_MAX, GAZE_TOTAL, clapClosed, gazeAmount, gazeSince, hash01, idleSway, obstacleTwist, obstacleYaw, partOffset, shiftBlend, silenceClock,
   silenceLevel, tremble, walkOnGround, walkPose, type ShiftBlend, type Sway, type Tremble, type WalkPose,
@@ -132,6 +132,8 @@ export class ObstacleView implements ViewSystem {
   private chenFoot = new Map<number, CompiledObstacle>();   // chenMo 障碍 id → 他留在过道里的脚
   private chenFootIds = new Set<number>();
   private specials = new Map<number, SpecialId>();
+  /** reach（伸出的手臂）左右相邻车道上同一行的障碍（读章时按段算好，armBar 摆跪着的人用）。 */
+  private reachNb = new Map<number, ReachNeighbours>();
   private looks = new Map<number, Look>();
   stage: Stage | null = null;
   private lastT = 0;
@@ -202,7 +204,7 @@ export class ObstacleView implements ViewSystem {
     this.wallSegs = ch.segments.map((_, i) => isWallSegment(ch.segments, i));
     this.standOf = ch.segments.map((_, i) => standRevealOf(ch.segments, i));
     this.groupState = groups.map(() => ({ gaze: null, applaud: -1, overtake: -1, overtakeS: 0 }));
-    this.specials.clear(); this.looks.clear(); this.chenFoot.clear(); this.chenFootIds.clear(); this.chenDest.clear();
+    this.specials.clear(); this.reachNb.clear(); this.looks.clear(); this.chenFoot.clear(); this.chenFootIds.clear(); this.chenDest.clear();
     this.segStart = ch.segments.map(() => Number.NaN);
     for (const seg of ch.segments) this.indexSegment(seg, ch.seed, ch.def.id);
     this.decor = this.withoutSeatClash(decor, ch.segments.flatMap((sg) => sg.obstacles));
@@ -225,6 +227,7 @@ export class ObstacleView implements ViewSystem {
       if (sp) this.specials.set(o.id, sp);
       if (o.archetype === 'legs') this.looks.set(o.id, sp ? specialLook(sp) : lookFor(crowd, seed, `obs:${o.id}`));
     }
+    for (const o of seg.obstacles) if (o.kind === 'reach') this.reachNb.set(o.id, reachNeighbours(o, seg.obstacles));
     for (const o of seg.obstacles) {
       if (o.kind !== 'chenMo') continue;
       // 他的脚：同段里 id 含 chenmo 的 footOut；没有就取他身后同车道 4 m 内的第一只 footOut
@@ -517,6 +520,7 @@ export class ObstacleView implements ViewSystem {
     const pc = this.pc;
     const ask = this.asks.get(o.id);
     pc.partX = ask && ask.part ? this.partDir(o, st) * partOffset(f.t - ask.t) : 0;
+    pc.reachNb = o.kind === 'reach' ? this.reachNb.get(o.id) : undefined;
     if (this.chenFootIds.has(o.id)) return;                 // 陈默的脚由陈默自己画
     if (o.archetype === 'legs') { this.legsObstacle(o, st, seg, f, cur, kit, variant, floorY); return; }
     if (o.archetype === 'crawler') { this.crawlerObstacle(o, st, f, tSeg, floorY); return; }
@@ -905,6 +909,28 @@ export interface ChenDest { x: number; s: number; side: 1 | -1; fx: number; fs: 
 /**
  * 陈默让开的距离：横向最多 aside；站在脚后面 back（沿 +s）；身体（含垂着的手臂、重心摆动）半宽 half；离相邻障碍的视觉内沿留 margin。
  */
+/** 同一行的判定：两个障碍沿 s 的区间相交，或中心相差不到 0.3 m。 */
+const ROW_OVERLAP = 0.3;
+
+/**
+ * reach 左右相邻车道（最小车道 − 1、最大车道 + 1）上同一行的障碍：'reach' 优先于 'block'。
+ * 只看编译后的车道，不看行为（4-5 那几行都是静止的）。
+ */
+export function reachNeighbours(o: CompiledObstacle, all: readonly CompiledObstacle[]): ReachNeighbours {
+  const out: ReachNeighbours = { l: null, r: null };
+  const lo = Math.min(...o.lanes), hi = Math.max(...o.lanes);
+  const c = (o.s0 + o.s1) / 2;
+  for (const q of all) {
+    if (q === o) continue;
+    const same = (q.s0 < o.s1 && q.s1 > o.s0) || Math.abs((q.s0 + q.s1) / 2 - c) < ROW_OVERLAP;
+    if (!same) continue;
+    const k = q.kind === 'reach' ? 'reach' : 'block';
+    if (q.lanes.some((l) => l === lo - 1) && out.l !== 'reach') out.l = k;
+    if (q.lanes.some((l) => l === hi + 1) && out.r !== 'reach') out.r = k;
+  }
+  return out;
+}
+
 export const CHEN_STEP = { aside: 0.56, back: 0.3, half: 0.33, margin: 0.02, reach: 0.35 } as const;
 /**
  * 陈默留在过道里的那只脚：让开走到 from（0.65）时伸出去，人已经离脚不远；脚踝在碰撞盒中心朝他一侧 pull、朝他身后 back（都在 0.60 × 0.30 的盒子里）；

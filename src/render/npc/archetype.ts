@@ -69,9 +69,17 @@ export interface PlaceCtx {
   reducedFlicker: boolean;
   /** 这一帧这个障碍所在的段是否按人墙完整着色（ObstacleView.wallAt；坐着伸脚的人跟同段路边的人一致）。缺省 = 否。 */
   wall?: boolean;
+  /**
+   * reach（伸出的手臂）左右相邻车道上、同一行里的障碍：'reach' = 也是伸出的手臂，'block' = 别的障碍（人腿、爬行者……），
+   * 缺省 = 没有（车道外沿）。ObstacleView 读章时按段算好；armBar 据此决定两侧跪着的人放在哪（审查 npc-seated-5）。
+   */
+  reachNb?: ReachNeighbours;
   /** 往另一个原型池里放一个附属实例（例如 reach 两侧跪着的人）。 */
   side(id: ArchetypeId, m: THREE.Matrix4, variant: string, glow?: number, color?: THREE.Color): void;
 }
+
+export type ReachNeighbour = 'reach' | 'block' | null;
+export interface ReachNeighbours { l: ReachNeighbour; r: ReachNeighbour }
 
 export interface VariantDef {
   name: string;
@@ -89,6 +97,8 @@ export interface ArchetypeDef {
   tileS?: boolean; tileX?: boolean;
   /** 实例是否带颜色（instanceColor；顶点 aHw.z = 1 的部分被着色）。 */
   color?: boolean;
+  /** 按本帧用到的变体裁剪 drawRange（InstPool.trackVariantRanges；变体顶点按定义顺序排，最常用的放最前）。 */
+  ranges?: boolean;
   /** 由其他系统负责（legs → LegForest，crawler → Crawlers）：不建自己的 InstancedMesh。 */
   delegate?: 'forest' | 'crawlers';
   /** 自定义放置（开门、伸脚、红灯……）；返回 false 表示走通用放置。 */
@@ -136,6 +146,7 @@ export class ArchetypePoolImpl implements ArchetypePool {
     });
     this.geo = b.build();
     this.pool = new InstPool(`archetype:${def.id}`, this.geo, mat, cap, { ...(def.material === 'decal' ? { renderOrder: -15 } : {}), color: def.color === true });
+    if (def.ranges) this.pool.trackVariantRanges();
     this.pc = {
       o: null as unknown as CompiledObstacle, st: { active: true, ds: 0, x0: 0, x1: 0, amount: 1 }, floorY: 0, tSeg: 0, beat: -1, t: 0,
       knockedAt: null, chapter: 'ch1', kit: 'placeholder', playerX: 0, playerS: 0, partX: 0, bps: 5, reducedFlicker: false, side: () => { /* 独立使用时没有附属实例 */ },
