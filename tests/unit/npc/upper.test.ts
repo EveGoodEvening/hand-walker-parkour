@@ -144,7 +144,7 @@ function softUppers(f: LegForest): number {
   for (const id of ['torso', 'upper', 'special'] as const) {
     const pool = f.pool(id);
     for (let i = 0; i < pool.n; i++) {
-      if (id === 'special' && pool.variantAt(i) !== LOW_UPPER) continue;
+      if (id === 'special' && !isLowUpper(pool.variantAt(i))) continue;
       if (pool.glowAt(i) < 0) n++;
     }
   }
