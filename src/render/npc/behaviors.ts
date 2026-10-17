@@ -91,6 +91,92 @@ export function walkPose(dist: number, out: WalkPose): WalkPose {
   return out;
 }
 
+/** 脚踝相对髋沿朝向的前后位置（与 LegForest 的正向运动学一致）。 */
+const legFwd = (hip: number, knee: number) => LEG.thigh * Math.sin(hip) + LEG.shin * Math.sin(hip - knee);
+/** 落脚时（支撑期开始：髋 +22°、膝 3°）脚踝在髋前面多远。 */
+const PLANT_FWD = legFwd(WALK.hipAmp, 3 * DEG);
+const smooth01 = (u: number) => { const t = clamp01(u); return t * t * (3 - 2 * t); };
+/** 两骨 IK（髋所在的竖直平面里）：脚踝沿朝向的位置不变，竖直伸展缩到 ext。只缩不伸。 */
+function shorten(hip: number, knee: number, ext: number, out: [number, number]): [number, number] {
+  const fwd = legFwd(hip, knee);
+  const t = LEG.thigh, s = LEG.shin;
+  const D = Math.min(t + s - 1e-6, Math.hypot(fwd, ext));
+  const k = Math.acos(Math.max(-1, Math.min(1, (D * D - t * t - s * s) / (2 * t * s))));
+  out[0] = Math.atan2(fwd, ext) + Math.atan2(s * Math.sin(k), t + s * Math.cos(k));
+  out[1] = k;
+  return out;
+}
+const _ik: [number, number] = [0, 0];
+/** 摆动脚经过踏面边沿时的过渡宽度（米）。 */
+const SWING_EDGE = 0.12;
+/**
+ * 台阶地面的连续上包络：x 处的高度，往上的边沿提前 w 抬起，往下的边沿过了之后 w 内才落下，处处 ≥ ground，且随 x 连续。
+ * 假设 w 内最多一个边沿（踏面 0.6 m）。边沿位置用二分找（ground 只能逐点取）。dir 为前进方向。
+ */
+function softGround(x: number, dir: number, w: number, ground: (s: number) => number): number {
+  const c = ground(x);
+  if (w <= 1e-4) return c;
+  let out = c;
+  for (let side = 1; side >= -1; side -= 2) {
+    const far = ground(x + side * dir * w);
+    if (far <= c) continue;
+    let lo = 0, hi = w;                                  // ground(x + side·dir·lo) = c，ground(x + side·dir·hi) ≠ c
+    for (let it = 0; it < 12; it++) { const m = (lo + hi) / 2; if (ground(x + side * dir * m) === c) lo = m; else hi = m; }
+    out = Math.max(out, c + (far - c) * smooth01(1 - hi / w));
+  }
+  return out;
+}
+
+/**
+ * 在台阶上走路（楼梯段的路边行人、走路的人腿障碍）：步态与 walkPose 相同，高度跟着步子走，不再随里程一级一级地跳。
+ * - 每只脚踩在自己落脚处的踏面上：支撑脚按落脚点（支撑期里不动）取高度；摆动脚从离地处的踏面过渡到落脚处的踏面
+ *   （上楼先抬到高的一级，下楼到最后才落下去），也不低于脚正下方的踏面。
+ * - 身体的高度只在步子里变：换脚的那一刻取前后两级里低的那级，支撑期中间到这一级；所以身体从不高过支撑脚的踏面，
+ *   上楼在落脚之后抬起，下楼在落脚之前降下——支撑脚永远不会悬空（腿伸不长），只会需要弯膝。
+ * - 哪只脚会陷进踏面，就用两骨 IK 把那条腿缩短（脚踝前后位置不变，只弯膝），正好踩在踏面上。
+ * 平地上（ground 是常数）结果与 walkPose 完全相同。都是走过的距离和此刻位置的纯函数，不累积逐帧状态。
+ * dist：walkPose 的距离；sNow：身体此刻的里程；dir：朝向沿 s 的符号（±1）；ground(s)：画面上 s 处的地面高度。
+ * 返回身体（根）的高度；out 写入髋角、膝角与起伏（照常加在 hipH 上）。
+ */
+export function walkOnGround(dist: number, sNow: number, dir: number, ground: (s: number) => number, out: WalkPose): number {
+  walkPose(dist, out);
+  const L = WALK.stepLen, P = 2 * L;
+  // 当前支撑的那条腿：左腿相位 q ∈ [L/2, 1.5L) 时支撑，否则右腿（右腿 = 左腿在 dist + L 时的姿势，两腿交替，不重叠）
+  const qL = dist - Math.floor(dist / P) * P;
+  const leftStance = qL >= L / 2 && qL < 1.5 * L;
+  const qS = leftStance ? qL : (qL + L) % P;          // 支撑腿的相位
+  const v = qS - L / 2;                                // 支撑期走过的距离 [0, L)
+  const plant = sNow + dir * (PLANT_FWD - v);          // 支撑脚的落脚点
+  const hS = ground(plant);
+  const hPrev = ground(plant - dir * L), hNext = ground(plant + dir * L);
+  const u = v / L;
+  const lo = Math.min(hPrev, hS);
+  const y = u < 0.5 ? lo + (hS - lo) * smooth01(2 * u) : hS + (Math.min(hS, hNext) - hS) * smooth01(2 * u - 1);
+  // 摆动脚：离地处 = 上一个落脚点，落脚处 = 下一个落脚点
+  const hSwingRaw = hNext > hPrev ? hPrev + (hNext - hPrev) * smooth01(2 * u) : hPrev + (hNext - hPrev) * smooth01(2 * u - 1);
+  const maxE = out.bob + LEG.thigh + LEG.shin;
+  // 脚踝离各自地面的高度 = y + maxE − 伸展 − 地面；< 0 就是陷进去了，把那条腿缩短
+  for (let leg = 0; leg < 2; leg++) {
+    const isLeft = leg === 0;
+    const h = isLeft ? out.hipL : out.hipR, k = isLeft ? out.kneeL : out.kneeR;
+    // 摆动脚也不穿过它下面的踏面（下楼时脚从高的一级上方经过）。踏面是台阶函数，直接取会让摆动脚跨过边沿时跳 15 cm，
+    // 所以按 softGround 取：边沿前后 SWING_EDGE 内连续过渡。离地后 20%、落脚前 10% 的摆动期里渐变到离地处、落脚处的踏面，
+    // 和支撑期的高度接上（落脚点紧挨着边沿时，脚在最后这一小段里落下去，不在一帧里跳）
+    let g = hS;
+    if (isLeft !== leftStance) {
+      g = Math.max(hSwingRaw, softGround(sNow + dir * legFwd(h, k), dir, SWING_EDGE, ground));
+      if (u < 0.2) g = hPrev + (g - hPrev) * smooth01(u / 0.2);
+      else if (u > 0.9) g = hNext + (g - hNext) * smooth01((1 - u) / 0.1);
+    }
+    const e = legExt(h, k);
+    const sink = g - (y + maxE - e);
+    if (sink <= 1e-6) continue;
+    shorten(h, k, e - sink, _ik);
+    if (isLeft) { out.hipL = _ik[0]; out.kneeL = _ik[1]; } else { out.hipR = _ik[0]; out.kneeR = _ik[1]; }
+  }
+  return y;
+}
+
 /** idle：重心左右换，每个人相位不同（周期 3.2–4.8 s）。返回横移（米）与重心脚的屈膝（弧度）。热路径传入 out 复用。 */
 export interface Sway { dx: number; knee: number; side: number }
 export function idleSway(t: number, phase: number, out: Sway = { dx: 0, knee: 0, side: 1 }): Sway {
