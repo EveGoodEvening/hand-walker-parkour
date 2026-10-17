@@ -8,7 +8,7 @@ import { ARCHETYPE_DEFS } from '../../../src/render/npc/defs';
 import { variantTriangles } from '../../../src/render/npc/material';
 import { obstacleTwist, obstacleYaw } from '../../../src/render/npc/behaviors';
 import { CRAWL } from '../../../src/render/npc/Crawlers';
-import { FOOT_ANKLE, FOOT_CHAIR_X, FOOT_FLOOR_HIP, FOOT_HIP, FOOT_RETRACT_YAW, footBodyMatrix, footKnee, footLegMatrix, type FootPose } from '../../../src/render/npc/archetypes/footOut';
+import { FOOT_ANKLE, FOOT_HIP, FOOT_RETRACT_YAW, footBodyMatrix, footKnee, footLegMatrix } from '../../../src/render/npc/archetypes/footOut';
 import { BODY } from '../../../src/render/npc/LegForest';
 import type { QualityTier } from '../../../src/core/types';
 import type { Spec } from '../../../src/render/npc/stage';
@@ -20,8 +20,8 @@ const ALL: ArchetypeId[] = ['footOut', 'lowBox', 'bucket', 'curb', 'bikeDown', '
 const ctx = fakeCtx('low');
 const pools = new Map(ARCHETYPE_DEFS.filter((d) => !d.delegate).map((d) => [d.id, new ArchetypePoolImpl(d, createArchetypeMaterial(ctx, d), 4)]));
 
-/** 某变体的包围盒；排除 y ≤ floor 的地面暗带（深缝），可选只取 |x| ≤ xMax 的部分（车道上方），或只取 x 落在 xIn 里的部分。 */
-function bounds(geo: THREE.BufferGeometry, v: number, o: { floor?: number; xMax?: number; xIn?: readonly [number, number] } = {}): THREE.Box3 {
+/** 某变体的包围盒；排除 y ≤ floor 的地面暗带（深缝），可选只取 |x| ≤ xMax 的部分（车道上方）。 */
+function bounds(geo: THREE.BufferGeometry, v: number, o: { floor?: number; xMax?: number } = {}): THREE.Box3 {
   const pos = geo.getAttribute('position'), hw = geo.getAttribute('aHw');
   const box = new THREE.Box3(), p = new THREE.Vector3();
   for (let i = 0; i < pos.count; i += 3) {
@@ -33,7 +33,6 @@ function bounds(geo: THREE.BufferGeometry, v: number, o: { floor?: number; xMax?
     for (let k = 0; k < 3; k++) {
       p.set(pos.getX(i + k), pos.getY(i + k), pos.getZ(i + k));
       if (o.xMax !== undefined && Math.abs(p.x) > o.xMax) continue;
-      if (o.xIn && (p.x < o.xIn[0] || p.x > o.xIn[1])) continue;
       box.expandByPoint(p);
     }
   }
@@ -85,13 +84,9 @@ describe('WP6 障碍原型（§8.4 ArchetypeFactory、§8.5 obstacles.ts）', ()
       const p = pools.get(sp.archetype);
       if (!p) continue;
       const v = p.variantOf(k);
-      // footOut：膝盖、大腿和椅面在车道外沿（坐着的那个人），只检查车道上方的部分。
-      // 顶边只看车道远离那个人的一半（脚踝和鞋）：坐在椅子上伸直的腿从 0.50 m 的髋斜着落到地面，靠近人的一侧随小腿抬高，
-      // 这是腿本来的样子（以前为了整条小腿贴地把膝盖压到离地 0.14 m，膝盖反折约 40°，像腿瘫在地上被拖着）。
-      // 车道上的这条小腿不改变要做的动作（low 一律撑跃）；腿的形状由下面「伸进过道的脚：腿的骨架」检查。
+      // footOut：坐在车道外沿地上的那个人（胯、上身、撑地的手）不在碰撞盒里，只检查车道上方的部分（整条腿都要贴着碰撞上沿）。
       const xMax = k === 'footOut' ? sp.halfW + MAX_EXPAND : undefined;
       const b = bounds(p.geo, v, { floor: 0.0045, ...(xMax ? { xMax } : {}) });
-      const bTop = k === 'footOut' ? bounds(p.geo, v, { floor: 0.0045, xIn: [-xMax!, -0.05] }) : b;
       const d = dimsOf(k);
       const dx0 = Math.abs(b.min.x + sp.halfW), dx1 = Math.abs(b.max.x - sp.halfW);
       const dz0 = Math.abs(b.min.z + sp.depth / 2), dz1 = Math.abs(b.max.z - sp.depth / 2);
@@ -101,7 +96,7 @@ describe('WP6 障碍原型（§8.4 ArchetypeFactory、§8.5 obstacles.ts）', ()
       if (dz0 > tol) report.push(`${k} s1 ${dz0.toFixed(3)}`);
       if (dz1 > tol) report.push(`${k} s0 ${dz1.toFixed(3)}`);
       if (sp.cls === 'low') {
-        const dt = bTop.max.y - sp.y1;
+        const dt = b.max.y - sp.y1;
         if (dt < -0.03 || dt > tol) report.push(`${k} top ${dt.toFixed(3)}`);
       }
       if (sp.cls === 'bar') {
@@ -318,69 +313,60 @@ describe('人腿 / 陈默 / 爬行者：世界包围盒与碰撞盒偏差 ≤ 5 
     expect(out).toEqual([]);
   });
 
-  it('伸进中道的脚：坐着的人（和椅子）在两条车道之间的空当里，不伸进相邻车道玩家碰撞盒（|x − 1.1| ≥ 0.22）', () => {
-    for (const id of [0, 1]) {
-      // 教室：坐在椅子上（腿、上身、椅子）
-      const { view } = stageView('high', [{ kind: 'footOut', lane: 0, at: 7 }], { idBase: 7000 + id, kit: 'classroom' });
-      const pool = view.pools.get('footOut');
-      expect(pool?.pool.n).toBe(3);
-      const b = instancedBounds(pool ? [pool.pool.mesh] : []);
-      expect(Math.max(-b.min.x, b.max.x)).toBeLessThan(1.1 - 0.22);
-      expect(Math.max(-b.min.x, b.max.x)).toBeGreaterThan(FOOT_CHAIR_X);
-      // 椅面上坐着人（胯在椅面以上），不是一块漂浮的椅面
-      const fy = view.lastSnap?.player.floorY ?? 0;
-      expect(b.max.y - fy).toBeGreaterThan(FOOT_HIP.y + 0.1);
-      // 走廊：坐在地上，没有椅子（腿、上身）
-      const { view: v2 } = stageView('high', [{ kind: 'footOut', lane: 0, at: 7 }], { idBase: 7000 + id, kit: 'corridor' });
-      const p2 = v2.pools.get('footOut');
-      expect(p2?.pool.n).toBe(2);
-      expect(p2 && [0, 1].map((i) => p2.pool.variantAt(i)).includes(p2.variantIndex('chair'))).toBe(false);
-      const b2 = instancedBounds(p2 ? [p2.pool.mesh] : []);
-      expect(Math.max(-b2.min.x, b2.max.x)).toBeLessThan(1.1 - 0.22);
-      expect(b2.max.y - (v2.lastSnap?.player.floorY ?? 0)).toBeGreaterThan(FOOT_FLOOR_HIP.y + 0.8);
+  it('伸进中道的脚：坐在地上的人在两条车道之间的空当里，不伸进相邻车道玩家碰撞盒（|x − 1.1| ≥ 0.22），不带椅子', () => {
+    for (const kit of ['classroom', 'corridor'] as const) {
+      for (const id of [0, 1]) {
+        const { view } = stageView('high', [{ kind: 'footOut', lane: 0, at: 7 }], { idBase: 7000 + id, kit });
+        const pool = view.pools.get('footOut');
+        expect(pool?.pool.n).toBe(2);                  // 腿 + 上身
+        const b = instancedBounds(pool ? [pool.pool.mesh] : []);
+        expect(Math.max(-b.min.x, b.max.x)).toBeLessThan(1.1 - 0.22);
+        expect(Math.max(-b.min.x, b.max.x)).toBeGreaterThan(FOOT_HIP.x);
+        // 是一个坐着的人（头顶约 1 m），不是一双平放在地上的腿
+        expect(b.max.y - (view.lastSnap?.player.floorY ?? 0)).toBeGreaterThan(FOOT_HIP.y + 0.8);
+      }
     }
   });
 
-  it('伸进过道的脚：腿的骨架（骨长同腿的森林、膝盖不反折、地上那种整条腿不高于碰撞上沿 + 5 cm）', () => {
+  it('伸进过道的脚：腿的骨架（骨长同腿的森林、膝盖不反折）', () => {
+    const knee = footKnee(FOOT_HIP), hip = FOOT_HIP;
+    const thigh = Math.hypot(knee.x - hip.x, knee.y - hip.y), shin = Math.hypot(FOOT_ANKLE.x - knee.x, FOOT_ANKLE.y - knee.y);
+    expect(Math.abs(thigh / BODY.thigh - 1)).toBeLessThan(0.05);
+    expect(Math.abs(shin / BODY.shin - 1)).toBeLessThan(0.05);
+    // 膝盖在髋—踝连线上或上方（朝前屈），屈曲不超过 15°
+    const lineY = hip.y + ((knee.x - hip.x) / (FOOT_ANKLE.x - hip.x)) * (FOOT_ANKLE.y - hip.y);
+    expect(knee.y).toBeGreaterThanOrEqual(lineY - 1e-9);
+    const flex = Math.PI - Math.acos(((hip.x - knee.x) * (FOOT_ANKLE.x - knee.x) + (hip.y - knee.y) * (FOOT_ANKLE.y - knee.y)) / (thigh * shin));
+    expect(flex).toBeLessThan((15 * Math.PI) / 180);
+  });
+
+  it('伸进过道的脚：撑地的两只手落在地面上，伸出时不悬空', () => {
     const p = pools.get('footOut') as ArchetypePoolImpl;
-    const sp = OBSTACLES.footOut;
-    for (const hip of [FOOT_HIP, FOOT_FLOOR_HIP]) {
-      const knee = footKnee(hip);
-      const thigh = Math.hypot(knee.x - hip.x, knee.y - hip.y), shin = Math.hypot(FOOT_ANKLE.x - knee.x, FOOT_ANKLE.y - knee.y);
-      expect(Math.abs(thigh / BODY.thigh - 1)).toBeLessThan(0.05);
-      expect(Math.abs(shin / BODY.shin - 1)).toBeLessThan(0.05);
-      // 膝盖在髋—踝连线上或上方（朝前屈），屈曲不超过 15°
-      const lineY = hip.y + ((knee.x - hip.x) / (FOOT_ANKLE.x - hip.x)) * (FOOT_ANKLE.y - hip.y);
-      expect(knee.y).toBeGreaterThanOrEqual(lineY - 1e-9);
-      const flex = Math.PI - Math.acos(((hip.x - knee.x) * (FOOT_ANKLE.x - knee.x) + (hip.y - knee.y) * (FOOT_ANKLE.y - knee.y)) / (thigh * shin));
-      expect(flex).toBeLessThan((15 * Math.PI) / 180);
-    }
-    // 坐在地上：车道上方整条腿都贴着碰撞上沿
-    const fb = bounds(p.geo, p.variantIndex('floorLegs'), { floor: 0.0045, xMax: sp.halfW + MAX_EXPAND });
-    expect(fb.max.y).toBeLessThanOrEqual(sp.y1 + MAX_EXPAND + 1e-3);
-    expect(Math.abs(fb.min.x + sp.halfW)).toBeLessThanOrEqual(MAX_EXPAND + 1e-3);
+    const pos = p.geo.getAttribute('position'), hw = p.geo.getAttribute('aHw');
+    const v = new THREE.Vector3(), mb = new THREE.Matrix4();
+    footBodyMatrix(new THREE.Matrix4(), FOOT_HIP, 1, 0, mb);
+    let lo = Infinity;
+    for (let i = 0; i < pos.count; i++) if (hw.getX(i) === p.variantIndex('body') && hw.getY(i) < 0) lo = Math.min(lo, v.fromBufferAttribute(pos, i).applyMatrix4(mb).y);
+    expect(lo).toBeLessThan(0.02);
+    expect(lo).toBeGreaterThan(-0.03);
   });
 
-  it('伸进过道的脚：伸出、收回的每一刻，人和椅子的外沿都 ≤ 0.86 m（上身只扭一点，不跟着腿整体转 80°）', () => {
+  it('伸进过道的脚：伸出、收回的每一刻，人的外沿都 ≤ 0.86 m（上身只扭一点，不跟着腿整体转 80°）', () => {
     const p = pools.get('footOut') as ArchetypePoolImpl;
     const pos = p.geo.getAttribute('position'), hw = p.geo.getAttribute('aHw');
     const v = new THREE.Vector3(), mb = new THREE.Matrix4(), ml = new THREE.Matrix4(), I = new THREE.Matrix4();
-    const cases: Array<[FootPose, string, string]> = [[FOOT_HIP, 'seatedBody', 'seatedLegs'], [FOOT_FLOOR_HIP, 'floorBody', 'floorLegs']];
-    for (const [hip, bodyV, legV] of cases) {
-      const ib = p.variantIndex(bodyV), il = p.variantIndex(legV), ic = p.variantIndex('chair');
-      for (const sgn of [-1, 1]) {
-        for (let k = 0; k <= 20; k++) {
-          const e = k / 20, yaw = sgn * (1 - e) * FOOT_RETRACT_YAW;
-          footBodyMatrix(I, hip, e, yaw, mb); footLegMatrix(I, hip, yaw, ml);
-          let mx = 0;
-          for (let i = 0; i < pos.count; i++) {
-            const vi = hw.getX(i);
-            if (vi === ib) mx = Math.max(mx, v.fromBufferAttribute(pos, i).applyMatrix4(mb).x);
-            else if (vi === il) mx = Math.max(mx, v.fromBufferAttribute(pos, i).applyMatrix4(ml).x);
-            else if (vi === ic && hip === FOOT_HIP) mx = Math.max(mx, v.fromBufferAttribute(pos, i).x);
-          }
-          expect(mx, `${bodyV} e=${e} yaw=${yaw.toFixed(2)}`).toBeLessThanOrEqual(0.86 + 1e-6);
+    const ib = p.variantIndex('body'), il = p.variantIndex('legs');
+    for (const sgn of [-1, 1]) {
+      for (let k = 0; k <= 20; k++) {
+        const e = k / 20, yaw = sgn * (1 - e) * FOOT_RETRACT_YAW;
+        footBodyMatrix(I, FOOT_HIP, e, yaw, mb); footLegMatrix(I, FOOT_HIP, yaw, ml);
+        let mx = 0;
+        for (let i = 0; i < pos.count; i++) {
+          const vi = hw.getX(i);
+          if (vi === ib) mx = Math.max(mx, v.fromBufferAttribute(pos, i).applyMatrix4(mb).x);
+          else if (vi === il) mx = Math.max(mx, v.fromBufferAttribute(pos, i).applyMatrix4(ml).x);
         }
+        expect(mx, `e=${e} yaw=${yaw.toFixed(2)}`).toBeLessThanOrEqual(0.86 + 1e-6);
       }
     }
   });

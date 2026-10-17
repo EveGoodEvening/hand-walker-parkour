@@ -232,7 +232,7 @@ export class ObstacleView implements ViewSystem {
   }
 
   /**
-   * 伸脚的人坐在车道外沿自己的椅子上（走廊里坐在地上，archetypes/footOut.ts）。路边 seatedRow 里坐在同一个位置的人去掉，免得两个人、两把椅子叠在一起。
+   * 伸脚的人坐在车道外沿的地上（archetypes/footOut.ts）。路边 seatedRow 里坐在同一个位置的人去掉，免得两个人叠在一起（他的椅子留着，像是从椅子上滑到了地上）。
    */
   private withoutSeatClash(decor: Decor[], obstacles: readonly CompiledObstacle[]): Decor[] {
     const seats: Array<{ x: number; s: number }> = [];

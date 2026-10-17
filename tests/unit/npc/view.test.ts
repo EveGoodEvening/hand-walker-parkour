@@ -201,10 +201,9 @@ describe('每种障碍都能正确显示（验收 5）', () => {
         const pool = view.pools.get(a);
         expect(pool, a).toBeDefined();
         if (!pool) continue;
-        // footOut 按场景换坐法：走廊（画廊搭在走廊里）里的人坐在地上，腿是 floorLegs
-        const vs = o.kind === 'footOut' ? [pool.variantOf(o.kind), pool.variantIndex('floorLegs')] : [pool.variantOf(o.kind)];
+        const v = pool.variantOf(o.kind);
         let found = false;
-        for (let i = 0; i < pool.pool.n; i++) if (vs.includes(pool.pool.variantAt(i))) found = true;
+        for (let i = 0; i < pool.pool.n; i++) if (pool.pool.variantAt(i) === v) found = true;
         expect(found, `${o.kind} 没有画出来`).toBe(true);
       }
     }
