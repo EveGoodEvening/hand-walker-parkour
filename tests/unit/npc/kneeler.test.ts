@@ -119,6 +119,9 @@ describe('弱化轮廓的头（npc-standing-4）', () => {
     expect(patchNpcShader(lam, true)).toBe(true);
     expect(lam.vertexShader).toContain('if ( aHw.y < -1.5 && iHw.y < -0.5 ) transformed = vec3( 0.0 );');
     expect(lam.vertexShader).toContain('aHw.y < -1.5 ? 0.0 : -aHw.y');
+    // 弱化 + 自发光（softGlow）：烟头这类逐顶点发光的部分不弱化，强度按 instanceGlow 解出
+    expect(lam.vertexShader).toContain('vHwSoft = aHw.y > 0.5 ? 0.0 :');
+    expect(lam.vertexShader).toContain('iHw.y < -0.5 ? -iHw.y - 1.0 : max( iHw.y, 0.0 )');
   });
 
   it('头发片（且只有头发片）标了 SOFT_HIDE：高画质 head、中画质 upper', () => {

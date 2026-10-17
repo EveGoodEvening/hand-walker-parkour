@@ -8,9 +8,10 @@ import { getChapter } from '../../../src/levels/chapters/index';
 import type { ChapterDef } from '../../../src/levels/schema';
 import { C } from '../../../src/render/npc/colors';
 import { expandChapter } from '../../../src/render/npc/crowds';
-import { HIPS_LOW, HIPS_SPECIAL, LOW_UPPER, LegForest } from '../../../src/render/npc/LegForest';
+import { HIPS_LOW, HIPS_SPECIAL, isLowUpper, LOW_UPPER_BARE, LegForest, newPerson } from '../../../src/render/npc/LegForest';
 import { isCrowdSegment, isStandGroup, isWallGroup, isWallSegment, standRevealOf } from '../../../src/render/npc/ObstacleView';
-import { HIPS } from '../../../src/render/npc/specials';
+import { instanceGlow } from '../../../src/render/npc/material';
+import { HIPS, specialLook } from '../../../src/render/npc/specials';
 import { ViewDriver, fakeCtx, makeView } from './helpers';
 
 const _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
@@ -93,7 +94,7 @@ function people(view: View, snap: SimSnapshot): Array<{ s: number; x: number; hi
     for (let i = 0; i < hp.n; i++) {
       const v = hp.variantAt(i);
       if (hp === f.pool('hipsLow') && v === lowArms) continue;
-      if (hp === f.pool('special') && v === LOW_UPPER) continue;
+      if (hp === f.pool('special') && isLowUpper(v)) continue;
       if (hp === f.pool('hips') && v === HIPS.arms) continue;
       hp.matrixAt(i, _m); _v.setFromMatrixPosition(_m);
       const px = _v.x, pz = _v.z, hip = _v.y - snap.player.floorY;
@@ -128,7 +129,7 @@ function detailedUppers(f: LegForest): number {
   for (const id of ['torso', 'upper', 'special'] as const) {
     const pool = f.pool(id);
     for (let i = 0; i < pool.n; i++) {
-      if (id === 'special' && pool.variantAt(i) !== LOW_UPPER) continue;
+      if (id === 'special' && !isLowUpper(pool.variantAt(i))) continue;
       if (pool.glowAt(i) >= 0) n++;
     }
   }
@@ -273,7 +274,7 @@ describe('站立段与人墙：上身和没有五官的头（U6）', () => {
         const st = people(view, snap).filter((p) => standing(p) && ahead(p.s));
         let uppers = 0;
         for (let i = 0; i < pool.n; i++) {
-          if (tier === 'low' && pool.variantAt(i) !== LOW_UPPER) continue;
+          if (tier === 'low' && !isLowUpper(pool.variantAt(i))) continue;
           pool.matrixAt(i, _m);
           if (!ahead(-_v.setFromMatrixPosition(_m).z)) continue;
           uppers++;
@@ -286,4 +287,63 @@ describe('站立段与人墙：上身和没有五官的头（U6）', () => {
     }
   });
 
+});
+
+describe('低画质的周主任、班长：上身和中、高画质同色同画法（复审）', () => {
+  /** 某个人的上身实例：颜色（instanceColor）与 glow（< 0 = 弱化轮廓）。 */
+  const upperOf = (f: LegForest, id: 'special' | 'upper'): { col: number[]; glow: number; n: number } => {
+    const pool = f.pool(id), out = { col: [] as number[], glow: 0, n: 0 };
+    const c = pool.mesh.instanceColor?.array as Float32Array;
+    for (let i = 0; i < pool.n; i++) {
+      if (id === 'special' && !isLowUpper(pool.variantAt(i))) continue;
+      out.n++; out.glow = pool.glowAt(i); out.col = [c[i * 3] as number, c[i * 3 + 1] as number, c[i * 3 + 2] as number];
+    }
+    return out;
+  };
+  for (const sp of ['monitor', 'directorZhou'] as const) {
+    it(`${sp}：低画质上身着衬衫色（不是髋部的裤子色），人墙时完整着色、否则弱化；不带垂手的前臂`, () => {
+      for (const wall of [false, true]) {
+        const res: Record<string, { col: number[]; glow: number; n: number }> = {};
+        for (const tier of ['low', 'medium'] as QualityTier[]) {
+          const f = new LegForest(); f.init(fakeCtx(tier)); f.setQuality({ tier } as never);
+          const p = newPerson(specialLook(sp)); p.wall = wall; p.upper = wall;
+          f.begin(); f.add(p); f.end();
+          res[tier] = upperOf(f, tier === 'low' ? 'special' : 'upper');
+          if (tier === 'low') {
+            const s = f.pool('special');
+            for (let i = 0; i < s.n; i++) if (isLowUpper(s.variantAt(i))) expect(s.variantAt(i)).toBe(LOW_UPPER_BARE);
+          }
+        }
+        const lo = res.low as { col: number[]; glow: number; n: number }, md = res.medium as { col: number[]; glow: number; n: number };
+        expect(lo.n, `${sp} wall=${wall}`).toBe(1);
+        expect(md.n, `${sp} wall=${wall}`).toBe(1);
+        for (let k = 0; k < 3; k++) expect(lo.col[k], `${sp} wall=${wall}`).toBeCloseTo(md.col[k] as number, 6);
+        expect(Math.sign(lo.glow), `${sp} wall=${wall}`).toBe(Math.sign(md.glow));
+        expect(lo.glow < 0, `${sp} wall=${wall}`).toBe(!wall);
+      }
+    });
+  }
+});
+
+describe('周主任的夹克和上身同一种画法（复审 npc-standing-8）', () => {
+  it('上身弱化时夹克（髋部实例）也弱化，烟头的自发光不变；人墙里两者都完整着色', () => {
+    for (const tier of ['low', 'medium', 'high'] as QualityTier[]) {
+      for (const wall of [false, true]) {
+        const f = new LegForest(); f.init(fakeCtx(tier)); f.setQuality({ tier } as never);
+        const p = newPerson(specialLook('directorZhou')); p.wall = wall; p.upper = wall; p.glow = 1.2;
+        f.begin(); f.add(p); f.end();
+        const hp = f.pool(tier === 'low' ? 'special' : 'hips');
+        let jacket = 0, upper = 0;
+        for (let i = 0; i < hp.n; i++) {
+          if (tier === 'low' && isLowUpper(hp.variantAt(i))) { upper = hp.glowAt(i); continue; }
+          if (hp.variantAt(i) !== (tier === 'low' ? HIPS_SPECIAL.indexOf(HIPS.jacket) : HIPS.jacket)) continue;
+          jacket = hp.glowAt(i);
+        }
+        if (tier !== 'low') { const up = f.pool(tier === 'high' ? 'torso' : 'upper'); upper = up.glowAt(0); }
+        expect(jacket < -0.5, `${tier} wall=${wall}`).toBe(upper < -0.5);
+        expect(jacket < -0.5, `${tier} wall=${wall}`).toBe(!wall);
+        expect(instanceGlow(jacket), `${tier} wall=${wall}`).toBeCloseTo(1.2, 6);
+      }
+    }
+  });
 });

@@ -15,7 +15,7 @@
 import * as THREE from 'three';
 import type { QualityProfile, ViewContext } from '../../core/contracts';
 import { InstPool } from './InstPool';
-import { applyNpcPatch, PartBuilder, SOFT_HIDE, SOFT_UPPER } from './material';
+import { applyNpcPatch, PartBuilder, SOFT_HIDE, SOFT_UPPER, softGlow } from './material';
 import { C } from './colors';
 import { HIPS, LEGV, type HipsVariant, type Look } from './specials';
 import { NpcTone } from './tone';
@@ -186,12 +186,6 @@ function headAt(b: PartBuilder, y: number, long = false): void {
   b.with({ glow: SOFT_HIDE }, () => upperBox(b, [0, y + (long ? 0.14 : 0.22), -0.075], [0.18, long ? 0.26 : 0.12, 0.05], C.hair, { faces: '+x-x-z+y+z' }));
 }
 
-/**
- * 低画质：周主任、班长的手在自己的髋部件里，共用上身 LOW_UPPER 带着垂下来的前臂和手，叠上去就多出一只手。
- * 所以他们的弱化上身（不带前臂）直接放进自己的 special 变体（逐顶点 SOFT_UPPER，烟头的实例自发光不受影响）。
- */
-function ownLowUpper(b: PartBuilder): void { b.with({ glow: SOFT_UPPER }, () => lowUpperBody(b, true)); }
-
 /** 陈默的上身：躯干高度、脖子（头底）高度（相对髋关节）。 */
 export const CHEN_UPPER = { torso: 0.42, neck: 0.56 } as const;
 
@@ -217,14 +211,12 @@ function hipsPart(b: PartBuilder, id: HipsVariant, low = false): void {
       b.segment([0.25, 0.1, 0.0], [0.265, -0.05, 0.08], 0.062, 0.062, C.skin);
       b.segment([0.265, -0.045, 0.1], [0.275, -0.03, 0.17], 0.013, 0.013, 0xe4e8e4);
       b.with({ glow: 1 }, () => b.box([0.275, -0.028, 0.178], [0.022, 0.022, 0.022], C.cigarette));
-      if (low) ownLowUpper(b);
       break;
     case HIPS.books:
       // 班长：双手在身前抱着一摞作业本（只看得见本子的下沿）
       pelvis(b, low);
       for (const s of [-1, 1]) b.segment([s * 0.21, 0.1, 0.02], [s * 0.14, 0.02, 0.2], 0.06, 0.06, C.skin);
       b.box([0, 0.05, 0.22], [0.46, 0.1, 0.3], 0xd9dee3, { colors: { '+z': 0x9fb2c0, '-y': 0x9fb2c0 } });
-      if (low) ownLowUpper(b);
       break;
     case HIPS.fullUpper:
       // 陈默：完整的上身（校服、没有五官的头）。躯干比普通人短一点（蹲着时头顶正好在碰撞盒上沿，头和镜头一样高）
@@ -300,18 +292,34 @@ function headGeo(): THREE.BufferGeometry {
   return b.build();
 }
 
-/** 低画质 special 部件里共用上身的变体号（排在特殊人物 HIPS_SPECIAL 之后）。 */
+/** 低画质 special 部件里共用上身的变体号（排在特殊人物 HIPS_SPECIAL 之后）：带垂下来的前臂和手。 */
 export const LOW_UPPER = HIPS_SPECIAL.length;
 /**
- * special 几何体里各变体的顶点顺序（drawRange 按本帧用到的变体裁剪）：上身最常见，排最前；
- * 其次是陈默（他和人墙同时出现的可能最大），周主任的夹克最后。
+ * 不带前臂的共用上身：周主任、班长的手在自己的髋部件里，叠上带手的 LOW_UPPER 就多出一只手。
+ * 和 LOW_UPPER 一样是单独的实例：着衬衫色，完整着色 / 弱化轮廓按 drawsDetailedUpper 定，和中、高画质一致
+ * （放进他们自己的 special 变体会被染成髋部的颜色——班长的髋是裤子色——而且永远是弱化的）。
  */
-const SPECIAL_ORDER: readonly number[] = [LOW_UPPER, HIPS_SPECIAL.indexOf(HIPS.fullUpper), HIPS_SPECIAL.indexOf(HIPS.books), HIPS_SPECIAL.indexOf(HIPS.jacket)];
+export const LOW_UPPER_BARE = LOW_UPPER + 1;
+/** special 里的变体是不是附属上身（不是髋；测试用）。 */
+export const isLowUpper = (v: number): boolean => v === LOW_UPPER || v === LOW_UPPER_BARE;
+/**
+ * special 几何体里各变体的顶点顺序（drawRange 按本帧用到的变体裁剪）：上身最常见，排最前；
+ * 其次是陈默（他和人墙同时出现的可能最大），然后班长、不带前臂的上身（只跟班长、周主任一起出现），周主任的夹克最后。
+ */
+const SPECIAL_ORDER: readonly number[] = [
+  LOW_UPPER, HIPS_SPECIAL.indexOf(HIPS.fullUpper), HIPS_SPECIAL.indexOf(HIPS.books), LOW_UPPER_BARE, HIPS_SPECIAL.indexOf(HIPS.jacket),
+];
 
-/** 低画质 special 部件：特殊人物（变体号 = HIPS_SPECIAL 下标）与共用上身 LOW_UPPER。 */
+/** 低画质 special 部件：特殊人物（变体号 = HIPS_SPECIAL 下标）与共用上身 LOW_UPPER、LOW_UPPER_BARE。 */
 function specialGeo(): THREE.BufferGeometry {
   const b = new PartBuilder();
-  for (const v of SPECIAL_ORDER) b.variant(v, () => { if (v === LOW_UPPER) lowUpperBody(b, false, { chalk: LEG_CHALK }); else hipsPart(b, HIPS_SPECIAL[v] as HipsVariant, true); });
+  for (const v of SPECIAL_ORDER) {
+    b.variant(v, () => {
+      if (v === LOW_UPPER) lowUpperBody(b, false, { chalk: LEG_CHALK });
+      else if (v === LOW_UPPER_BARE) lowUpperBody(b);
+      else hipsPart(b, HIPS_SPECIAL[v] as HipsVariant, true);
+    });
+  }
   return b.build();
 }
 
@@ -447,14 +455,17 @@ export class LegForest {
     const armsOn = (p.arms || (upperOn && !ownHands)) && !(upperOn && p.clap > 0);
     // 前臂和上身同一种画法：弱化轮廓时袖子和手一起变灰，否则灰色的上臂下面接着一截彩色袖子和肤色的手
     const armStyle = upperOn ? upperStyle : 0;
+    // 周主任的夹克（和夹烟的手）就是他的上半身，跟上身同一种画法：弱化时一起变灰，不在灰躯干下面露出一截
+    // 着色不同的盒子，读成围裙（复审 npc-standing-8）；烟头逐顶点发光，不跟着弱化
+    const hipsGlow = look.hips === HIPS.jacket && !detailed ? softGlow(p.glow) : p.glow;
     if (low) {
       const [sp, v] = LOW_SLOT[look.hips] ?? [false, 0];
-      (sp ? P.special : P.hipsLow).push(_a, v, p.glow, tone.color(hipsHex, out, _col));
-      // 共用上身带着垂下来的前臂（鼓掌只在中、高画质画）；周主任、班长的上身在自己的 special 变体里
-      if (upperOn && !ownHands) P.special.push(_a, LOW_UPPER, upperStyle, tone.color(look.shirt, out, _col));
+      (sp ? P.special : P.hipsLow).push(_a, v, hipsGlow, tone.color(hipsHex, out, _col));
+      // 共用上身带着垂下来的前臂（鼓掌只在中、高画质画）；周主任、班长用不带前臂的那一个
+      if (upperOn) P.special.push(_a, ownHands ? LOW_UPPER_BARE : LOW_UPPER, upperStyle, tone.color(look.shirt, out, _col));
       return;
     }
-    P.hips.push(_a, look.hips === HIPS.noHands ? HIPS.trousers : look.hips, p.glow, tone.color(hipsHex, out, _col));
+    P.hips.push(_a, look.hips === HIPS.noHands ? HIPS.trousers : look.hips, hipsGlow, tone.color(hipsHex, out, _col));
     if (armsOn) P.hips.push(_a, HIPS.arms, armStyle, tone.color(look.shirt, out, _col));
     if (upperOn) {
       tone.color(look.shirt, out, _col);
@@ -474,10 +485,10 @@ export class LegForest {
 
   /** 鞋的实例（测试用：低画质下鞋和腿在同一个 feet 部件里）。 */
   shoes(): { pool: InstPool; variant: number } { return this.tier === 'low' ? { pool: this.p.feet, variant: FEET.shoe } : { pool: this.p.shoe, variant: 0 }; }
-  /** 髋部件（测试用）：special 里 LOW_UPPER 是附属上身，不是髋。 */
+  /** 髋部件（测试用）：special 里 LOW_UPPER、LOW_UPPER_BARE 是附属上身，不是髋。 */
   hipsPools(): InstPool[] { return this.tier === 'low' ? [this.p.hipsLow, this.p.special] : [this.p.hips]; }
   /** 低画质本帧的上身数（完整着色与弱化轮廓都计入，测试用）。 */
-  lowUppers(): number { let k = 0; const sp = this.p.special; for (let i = 0; i < sp.n; i++) if (sp.variantAt(i) === LOW_UPPER) k++; return k; }
+  lowUppers(): number { let k = 0; const sp = this.p.special; for (let i = 0; i < sp.n; i++) if (isLowUpper(sp.variantAt(i))) k++; return k; }
 
   /** 各部件本帧的实例数（测试用）。 */
   counts(): Record<PartId, number> {

@@ -15,6 +15,7 @@ import { EMBER_PEAK, emberGlow, lookFor, specialLook } from '../../../src/render
 import { LAMP_PEAK, lampGlow } from '../../../src/render/npc/archetypes/armBar';
 import { reducedPulse } from '../../../src/render/npc/behaviors';
 import { OVERTAKE_LIFE } from '../../../src/render/npc/ObstacleView';
+import { instanceGlow } from '../../../src/render/npc/material';
 
 /** 实测数字：设了 HW_ROWS（文件路径）时追加写进去，平时什么都不做（vitest 不打印通过的用例的输出）。 */
 function writeRows(rows: string[]): void { const f = process.env.HW_ROWS; if (f) appendFileSync(f, `${rows.join('\n')}\n`); }
@@ -467,7 +468,7 @@ describe('crowd cue、特殊 NPC、4-3 超过你的人', () => {
       vd.step(20);
       const hips = view.forest.pool('hips');
       let jacket = false, glow = 0;
-      for (let i = 0; i < hips.n; i++) { if (hips.variantAt(i) === 2) jacket = true; glow = Math.max(glow, hips.glowAt(i)); }
+      for (let i = 0; i < hips.n; i++) { if (hips.variantAt(i) === 2) jacket = true; glow = Math.max(glow, instanceGlow(hips.glowAt(i))); }
       expect(jacket, id).toBe(want);
       expect(glow > 0, id).toBe(want);
     }
@@ -506,7 +507,7 @@ describe('减少闪烁（§7.3、附录 A-10）', () => {
         vd.step(10);
         const hips = view.forest.pool('hips');
         let g = 0;
-        for (let i = 0; i < hips.n; i++) g = Math.max(g, hips.glowAt(i));
+        for (let i = 0; i < hips.n; i++) g = Math.max(g, instanceGlow(hips.glowAt(i)));
         let l = 0;
         if (armBar) for (let i = 0; i < armBar.pool.n; i++) l = Math.max(l, armBar.pool.glowAt(i));
         ember.push(g); lamp.push(l); ts.push(view.time);

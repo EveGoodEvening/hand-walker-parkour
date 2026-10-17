@@ -8,6 +8,8 @@
 // 另外两个逐顶点通道：
 //   aHw.y 自发光（glow）：正值 × iHw.y 加进 totalEmissiveRadiance；−1 标记弱化上身（不发光）；
 //         −2（SOFT_HIDE）标记「弱化轮廓里不画」的部分（头发片）：实例是弱化上身时收拢成一点，完整着色时照常画。
+//         逐实例的 iHw.y ≤ −1 同时带弱化和自发光：−1 − glow（softGlow；周主任的夹克弱化了，烟头照样明灭），
+//         逐顶点 aHw.y > 0 的发光部分（烟头）不跟着弱化。
 //   aHw.z 着色（tint）：1 = 顶点色乘 instanceColor（衣服颜色）；0 = 保持顶点色（鞋底、手、粉笔白线）。
 //         three 默认把 instanceColor 乘到所有顶点上，粉笔白线就会被染色；这里只替换 color_vertex 里那一行。
 //
@@ -20,6 +22,10 @@ import { GeoBuilder, type V3 } from '../../core/geo';
 export const NPC_PROGRAM_KEY = 'hwNpcV2';
 /** glow 通道的负值保留给弱化上身；可逐顶点或逐实例指定，不额外增加属性 / draw call。 */
 export const SOFT_UPPER = -1;
+/** 逐实例：弱化轮廓 + 自发光 glow（≥ 0）写进同一个 iHw.y。 */
+export const softGlow = (glow: number): number => SOFT_UPPER - glow;
+/** iHw.y 里的自发光强度（softGlow 的逆；测试与着色器同口径）。 */
+export const instanceGlow = (v: number): number => (v < -0.5 ? -v - 1 : Math.max(v, 0));
 /**
  * 逐顶点：弱化上身里不画的部分（只用于从不发光的顶点）。头上的头发片在完整着色里靠黑发和肤色的对比读成头发，
  * 弱化成同一种灰以后像贴在后脑上的第二个盒子（审查 npc-standing-4），所以弱化实例直接把它收掉。
@@ -42,10 +48,11 @@ function colorVertexChunk(): string {
     ? src.replace(INSTANCE_COLOR_LINE, 'vColor.rgb *= mix( vec3( 1.0 ), instanceColor.rgb, aHw.z );')
     : src;
   return `${body}
-	vHwSoft = clamp( max( aHw.y < -1.5 ? 0.0 : -aHw.y, -iHw.y ), 0.0, 1.0 );
+	vHwSoft = aHw.y > 0.5 ? 0.0 : clamp( max( aHw.y < -1.5 ? 0.0 : -aHw.y, -iHw.y ), 0.0, 1.0 );
+	float hwInstGlow = iHw.y < -0.5 ? -iHw.y - 1.0 : max( iHw.y, 0.0 );
 	vHwGlow = vec3( 0.0 );
 	#if defined( USE_COLOR ) || defined( USE_COLOR_ALPHA )
-		vHwGlow = color.rgb * max( aHw.y, 0.0 ) * max( iHw.y, 0.0 );
+		vHwGlow = color.rgb * max( aHw.y, 0.0 ) * hwInstGlow;
 		if ( vHwSoft > 0.5 ) {
 			vec3 cloth = color.rgb;
 			#ifdef USE_INSTANCING_COLOR
