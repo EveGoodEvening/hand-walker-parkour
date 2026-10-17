@@ -41,7 +41,7 @@ export async function scene(def: ChapterDef, tier: 'low' | 'medium' = 'low', asp
   const shadow = new PlanarShadowSystem(); shadow.init(ctx);
   const cam = new CameraRig(); cam.init(ctx);
   const ch = compile(def);
-  await actor.loadChapter(ch); await surf.loadChapter(ch); await dbl.loadChapter(ch);
+  await actor.loadChapter(ch); await surf.loadChapter(ch); await dbl.loadChapter(ch); await cam.loadChapter(ch);
   WP5.poseTest = null; WP5.debugCam = null; WP5.focus = null;
   (ctx.camera as THREE.PerspectiveCamera).aspect = aspect;
   return { ctx, f, actor, surf, dbl, shadow, cam, ch, camera: new THREE.PerspectiveCamera(55, aspect, 0.05, 300), aspect };

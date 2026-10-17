@@ -211,19 +211,27 @@ export interface CrawlInput {
 export interface GroundProfile { stepY(s: number): number; slope(s: number): number }
 
 /**
- * 楼梯上的身体沿坡度俯仰：绕离地 STAIR_PIVOT_Y、在根上方的点转（髋与肩之间），肩和髋各自贴着身下的坡线，
- * 行李腿也顺着坡拖在后面（下楼时不戳进上面的台阶，上楼时不悬在下面的台阶上方）。
+ * 楼梯上的身体沿坡度俯仰（视觉修复 actors-1，评审后改）：绕骨盆关节转（REST.pelvis，根后方 0.26 m、离地 0.34 m），髋不动，
+ * 下楼时肩和头低下去够下面的台阶，上楼时抬起来。以前绕根上方 0.4 m 转，下楼时髋被抬高 6–7 cm、头压低 8 cm，
+ * 从身后高处的追尾镜头看，整个人被压成一团、两只鞋顶在肩上。
+ * 上楼只俯仰坡度的 STAIR_PITCH_UP：整个坡度（14°）时从身后低处看躯干竖着、腿垂在下面，读起来像站着（第一到三章不能读成站着）。
  */
-export const STAIR_PIVOT_Y = 0.4;
-/** 下楼时腿相对身体垂下的坡度比例。 */
-const STAIR_LEG_DROP = 0.6;
+export const STAIR_PITCH_UP = 0.5;
+/**
+ * 行李腿在世界里跟坡度走多少（0 = 和平地一样，1 = 整条腿顺着坡）：下楼时大腿几乎和平地一样往后下方，小腿多跟一些坡，
+ * 膝、踝刚好越过身后高起来的台阶（≥ 4 cm），鞋仍在髋的下方（追尾镜头里和平地一样）；上楼时大腿略垂、小腿不跟坡，膝盖弯着，
+ * 不会变成两条直直垂下去的腿。
+ */
+export const STAIR_LEG_FOLLOW = { down: { thigh: 0.15, shin: 0.7 }, up: { thigh: 0.3, shin: 0 } } as const;
+/** 楼梯上身体的俯仰角（弧度，上楼为正）。 */
+export function stairPitch(slope: number): number { const a = Math.atan(slope); return a > 0 ? a * STAIR_PITCH_UP : a; }
 /** 上楼时摆动期里先原地抬手的比例。 */
 const STAIR_LIFT_FIRST = 0.18;
 
 /** 支撑手在肩前的水平距离：平地 = CRAWL.reach；有坡度时按身体的俯仰转过去（下楼近、上楼远），手臂才够得到台阶。 */
 export function reachOnSlope(slope: number): number {
   if (slope === 0) return CRAWL.reach;
-  const a = Math.atan(slope);
+  const a = stairPitch(slope);
   return CRAWL.reach * Math.cos(a) + (CRAWL.shoulderY - PALM_DROP) * Math.sin(a);
 }
 
@@ -500,13 +508,15 @@ export function crawlPose(i: CrawlInput, b: PoseBuilder): Pose {
     roll = 0.35 * fall; bob = 0;
   }
   let rootY = i.floorY + (air ? i.y : 0) + bob + (hipY - PELVIS_REST_Y);
-  // 楼梯：整个身体顺着坡俯仰（上楼抬头），绕根上方 STAIR_PIVOT_Y 处转，把那一点留在原处
+  // 楼梯：整个身体顺着坡俯仰（上楼抬头），绕骨盆关节转，把它留在原处
   let rs = i.s, rx = i.x;
   const slope = i.ground ? i.ground.slope(i.s) : 0;
   if (slope !== 0) {
-    const a = Math.atan(slope);
-    const dy = STAIR_PIVOT_Y * (Math.cos(a) - 1), dz = STAIR_PIVOT_Y * Math.sin(a);
-    rootY -= dy; rs += dz * Math.cos(yaw); rx -= dz * Math.sin(yaw);
+    const a = stairPitch(slope);
+    const cy = REST.pelvis[1], cz = REST.pelvis[2];                     // 骨盆关节（根的局部坐标，+z 向后）
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const dy = cy - (cy * ca - cz * sa), dz = cz - (cy * sa + cz * ca);   // 角色空间（+z 向后）里根要挪的量
+    rootY += dy; rs -= dz * Math.cos(yaw); rx += dz * Math.sin(yaw);
     pitch += a;
   }
   b.begin(rx, rootY, rs, yaw, pitch, roll);
@@ -548,11 +558,12 @@ export function crawlPose(i: CrawlInput, b: PoseBuilder): Pose {
   const flat = Math.max(duck, fall);
   // 梦里（> 7 m/s）：髋部伸展，腿「从身体下面解放出来，拖在后面」
   const free = dream ? smoothstep(6.5, 8.5, i.speed) : 0;
-  // 下楼：腿随身体顺坡翘起后，鞋底正对着身后高处的追尾镜头。腿相对身体再垂下坡度的一部分（离上面的台阶仍有十几厘米）
-  const legDrop = slope < 0 ? -Math.atan(slope) * STAIR_LEG_DROP : 0;
+  // 楼梯：腿在世界里跟坡度走 STAIR_LEG_FOLLOW，减去身体的俯仰就是相对身体要转的角度（平地上两项都是 0）
+  const sa = Math.atan(slope), sp = stairPitch(slope), lf = sa < 0 ? STAIR_LEG_FOLLOW.down : STAIR_LEG_FOLLOW.up;
+  const thighDrop = sa * lf.thigh - sp, shinDrop = sa * lf.shin - sp;
   luggageLegs(b, {
-    thighDown: (air ? 14 * DEG : lerp(lerp(CRAWL.thighDown, 8 * DEG, duck), 14 * DEG, free)) + legDrop,
-    shinUp: (air ? 10 * DEG : lerp(CRAWL.shinUp, 14 * DEG, free)) - legDrop,
+    thighDown: (air ? 14 * DEG : lerp(lerp(CRAWL.thighDown, 8 * DEG, duck), 14 * DEG, free)) + thighDrop,
+    shinUp: (air ? 10 * DEG : lerp(CRAWL.shinUp, 14 * DEG, free)) - shinDrop,
     spread: air ? 0.04 : lerp(CRAWL.legSpread, 0.42, duck), swing: moving ? CRAWL.legSwing * Math.sin(w - 1.1) * (1 - duck * 0.6) : 0,
     twitch: tw, drift: clamp(i.drift, -1, 1),
     hip: i.legHip ?? 0, knee: i.legKnee ?? 0, flat: air ? 0 : flat, ground: i.floorY - rootY,

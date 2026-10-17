@@ -11,10 +11,10 @@ import { clamp, lerp, smoothstep } from '../../core/math';
 import { getSet } from '../../core/registry';
 import { BONE_INDEX, copyPose, createPose, type Pose } from '../../core/rig';
 import type { PoseClipId, SimSnapshot } from '../../core/types';
-import { stepFloorY } from '../../levels/compile';
-import type { CompiledChapter, CompiledSegment, RunSegmentDef } from '../../levels/schema';
+import type { CompiledChapter, CompiledSegment } from '../../levels/schema';
 import { clipPose, SET_DEFAULT_CLIP } from './clips';
-import { CrawlAnimator, crawlPose, jumpDur, PoseBuilder, type CrawlInput, type GroundProfile } from './handCycle';
+import { CrawlAnimator, crawlPose, jumpDur, PoseBuilder, type CrawlInput } from './handCycle';
+import { ChapterGround } from './ground';
 import { applyPosture, blendPoses, standing, standPose } from './poses';
 import { applyThirdHand } from './ThirdHand';
 import { patchGroupAlpha, stepUpperFade, upperAlpha, upperFadeWanted } from './readability';
@@ -49,38 +49,6 @@ const _hv = new THREE.Vector3(), _hq = new THREE.Vector3();
 export function stillHidden(setId: string, variant: string): boolean {
   const vk = `${setId}.${variant}`;
   return vk in SET_DEFAULT_CLIP && SET_DEFAULT_CLIP[vk] === null;
-}
-
-/**
- * 章节的地面形状（视觉修复 actors-1）：按里程找所在的跑段，楼梯段取踏面高度（levels/compile.ts 的 stepFloorY，与台阶的几何一致），
- * 斜率按坡线在 ±0.3 m 上的差分（进出楼梯时 0.6 m 内渐变）。只在当前段或相邻段是楼梯时交给 CrawlInput，平地的姿势不变。
- */
-export class ChapterGround implements GroundProfile {
-  ch: CompiledChapter | null = null;
-  seg = 0;
-  /** 当前段或相邻段有楼梯。 */
-  active(ch: CompiledChapter | null, seg: number): boolean {
-    this.ch = ch; this.seg = seg;
-    if (!ch) return false;
-    for (let k = Math.max(0, seg - 1); k <= Math.min(ch.segments.length - 1, seg + 1); k++) {
-      const g = ch.segments[k] as CompiledSegment;
-      if (g.kind === 'run' && (g.def as RunSegmentDef).stairs) return true;
-    }
-    return false;
-  }
-  private at(s: number): CompiledSegment | null {
-    const segs = this.ch?.segments;
-    if (!segs || !segs.length) return null;
-    const c = Math.min(Math.max(0, this.seg), segs.length - 1);
-    for (let d = 0; d <= 6; d++) {
-      const g = segs[(d & 1) ? c + ((d + 1) >> 1) : c - (d >> 1)];   // c, c + 1, c − 1, c + 2, …
-      if (g && g.kind === 'run' && s >= g.s0 && s < g.s1) return g;
-    }
-    return segs[c] as CompiledSegment;
-  }
-  stepY(s: number): number { const g = this.at(s); return g ? stepFloorY(g, s) : 0; }
-  private ramp(s: number): number { const g = this.at(s); return g ? g.floorY(s) : 0; }
-  slope(s: number): number { return (this.ramp(s + 0.3) - this.ramp(s - 0.3)) / 0.6; }
 }
 
 function crawlInputFrom(prev: SimSnapshot, next: SimSnapshot, a: number, out: CrawlInput): CrawlInput {

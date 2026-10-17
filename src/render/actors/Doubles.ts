@@ -30,6 +30,7 @@ import { FOLLOW } from '../camera/shots';
 import { vFromH } from '../camera/CameraRig';
 import { endRoomFloor, reflectPlane, type ReflectSurfaces, type SurfaceView } from './surfaces';
 import { applyThirdHand, gestureExtend, type ThirdHandTarget } from './ThirdHand';
+import { ChapterGround } from './ground';
 import { planFor } from './planCache';
 
 type Kind = 'side' | 'end' | 'floor' | 'world' | 'still' | 'memory';
@@ -221,6 +222,8 @@ export class DoubleSystem implements ViewSystem {
   private plan: Plan | null = null;
   private planSeg = -1;
   private lastT = 0;
+  /** oracle 预演的地面形状（楼梯，视觉修复 actors-1）：与主角同一套踏面与俯仰。history 替身采样的就是主角画出来的姿势，不用另算。 */
+  private readonly ground = new ChapterGround();
   private readonly crawlIn: CrawlInput = { s: 0, x: 0, y: 0, floorY: 0, beat: 0, stride: 1, cadence: 4.8, speed: 4.8, duck: 0, air: false, airT: 0, mode: 'crawl', modeT: 0, laneTarget: 0, twitch: 0, drift: 0, lookBack: 0 };
   /** 站立段世界替身的镜子（STAND_MIRROR）：读章前建好，游戏中不建几何体。原点在玻璃下沿中点，镜面朝本地 +z。 */
   readonly standMirror = new THREE.Group();
@@ -830,6 +833,7 @@ export class DoubleSystem implements ViewSystem {
     const I = this.crawlIn;
     I.s = so; I.stride = N.stride; I.cadence = N.cadence || 4.8; I.speed = N.speed; I.floorY = seg ? seg.floorY(so) : N.floorY;
     I.beat = seg ? (so - seg.s0) / seg.stride : N.beat;
+    I.ground = this.ground.active(this.chapter, next.segIndex) ? this.ground : null;
     const lane = this.plan ? this.plan.laneAt(so) : N.laneTarget;
     I.x = lane * 1.1; I.laneTarget = lane;
     const act = this.plan ? this.plan.actionAt(so) : 'none';
