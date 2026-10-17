@@ -3,6 +3,7 @@
 // 电子栏杆的红灯（#B3322C）只在第三章出现（附录 A-9），沿着杆来回扫（「红光扫过」），用额外一个 barrierLamp 实例画。
 // 伸出的手臂（reach）：两侧各跪着一个人（kneeler 原型的 reachL / reachR 变体），手臂横过车道，手在中间碰到一起。
 import * as THREE from 'three';
+import { LANE_WIDTH } from '../../../core/constants';
 import { defineArchetype, type PlaceCtx } from '../archetype';
 import { reducedPulse } from '../behaviors';
 import { C } from '../colors';
@@ -10,6 +11,9 @@ import { barLine, slitShadow, stripedBar } from '../shapes';
 import { KNEELER_CROWD } from './kneeler';
 
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1);
+
+/** reach 两侧跪着的人离车道中心的距离：车道外沿（没有邻居）/ 车道缝上（旁边车道同一行有障碍，= LANE_WIDTH / 2）。 */
+export const REACH_SIDE_X = 0.74, REACH_GAP_X = LANE_WIDTH / 2;
 
 /** 红灯最亮时的自发光强度。 */
 export const LAMP_PEAK = 1.6;
@@ -111,14 +115,21 @@ export default defineArchetype({
     const o = c.o;
     if (o.kind === 'reach') {
       p.placeGeneric(c, { tile: false });
-      // 两侧跪着的人（kneeler 原型）
+      // 两侧跪着的人（kneeler 原型）。旁边车道同一行也是伸出的手臂时，两条手臂从车道缝里同一个人身上伸出来
+      // （reachBoth，由车道号小的那一个画）；旁边是别的障碍（人腿……）时，这个人跪到车道缝上（±0.55），身体收在
+      // ±0.17 以内，离旁边那个人垂着的手（车道中心 ±0.28）还有约 0.1 m。以前一律跪在 ±0.74：三道 reach 时两两背靠背，
+      // 手臂穿过对方的身体；挨着人腿时压进那个人的腿和手里（审查 npc-seated-5）。
+      // 「让一下」时各自横移（partX），对不齐，不合并。同一行的障碍同时被越过、同时缩小消失，合并的人只属于其中一个也看不出来。
       const cx = (c.st.x0 + c.st.x1) / 2 + c.partX;
       const zc = -(o.s0 + o.s1) / 2 - c.st.ds;
+      const nb = c.partX === 0 ? c.reachNb : undefined;
       for (const s of [-1, 1] as const) {
-        _p.set(cx + s * 0.74, c.floorY, zc - 0.02);
+        const n = nb ? (s < 0 ? nb.l : nb.r) : null;
+        if (n === 'reach' && s < 0) continue;
+        _p.set(cx + s * (n ? REACH_GAP_X : REACH_SIDE_X), c.floorY, zc - 0.02);
         _q.identity();
         _m.compose(_p, _q, _s);
-        c.side('kneeler', _m, s < 0 ? 'reachL' : 'reachR', 0, KNEELER_CROWD);
+        c.side('kneeler', _m, n === 'reach' ? 'reachBoth' : s < 0 ? 'reachL' : 'reachR', 0, KNEELER_CROWD);
       }
       return true;
     }

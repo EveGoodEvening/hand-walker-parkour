@@ -71,7 +71,7 @@ export class GeoBuilder {
   }
 
   /** 沿线段 a→b 的长方体（截面 w × h，h 方向尽量朝上）。 */
-  segment(a: V3, b: V3, w: number, h: number, hex: number, opts: { colors?: Partial<Record<string, number>> } = {}): this {
+  segment(a: V3, b: V3, w: number, h: number, hex: number, opts: { faces?: string; colors?: Partial<Record<string, number>> } = {}): this {
     const va = new THREE.Vector3(...a), vb = new THREE.Vector3(...b);
     const len = va.distanceTo(vb);
     if (len < 1e-6) return this;
