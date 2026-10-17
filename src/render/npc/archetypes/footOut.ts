@@ -16,6 +16,7 @@ import { stretchVisual } from '../behaviors';
 import { C } from '../colors';
 import { SOFT_UPPER, type PartBuilder } from '../material';
 import { lowUpperBody } from '../upperBody';
+import { footOutSide } from '../../kits/school/seats';
 
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1), _e = new THREE.Euler();
 const _t = new THREE.Matrix4(), _r = new THREE.Matrix4();
@@ -42,10 +43,8 @@ export function footExtension(c: Pick<PlaceCtx, 'o' | 'tSeg' | 'knockedAt' | 't'
 
 /** 坐着的人在哪一侧（+1 = +x）。 */
 export function footSide(o: PlaceCtx['o']): 1 | -1 {
-  const lane = o.lanes[0] ?? 0;
-  if (lane < 0) return -1;
-  if (lane > 0) return 1;
-  return o.id % 2 === 0 ? 1 : -1;
+  // 规则放在 kits/school/seats.ts：教室 kit 在伸脚的人坐的那一行同侧不摆课桌椅，两边要一致
+  return footOutSide(o.lanes, o.id);
 }
 
 /** 坐着的那个人（髋部）在世界坐标里的横向位置与里程（ObstacleView 用它把同一位置的路边坐着的人去掉，免得叠成两个）。 */

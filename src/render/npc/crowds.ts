@@ -5,6 +5,10 @@ import { createRng } from '../../core/rng';
 import type { KitId, NpcGroupKind } from '../../core/types';
 import type { CompiledSegment, NpcGroupDef, RunSegmentDef } from '../../levels/schema';
 import { crowdOfKit, lookFor, specialLook, specialOfGroup, type Look, type SpecialId } from './specials';
+import {
+  CANTEEN_INNER_X, CANTEEN_PILLAR_HALF, CANTEEN_PILLAR_X, CLASS_CHAIR_DS, CLASS_INNER_X, STOOL_DS, STOOL_DX,
+  canteenLayout, canteenTableXs, classroomFootClash, classroomRows, footOutSeats,
+} from '../kits/school/seats';
 
 export type DecorKind = 'person' | 'kneeler' | 'crawler';
 export type DecorPose = 'stand' | 'seat' | 'walk';
@@ -21,6 +25,8 @@ export interface Decor {
   gaze: 'turnShoes' | 'center' | 'none';
   look: Look; special: SpecialId | null;
   side: -1 | 1;
+  /** 坐在 kit 自己的椅子 / 圆凳上（教室、食堂）：ObstacleView 不再另画一把椅子。 */
+  kitSeat?: boolean;
 }
 
 export interface GroupInfo { def: NpcGroupDef; seg: number; kit: KitId; key: string }
@@ -41,9 +47,15 @@ export function bandOf(kit: KitId): [number, number] {
 
 const HALF_PI = Math.PI / 2;
 
-/** 展开一个段里的全部组。band 覆盖 kit 的人群范围（调试舞台搭在测试章 ±1.8 的走廊里，用走廊的范围，人才看得见）。 */
-export function expandSegment(seed: number, seg: Pick<CompiledSegment, 'index' | 's0' | 'stride' | 'npcGroups' | 'def'>, out: Decor[], groups: GroupInfo[], band?: readonly [number, number]): void {
+type SegLike = Pick<CompiledSegment, 'index' | 's0' | 's1' | 'stride' | 'npcGroups' | 'def' | 'obstacles'>;
+
+/**
+ * 展开一个段里的全部组。band 覆盖 kit 的人群范围（调试舞台搭在测试章 ±1.8 的走廊里，用走廊的范围，人才看得见；
+ * 舞台上没有 kit 的桌椅，坐着的人照旧自带椅子）。nextKit = 后一个跑段 / 站立段的 kit（教室段尾有没有门厅；缺省按有门厅）。
+ */
+export function expandSegment(seed: number, seg: SegLike, out: Decor[], groups: GroupInfo[], band?: readonly [number, number], nextKit?: KitId | null): void {
   const def = seg.def as RunSegmentDef;
+  const first = out.length;
   const kit = def.kit ?? 'placeholder';
   const crowd = crowdOfKit(kit);
   const [b0, b1] = band ?? bandOf(kit);
@@ -73,6 +85,11 @@ export function expandSegment(seed: number, seg: Pick<CompiledSegment, 'index' |
       switch (kind) {
         case 'seatedRow': case 'classmates': {
           const seated = kind === 'seatedRow';
+          // 教室、食堂：坐在 kit 自己的课桌椅、餐桌凳上（kits/school/seats.ts）
+          if (seated && !band && (kit === 'classroom' || kit === 'canteen')) {
+            kitSeats(kit, seg, def.variant, nextKit, side, sAt(g.from), sAt(g.to), dens, rng, (d) => push({ ...d, side }));
+            break;
+          }
           const step = seated ? 1.25 : 0.8;
           for (let b = g.from; b <= g.to + 1e-6; b += step / seg.stride) {
             if (rng.next() > dens) continue;
@@ -153,13 +170,78 @@ export function expandSegment(seed: number, seg: Pick<CompiledSegment, 'index' |
       }
     }
   });
+  if (kit === 'canteen' && !band) clearCanteenFurniture(out, first, seg, def.variant);
+}
+
+type SeatPush = (d: { kind: 'person'; pose: 'seat'; s: number; x: number; yaw: number; speed: 0; phase: number; kitSeat: true }) => void;
+
+/**
+ * 坐在 kit 家具上的人（一侧）。
+ * 教室：靠过道一列（|x| = 1.78）每行一把椅子，人坐在椅子中心，面朝前方黑板（−z），背对玩家；伸脚的人那一行同侧没有课桌椅，也就没有人。
+ * 食堂：靠过道一列餐桌（|x| = 2.85）的四只圆凳，靠过道的两只坐得多一些；人面朝桌子中心（±z），膝盖收在桌下。
+ * 每米的人数与以前（每 1.25 m 一人）相当，不加重 npcMax 和低画质预算。
+ */
+function kitSeats(kit: 'classroom' | 'canteen', seg: SegLike, variant: string, nextKit: KitId | null | undefined, side: -1 | 1,
+  sFrom: number, sTo: number, dens: number, rng: ReturnType<typeof createRng>, push: SeatPush): void {
+  const seat = (s: number, x: number, yaw: number) => push({ kind: 'person', pose: 'seat', s, x, yaw, speed: 0, phase: rng.next(), kitSeat: true });
+  if (kit === 'classroom') {
+    const feet = footOutSeats(seg.obstacles);
+    for (const row of classroomRows(seg, nextKit !== 'classroom')) {
+      const s = row - CLASS_CHAIR_DS;
+      if (s < sFrom - 1e-6 || s > sTo + 1e-6) continue;
+      if (classroomFootClash(row, side, feet)) continue;
+      if (rng.next() > dens) continue;
+      // 偶尔侧过身（朝过道转一点），腿还在桌下
+      seat(s, side * CLASS_INNER_X, Math.PI + rng.range(-0.12, 0.12) + (rng.next() < 0.25 ? -side * 0.3 : 0));
+    }
+    return;
+  }
+  const look = { windows: variant === 'windowWall', counter: variant === 'tray' };
+  if (!canteenTableXs(look).includes(side * CANTEEN_INNER_X)) return;
+  for (const row of canteenLayout(seg).rows) {
+    for (const ds of [-STOOL_DS, STOOL_DS]) {
+      const s = row + ds;
+      if (s < sFrom - 1e-6 || s > sTo + 1e-6) continue;
+      for (const dx of [-STOOL_DX, STOOL_DX]) {
+        if (rng.next() > dens * (dx < 0 ? 0.4 : 0.2)) continue;
+        // s 大的一侧（−z）面朝 +z（yaw 0），反之 yaw π：都朝向桌子中心
+        seat(s, side * (CANTEEN_INNER_X + dx), (ds > 0 ? 0 : Math.PI) + rng.range(-0.15, 0.15));
+      }
+    }
+  }
+}
+
+/** 食堂里站着的人不站进餐桌和方柱：站在桌列与车道之间（|x| ≤ 2.05），离方柱 0.46 m 以内的沿 s 挪开。 */
+function clearCanteenFurniture(out: Decor[], first: number, seg: SegLike, variant: string): void {
+  const windows = variant === 'windowWall';
+  const { pillars } = canteenLayout(seg);
+  const inner = 1.56, maxX = CANTEEN_INNER_X - 0.6 - 0.2;   // 桌面外沿 2.25，人半宽 0.2
+  for (let i = first; i < out.length; i++) {
+    const d = out[i] as Decor;
+    if (d.kind !== 'person' || d.pose !== 'stand') continue;
+    const ax = Math.abs(d.x), sg = d.x < 0 ? -1 : 1;
+    // 范围 [1.56, 2.9] 等比压进 [1.56, 2.05]（窗墙一侧没有桌子，墙在 1.8：也压进来）
+    const nx = inner + Math.max(0, ax - inner) * (maxX - inner) / (2.9 - inner);
+    d.x = sg * nx;
+    if (windows && sg < 0) continue;
+    for (const p of pillars) {
+      const gap = CANTEEN_PILLAR_HALF + 0.2;
+      if (nx + 0.2 > CANTEEN_PILLAR_X - CANTEEN_PILLAR_HALF && Math.abs(d.s - p) < gap) { d.s = p + (d.s >= p ? gap : -gap); break; }
+    }
+  }
 }
 
 /** 展开一整章（只处理跑段；静场和站立段没有 npcs）。结果按 s 排序。 */
-export function expandChapter(seed: number, segments: ReadonlyArray<Pick<CompiledSegment, 'index' | 's0' | 'stride' | 'npcGroups' | 'def' | 'kind'>>): { decor: Decor[]; groups: GroupInfo[] } {
+export function expandChapter(seed: number, segments: ReadonlyArray<SegLike & Pick<CompiledSegment, 'kind'>>): { decor: Decor[]; groups: GroupInfo[] } {
   const decor: Decor[] = [];
   const groups: GroupInfo[] = [];
-  for (const seg of segments) if (seg.kind === 'run') expandSegment(seed, seg, decor, groups);
+  segments.forEach((seg, i) => {
+    if (seg.kind !== 'run') return;
+    // 后一个跑段 / 站立段的 kit（与 ChunkStreamer 的 neighbor 一致：跳过静场）
+    let nextKit: KitId | null = null;
+    for (let j = i + 1; j < segments.length; j++) { const n = segments[j] as SegLike & { kind: string }; if (n.kind === 'still') continue; nextKit = (n.def as RunSegmentDef).kit; break; }
+    expandSegment(seed, seg, decor, groups, undefined, nextKit);
+  });
   decor.sort((a, b) => a.s - b.s);
   return { decor, groups };
 }

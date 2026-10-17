@@ -13,10 +13,11 @@ import {
   CORRIDOR_WALL, DAY_WINDOW, HW, NIGHT_LIFT, NIGHT_WINDOW, beatsIn, brassStrips, chunkZ, contactShadow, floorUV, ceilingBack, ceilingQuad, crossWall, dataPlates, flatFloor, geos,
   makeEnv, mirrorRooms, noticeBoard, radiator, sideHoles, sideWall, stepsIn, wallPaper, windowPane, type Env, type Hole, type WallStyle, type WindowStyle,
 } from './shell';
+import { CLASS_CHAIR_DS, CLASS_DESK_X, CLASS_DESK_X_LOW, CLASS_INNER_X, CLASS_VESTIBULE, classroomFootClash, classroomRowsIn, footOutSeats } from './seats';
 
 const ROOM = 4.6;          // 教室半宽
 const H = 3.3;
-const VESTIBULE = 3.4;     // 门厅长度
+const VESTIBULE = CLASS_VESTIBULE;     // 门厅长度
 const DAY_WALL: WallStyle = { ...CORRIDOR_WALL, height: H };
 const NIGHT_WALL: WallStyle = { ...DAY_WALL, lift: NIGHT_LIFT };
 
@@ -47,7 +48,7 @@ export function desk(g: KitGeo, e: Env, x: number, z: number, books: number, bag
 
 /** 椅子：在课桌后方（+z 一侧），座面、靠背、四条腿。 */
 export function chair(g: KitGeo, e: Env, x: number, z: number, pushed: number): void {
-  const zc = z + 0.42 + pushed;
+  const zc = z + CLASS_CHAIR_DS + pushed;
   g.box([x, 0.44, zc], [0.38, 0.025, 0.36], 0x8f9a9c, { faces: e.low ? '+y+z' : '+y+z-y' });
   g.box([x, 0.82, zc + 0.17], [0.38, 0.22, 0.02], 0x8f9a9c, { faces: '+z-z' });
   const lf = e.low ? '+z+x' : '+z+x-x';
@@ -75,19 +76,23 @@ export function buildClassroom(ctx: HwKitChunkContext, look: Look): KitChunk {
   brassStrips(stat, e, PAL.brass, -HW, HW);
 
   // —— 课桌椅：每行约 1.33 m（整除 chunk），两侧各两对同桌（车道外沿 1.32 m 以外）——
-  if (roomEnd > e.s0 + 0.5) {
-    const rows = stepsIn(e, e.period / Math.max(1, Math.round(e.period / 1.33)), 0.7, 0.25);
-    for (const s of rows) {
-      if (s > roomEnd - 0.9) continue;
-      const z = e.z(s);
-      for (const side of [-1, 1] as const) {
-        for (const x of e.low ? [1.78, 2.42, 3.5] : [1.78, 2.42, 3.5, 4.12]) {
-          if (rng.next() < 0.06) continue;
-          const xx = side * x + (rng.next() - 0.5) * 0.05;
-          desk(stat, e, xx, z + (rng.next() - 0.5) * 0.06, rng.next() < 0.55 ? 1 + rng.int(4) : 0, rng.next() < 0.3);
-          chair(stat, e, xx + (rng.next() - 0.5) * 0.06, z, rng.next() * 0.12);
-          contactShadow(floor, xx, z + 0.18, 0.56, 0.85, fuv, 0xb4bcbe, 0xf2f4f4, 0.14, 0.0015, chunkZ(e));
-        }
+  // 行与靠过道一列的位置由 seats.ts 给出：坐着的同学（WP6 seatedRow）坐在这一列的椅子上，所以这一列不缺座、不抖动、椅子不拉开；
+  // 伸脚的人（footOut，自带椅子）坐的那一行同侧不摆。别的列照旧随机（rng 的取用次序不变）。
+  const feet = e.generic ? [] : footOutSeats(ctx.seg.obstacles ?? []);
+  for (const s of classroomRowsIn(e.segS0, e.s0, e.s1, e.period, roomEnd)) {
+    const z = e.z(s);
+    for (const side of [-1, 1] as const) {
+      for (const x of e.low ? CLASS_DESK_X_LOW : CLASS_DESK_X) {
+        const inner = x === CLASS_INNER_X;
+        const skip = rng.next() < 0.06;
+        if (inner ? classroomFootClash(s, side, feet) : skip) continue;
+        const jx = (rng.next() - 0.5) * 0.05;
+        const xx = side * x + (inner ? 0 : jx);
+        const jz = (rng.next() - 0.5) * 0.06, books = rng.next() < 0.55 ? 1 + rng.int(4) : 0, bag = rng.next() < 0.3;
+        desk(stat, e, xx, z + (inner ? 0 : jz), books, bag);
+        const jc = (rng.next() - 0.5) * 0.06, pushed = rng.next() * 0.12;
+        chair(stat, e, xx + (inner ? 0 : jc), z, inner ? 0 : pushed);
+        contactShadow(floor, xx, z + 0.18, 0.56, 0.85, fuv, 0xb4bcbe, 0xf2f4f4, 0.14, 0.0015, chunkZ(e));
       }
     }
   }

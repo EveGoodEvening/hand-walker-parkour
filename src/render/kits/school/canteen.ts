@@ -13,6 +13,7 @@ import {
   CORRIDOR_WALL, DAY_WINDOW, HW, beatsIn, brassStrips, chunkZ, contactShadow, floorUV, ceilingBack, ceilingQuad, crossWall, dataPlates, flatFloor, floorBlob, geos,
   makeEnv, mirrorRooms, sideHoles, sideWall, stepsIn, wallPaper, windowPane, type Env, type Hole, type WallStyle,
 } from './shell';
+import { CANTEEN_INNER_X, CANTEEN_PILLAR_X, STOOL_DS, STOOL_DX, canteenPillarsIn, canteenRowsIn, canteenTableXs } from './seats';
 
 const H = 3.8;
 const ROOM = 5.2;
@@ -25,16 +26,23 @@ const LOOKS: Record<string, Look> = {
   windowWall: { leftWall: -HW, counter: false, windows: true },
 };
 
-/** 连体餐桌：桌面 + T 形钢架 + 四只圆凳（凳子挂在钢架上）。 */
+/**
+ * 连体餐桌：桌面 + 工字形钢架 + 四只圆凳（凳子落在钢架两根横梁的端头上）。
+ * 钢架：中柱下一根纵梁（沿桌子的短边方向，长 1.3），两端各接一根横梁（0.74，正好够到两只凳子的立杆），凳子、桌子连成一体。
+ */
 export function table(g: KitGeo, e: Env, x: number, z: number, rot: boolean): void {
   const lo = e.low;
   const [w, d] = rot ? [0.7, 1.2] : [1.2, 0.7];
   g.box([x, 0.74, z], [w, 0.03, d], SCHOOL.canteenTable, { faces: lo ? '+y+z-y' : '+y+z-y+x-x' });
   const legF = lo ? '+z+x' : '+z+x-x';
   g.box([x, 0.37, z], [0.05, 0.72, 0.05], PAL.deskLeg, { faces: legF });
-  g.box([x, 0.2, z], rot ? [0.04, 0.04, 1.6] : [1.6, 0.04, 0.04], PAL.deskLeg, { faces: '+y+z' });
   g.box([x, 0.2, z], rot ? [1.3, 0.04, 0.04] : [0.04, 0.04, 1.3], PAL.deskLeg, { faces: '+y+z' });
-  const stools: Array<[number, number]> = rot ? [[-0.55, -0.35], [-0.55, 0.35], [0.55, -0.35], [0.55, 0.35]] : [[-0.35, -0.55], [0.35, -0.55], [-0.35, 0.55], [0.35, 0.55]];
+  for (const k of [-1, 1]) {
+    if (rot) g.box([x + k * STOOL_DS, 0.2, z], [0.04, 0.04, 2 * STOOL_DX + 0.04], PAL.deskLeg, { faces: '+y+z' });
+    else g.box([x, 0.2, z + k * STOOL_DS], [2 * STOOL_DX + 0.04, 0.04, 0.04], PAL.deskLeg, { faces: '+y+z' });
+  }
+  const [a, b] = [STOOL_DX, STOOL_DS];
+  const stools: Array<[number, number]> = rot ? [[-b, -a], [-b, a], [b, -a], [b, a]] : [[-a, -b], [a, -b], [-a, b], [a, b]];
   for (const [dx, dz] of stools) {
     g.prism([x + dx, 0.42, z + dz], 0.15, 0.03, lo ? 5 : 7, SCHOOL.canteenStool);
     g.box([x + dx, 0.21, z + dz], [0.035, 0.42, 0.035], PAL.deskLeg, { faces: legF });
@@ -76,22 +84,22 @@ export function buildCanteen(ctx: HwKitChunkContext, look: Look): KitChunk {
   brassStrips(stat, e, PAL.brass, -HW, HW);
   for (let i = 0; i < 2; i++) floorBlob(floor, e, (rng.next() - 0.5) * 2.4, e.s0 + 1 + rng.next() * (e.L - 2), 0.3 + rng.next() * 0.4, 0.5 + rng.next(), 0xb9c0c2, rng.next(), 0xeef0f0);
 
-  // —— 桌凳 ——
-  const rowStep = e.period / Math.max(1, Math.round(e.period / 1.9));
-  for (const s of stepsIn(e, rowStep, rowStep / 2, 0.6)) {
+  // —— 桌凳 ——（行、列由 seats.ts 给出：靠过道的一列不缺桌、不抖动，路边坐着的人（WP6 seatedRow）坐在这一列的圆凳上）
+  for (const s of canteenRowsIn(e.segS0, e.s0, e.s1, e.period)) {
     const z = e.z(s);
-    for (const x of look.windows ? [2.85, 4.45] : [-4.45, -2.85, 2.85, 4.45]) {
-      if (look.counter && x < -3.5) continue;
-      if (rng.next() < 0.1) continue;
-      const zt = z + (rng.next() - 0.5) * 0.1;
+    for (const x of canteenTableXs(look)) {
+      const inner = Math.abs(x) === CANTEEN_INNER_X;
+      if (rng.next() < 0.1 && !inner) continue;
+      const jz = (rng.next() - 0.5) * 0.1;
+      const zt = z + (inner ? 0 : jz);
       table(stat, e, x, zt, false);
       contactShadow(floor, x, zt, 1.1, 1.3, fuv, 0xb2b9ba, 0xeef0f0, 0.25, 0.0015, chunkZ(e));
       if (rng.next() < 0.5) trays(stat, e, x, z);
     }
   }
   // 方柱：每 2 个周期一根，在两侧桌列之间
-  for (const s of stepsIn(e, e.period * 2, e.period, 0.3)) {
-    for (const x of look.windows ? [1.95] : [-1.95, 1.95]) {
+  for (const s of canteenPillarsIn(e.segS0, e.s0, e.s1, e.period)) {
+    for (const x of look.windows ? [CANTEEN_PILLAR_X] : [-CANTEEN_PILLAR_X, CANTEEN_PILLAR_X]) {
       stat.box([x, H / 2, e.z(s)], [0.5, H, 0.5], SCHOOL.pillar, { faces: '+x-x+z-z', bottomShade: 0.7 });
       stat.box([x, 0.6, e.z(s)], [0.52, 1.2, 0.52], 0xe0e5e6, { faces: '+x-x+z-z', bottomShade: 0.75 });
     }

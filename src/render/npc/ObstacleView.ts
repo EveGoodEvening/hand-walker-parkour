@@ -796,8 +796,8 @@ export class ObstacleView implements ViewSystem {
       p.x = d.x; p.y = floorY; p.z = -sN; p.yaw = d.yaw;
       if (d.pose === 'walk') { walkPose(Math.abs(d.speed) * Math.max(0, segT) + d.phase * 2, this.walk); this.applyWalk(p); }
       else if (d.pose === 'seat') {
-        // 椅子（chairBar 原型的 seat 变体）
-        const chairs = this.pools.get('chairBar');
+        // 椅子（chairBar 原型的 seat 变体）；坐在教室、食堂 kit 自己的椅子 / 圆凳上的人不另画
+        const chairs = d.kitSeat ? undefined : this.pools.get('chairBar');
         if (chairs) { this.m.makeRotationY(d.yaw); this.m.setPosition(d.x, floorY, -sN); chairs.push(this.m, chairs.variantIndex('seat')); }
         p.hipH = 0.46; p.hipL = p.hipR = 90 * DEG; p.kneeL = p.kneeR = 90 * DEG; p.seated = true;
         p.legYawL = -0.08; p.legYawR = 0.08; p.stance = 0.11;

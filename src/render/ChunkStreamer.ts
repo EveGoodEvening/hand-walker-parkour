@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import type { EnvKit, KitChunk, LampSpec, Opening, TextureBank, ViewContext, ViewSystem } from '../core/contracts';
 import { CHUNK_LEN, LANE_WIDTH, RENDER_ORDER, STILL_ORIGIN } from '../core/constants';
+import { hwChunkLen } from './kits/school/seats';
 import type { GameEvent } from '../core/events';
 import { FALLBACK_ATMOSPHERES } from '../core/fallbacks';
 import { clamp, lerp } from '../core/math';
@@ -306,8 +307,7 @@ export class World implements ViewSystem {
 
   private chunkLenFor(kit: EnvKit, stride: number): number {
     if (kit.owner !== 'WP3') return CHUNK_LEN;
-    const beats = 2 * Math.max(1, Math.round(CHUNK_LEN / (2 * stride)));
-    return beats * stride;
+    return hwChunkLen(stride);          // 整 2 拍（seats.ts：路边坐着的人按同一个切法找 kit 的座位）
   }
 
   /** kit.build 出错时不让读章失败：记日志，改用 CORE 占位 kit（游戏照常能跑）。 */
@@ -349,7 +349,9 @@ export class World implements ViewSystem {
       const openings = openingsIn(s0, s1);
       const special = !pooled || i === 0 || i === n - 1 || s1 - s0 < len - 1e-6 || openings.length > 0
         || s0 < seg.s0 + 4 || s1 > seg.s1 - 4
-        || seg.surfaces.some((su) => (su.kind === 'doorPlate' || su.kind === 'board') && su.s0 < s1 + 1 && su.s1 > s0 - 1);
+        || seg.surfaces.some((su) => (su.kind === 'doorPlate' || su.kind === 'board') && su.s0 < s1 + 1 && su.s1 > s0 - 1)
+        // 教室：伸脚的人自带椅子，kit 要在那一行同侧空出课桌椅（seats.ts classroomFootClash），通用模板不知道，按专建
+        || (kitId === 'classroom' && seg.obstacles.some((o) => o.kind === 'footOut' && o.s0 < s1 + 1 && o.s1 > s0 - 1));
       if (special) {
         const ctx = this.kitCtx(seed, seg, variant, s0, s1, openings, this.hwExt(false, prev, next, len), `chunk:${seg.def.id}:${i}`);
         const gs = this.geoSet(this.safeBuild(kit, ctx), 0, into);
