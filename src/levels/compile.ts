@@ -186,6 +186,19 @@ export function obstacleX(o: CompiledObstacle): [number, number] {
   return [lo * LANE_WIDTH - o.halfW, hi * LANE_WIDTH + o.halfW];
 }
 
+/**
+ * 楼梯的踏面（渲染用，视觉修复 actors-1）：拍 k 的踏面覆盖 [k − 0.5, k + 0.5] 拍，高度 = 坡线在 k 处的值。返回 s 所在踏面的中心里程
+ * （限制在段内）。kits/school/stairs.ts 画台阶、主角的手按在台阶上都用它；碰撞与求解器仍按连续的坡线 floorY。
+ */
+export function stairStepCentre(s: number, segS0: number, segS1: number, stride: number): number {
+  return clamp(segS0 + Math.floor((s - segS0) / stride + 0.5) * stride, segS0, segS1);
+}
+
+/** s 处地面（台阶踏面）的高度：楼梯段按 stairStepCentre 取踏面，其他段就是 floorY。 */
+export function stepFloorY(seg: CompiledSegment, s: number): number {
+  return seg.kind === 'run' && (seg.def as RunSegmentDef).stairs ? seg.floorY(stairStepCentre(s, seg.s0, seg.s1, seg.stride)) : seg.floorY(s);
+}
+
 /** 按 id 找段。 */
 export function segmentById(ch: CompiledChapter, id: string): CompiledSegment | undefined {
   return ch.segments.find((sg) => sg.def.id === id);

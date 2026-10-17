@@ -25,6 +25,7 @@ import { scaleEyeVertex, STILL_EYE_GLOW, STILL_EYE_SCALE } from '../../../src/re
 import { RIG_COLORS, rigColor } from '../../../src/render/actors/rigBuild';
 import { presetOf, screenColor, screenColorBasic } from '../../../src/render/kits/outside/lib/tone';
 import '../../../src/render/atmosphere';
+import { expandSegment } from '../../../src/render/npc/crowds';
 
 const O = new THREE.Vector3(STILL_ORIGIN.x, STILL_ORIGIN.y, STILL_ORIGIN.z);
 
@@ -467,29 +468,62 @@ describe('other still compositions (U5)', () => {
     ctx.scene.remove(root);
   });
 
-  it('5-8 after the seventh step: he rolls onto his back and the camera at the hip looks up at the raised, shaking feet against the sky', async () => {
-    const w = await scene(ch5 as ChapterDef);
-    const seg = w.ch.segments.find((s) => s.def.id === '5-8')!;
-    const mk = (t: number, stepT: number) => { const n = snap({ s: seg.s0 + 3, t, segKind: 'stand' }); n.segIndex = seg.index; n.segment = '5-8'; n.player.stand = { phase: 'fallen', x: 0, theta: 0.1, steps: 7, stepT, held: 3, script: 'sevenSteps' }; return n; };
-    let prev = mk(10, 0);
-    w.cam.setShot('trackSky', 0.35, 10);
-    // Stand 在 fallen 之后不再推进 stepT（一直是 0）：摔倒的动作由 Actor 自己按模拟时间计时
-    for (let i = 1; i <= 120; i++) { const n = mk(10 + i / 60, 0); frame(w, prev, n); prev = n; }
-    const look = w.camera.getWorldDirection(new THREE.Vector3());
-    expect(look.y).toBeGreaterThan(0.4);                                             // 看向天
-    w.actor.rig.root.updateMatrixWorld(true);
-    let inFrame = 0;
-    for (const n of ['footL', 'footR']) {
-      const p = new THREE.Vector3(); w.actor.rig.root.getObjectByName(n)!.getWorldPosition(p);
-      const q = ndc(w, p);
-      if (Math.abs(q.x) < 0.9 && Math.abs(q.y) < 0.9 && q.z < 1) inFrame++;
-    }
-    expect(inFrame).toBe(2);
-    // 脚悬在空中（仰躺，不是停在跪姿）
-    const fy = w.ch.segments.find((q) => q.def.id === '5-8')!.floorY(seg.s0 + 3);
-    const fL = new THREE.Vector3(); w.actor.rig.root.getObjectByName('footL')!.getWorldPosition(fL);
-    expect(fL.y - fy).toBeGreaterThan(0.3);
-  });
+  // 视觉修复 actors-3：以前只查两个踝关节在画面里，鞋几乎全在画面外、而且巨大（两个深色的箱子）时照样通过。
+  // 现在查小腿和鞋的全部顶点：≥ 90% 在画面里，投影包围框 ≤ 13% 画面；横屏、竖屏都查；左前方的马老师（+1.6 s 说话）在画面里
+  for (const [name, aspect] of [['16:9', 16 / 9], ['portrait', 390 / 844]] as const) {
+    it(`5-8 after the seventh step (${name}): he rolls onto his back and the camera by his head looks up at the raised, shaking feet against the sky`, async () => {
+      const w = await scene(ch5 as ChapterDef, 'low', aspect);
+      const seg = w.ch.segments.find((s) => s.def.id === '5-8')!;
+      const fy = seg.floorY(seg.s0);
+      const mk = (t: number, stepT: number) => { const n = snap({ s: seg.s0, t, segKind: 'stand' }); n.segIndex = seg.index; n.segment = '5-8'; n.player.floorY = fy; n.player.stand = { phase: 'fallen', x: 0, theta: 0.1, steps: 7, stepT, held: 3, script: 'sevenSteps' }; return n; };
+      let prev = mk(10, 0);
+      w.cam.setShot('trackSky', 0.35, 10);
+      // Stand 在 fallen 之后不再推进 stepT（一直是 0）：摔倒的动作由 Actor 自己按模拟时间计时
+      for (let i = 1; i <= 120; i++) { const n = mk(10 + i / 60, 0); frame(w, prev, n); prev = n; }
+      const look = w.camera.getWorldDirection(new THREE.Vector3());
+      expect(look.y).toBeGreaterThan(0.4);                                             // 看向天
+      w.actor.rig.root.updateMatrixWorld(true);
+      let inFrame = 0;
+      for (const n of ['footL', 'footR']) {
+        const p = new THREE.Vector3(); w.actor.rig.root.getObjectByName(n)!.getWorldPosition(p);
+        const q = ndc(w, p);
+        if (Math.abs(q.x) < 0.9 && Math.abs(q.y) < 0.9 && q.z < 1) inFrame++;
+      }
+      expect(inFrame).toBe(2);
+      // 脚悬在空中（仰躺，不是停在跪姿）
+      const fL = new THREE.Vector3(); w.actor.rig.root.getObjectByName('footL')!.getWorldPosition(fL);
+      expect(fL.y - fy).toBeGreaterThan(0.3);
+      // 小腿和鞋：全部顶点
+      const LEG = new Set<number>([BONE_INDEX.shinL, BONE_INDEX.shinR, BONE_INDEX.footL, BONE_INDEX.footR]);
+      let tot = 0, inside = 0, x0 = 9, x1 = -9, y0 = 9, y1 = -9;
+      w.actor.rig.root.traverse((o) => {
+        const m = o as THREE.SkinnedMesh;
+        if (!m.isSkinnedMesh) return;
+        const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute, sk = m.geometry.getAttribute('skinIndex') as THREE.BufferAttribute;
+        for (let i = 0; i < pos.count; i++) {
+          if (!LEG.has(sk.getX(i))) continue;
+          const v = new THREE.Vector3().fromBufferAttribute(pos, i); m.applyBoneTransform(i, v); v.applyMatrix4(m.matrixWorld);
+          const q = ndc(w, v);
+          tot++;
+          if (q.z < 1 && Math.abs(q.x) < 0.95 && Math.abs(q.y) < 0.95) inside++;
+          if (q.z < 1) { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }
+        }
+      });
+      expect(inside / tot, 'shin and shoe vertices in frame').toBeGreaterThan(0.9);
+      const area = (Math.max(0, Math.min(1, x1) - Math.max(-1, x0)) * Math.max(0, Math.min(1, y1) - Math.max(-1, y0))) / 4;
+      expect(area, 'projected box of the shins and shoes (fraction of the frame)').toBeLessThan(0.13);
+      expect(area).toBeGreaterThan(0.03);                                              // 仍然是画面的主体之一，不是远处的小点
+      // 马老师（5-7 @66 的 lineSides，站立段沿用）：竖轴上的点至少一半在画面里
+      const s7 = w.ch.segments.find((q) => q.def.id === '5-7')!;
+      const decor: Parameters<typeof expandSegment>[2] = [];
+      expandSegment(w.ch.seed, s7, decor, []);
+      const ma = decor.filter((d) => d.special === 'teacherMa');
+      expect(ma.length).toBe(1);
+      let maIn = 0, maN = 0;
+      for (const d of ma) for (let h = 0.1; h < 1.8; h += 0.2) { maN++; const q = ndc(w, [d.x, fy + h, -d.s]); if (q.z < 1 && Math.abs(q.x) < 0.95 && Math.abs(q.y) < 0.95) maIn++; }
+      expect(maIn / maN, 'teacher Ma in frame').toBeGreaterThanOrEqual(0.5);
+    });
+  }
 
   it('5-9: the camera pushes in to the dent beside the pillow; at 8.6 s it is in the middle of the frame and the body is mostly out', async () => {
     const w = await scene(ch5 as ChapterDef);

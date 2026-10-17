@@ -11,9 +11,10 @@ import { clamp, lerp, smoothstep } from '../../core/math';
 import { getSet } from '../../core/registry';
 import { BONE_INDEX, copyPose, createPose, type Pose } from '../../core/rig';
 import type { PoseClipId, SimSnapshot } from '../../core/types';
-import type { CompiledChapter, CompiledSegment } from '../../levels/schema';
+import { stepFloorY } from '../../levels/compile';
+import type { CompiledChapter, CompiledSegment, RunSegmentDef } from '../../levels/schema';
 import { clipPose, SET_DEFAULT_CLIP } from './clips';
-import { CrawlAnimator, crawlPose, jumpDur, PoseBuilder, type CrawlInput } from './handCycle';
+import { CrawlAnimator, crawlPose, jumpDur, PoseBuilder, type CrawlInput, type GroundProfile } from './handCycle';
 import { applyPosture, blendPoses, standing, standPose } from './poses';
 import { applyThirdHand } from './ThirdHand';
 import { patchGroupAlpha, stepUpperFade, upperAlpha, upperFadeWanted } from './readability';
@@ -41,6 +42,47 @@ export const PALM_GLASS = { gap: 0.03, maxX: 0.4, advanceSec: 0.9, look: 3.0 } a
 const FADE_MODES: ReadonlySet<string> = new Set(['crawl', 'air', 'duck', 'halfStand', 'stumble']);
 const _hv = new THREE.Vector3(), _hq = new THREE.Vector3();
 
+/**
+ * 静场里连 actor cue 也不画主角身体：变体键在 SET_DEFAULT_CLIP 里显式写成 null（5-1 被子里的脚，视觉修复 actors-2）。
+ * 只写了 set 键的 null（palmEye）仍然让 cue 的姿势出现。
+ */
+export function stillHidden(setId: string, variant: string): boolean {
+  const vk = `${setId}.${variant}`;
+  return vk in SET_DEFAULT_CLIP && SET_DEFAULT_CLIP[vk] === null;
+}
+
+/**
+ * 章节的地面形状（视觉修复 actors-1）：按里程找所在的跑段，楼梯段取踏面高度（levels/compile.ts 的 stepFloorY，与台阶的几何一致），
+ * 斜率按坡线在 ±0.3 m 上的差分（进出楼梯时 0.6 m 内渐变）。只在当前段或相邻段是楼梯时交给 CrawlInput，平地的姿势不变。
+ */
+export class ChapterGround implements GroundProfile {
+  ch: CompiledChapter | null = null;
+  seg = 0;
+  /** 当前段或相邻段有楼梯。 */
+  active(ch: CompiledChapter | null, seg: number): boolean {
+    this.ch = ch; this.seg = seg;
+    if (!ch) return false;
+    for (let k = Math.max(0, seg - 1); k <= Math.min(ch.segments.length - 1, seg + 1); k++) {
+      const g = ch.segments[k] as CompiledSegment;
+      if (g.kind === 'run' && (g.def as RunSegmentDef).stairs) return true;
+    }
+    return false;
+  }
+  private at(s: number): CompiledSegment | null {
+    const segs = this.ch?.segments;
+    if (!segs || !segs.length) return null;
+    const c = Math.min(Math.max(0, this.seg), segs.length - 1);
+    for (let d = 0; d <= 6; d++) {
+      const g = segs[(d & 1) ? c + ((d + 1) >> 1) : c - (d >> 1)];   // c, c + 1, c − 1, c + 2, …
+      if (g && g.kind === 'run' && s >= g.s0 && s < g.s1) return g;
+    }
+    return segs[c] as CompiledSegment;
+  }
+  stepY(s: number): number { const g = this.at(s); return g ? stepFloorY(g, s) : 0; }
+  private ramp(s: number): number { const g = this.at(s); return g ? g.floorY(s) : 0; }
+  slope(s: number): number { return (this.ramp(s + 0.3) - this.ramp(s - 0.3)) / 0.6; }
+}
+
 function crawlInputFrom(prev: SimSnapshot, next: SimSnapshot, a: number, out: CrawlInput): CrawlInput {
   const P = prev.player, N = next.player;
   out.s = lerp(P.s, N.s, a); out.x = lerp(P.x, N.x, a); out.y = lerp(P.y, N.y, a); out.floorY = lerp(P.floorY, N.floorY, a);
@@ -63,6 +105,7 @@ export class PlayerActor implements ViewSystem {
   private readonly anim = new CrawlAnimator();
   private readonly inp: CrawlInput = { s: 0, x: 0, y: 0, floorY: 0, beat: 0, stride: 1, cadence: 4.8, speed: 0, duck: 0, air: false, airT: 0, mode: 'crawl', modeT: 0, laneTarget: 0, twitch: 0, drift: 0, lookBack: 0 };
   private readonly inp2: CrawlInput = { ...this.inp };
+  private readonly ground = new ChapterGround();
   private readonly last: CrawlInput = { ...this.inp };
   private lastTick = -1;
   private lastT = 0;
@@ -109,8 +152,10 @@ export class PlayerActor implements ViewSystem {
   /** 换段：衣物颜色按段的氛围补偿（户外，rigBuild.clothAlbedo）。 */
   onSegment(seg: CompiledSegment): void { this.factory?.setAtmosphere(seg.def.atmosphere); }
 
-  onEvent(e: GameEvent): void {
+  onEvent(e: GameEvent, snap?: SimSnapshot): void {
     if (e.type === 'cue' && e.data.body.type === 'atmosphere') this.factory?.setAtmosphere(e.data.body.id);
+    // 摔倒的时刻按模拟时钟记（视觉修复 actors-3）：无头测试跳着推进、只画最后一帧时，以前从第一次画出来那一帧开始摔，截图总停在跪姿
+    if (e.type === 'stand' && e.data.phase === 'fall' && snap) this.fallT0 = snap.t;
     if (e.type === 'land') this.anim.onLand();
     if (e.type === 'segment' || e.type === 'retry') { this.clip = null; this.clipWeight = 0; this.fallT0 = -1; this.palmHeld = false; this.palmStopSeg = -1; }
   }
@@ -145,6 +190,7 @@ export class PlayerActor implements ViewSystem {
     WP5.palmGlass = 0;
     if (next.segKind === 'run') {
       crawlInputFrom(prev, next, a, this.inp);
+      this.inp.ground = this.ground.active(this.chapter, next.segIndex) ? this.ground : null;
       this.backfill(next);
       if (!WP5.poseTest) {
         // 本车道前方有必需障碍：上半身淡到 40%。只在镜头在他身后时爬行（追尾、竖屏追尾、5-3 段内追尾，§10.3；CameraRig 写 chaseCam）。
@@ -202,8 +248,9 @@ export class PlayerActor implements ViewSystem {
     const variant = st?.variant ?? 'default';
     const set = getSet(setId);
     const anchor = set ? set.playerAnchor(variant) : _m.identity();
-    const base = SET_DEFAULT_CLIP[`${setId}.${variant}`] ?? SET_DEFAULT_CLIP[setId] ?? null;
-    const clipId = this.clip && this.clipWeight > 0 ? this.clip.id : base;
+    const vk = `${setId}.${variant}`;
+    const base = vk in SET_DEFAULT_CLIP ? SET_DEFAULT_CLIP[vk] ?? null : SET_DEFAULT_CLIP[setId] ?? null;
+    const clipId = stillHidden(setId, variant) ? null : this.clip && this.clipWeight > 0 ? this.clip.id : base;
     if (!clipId) {
       // 镜头在他眼睛里（缺省姿势为 null）：不画主角，但锚点照样更新，镜头和静场替身都相对它摆（lead 集成）
       WP5.stillAnchor.makeTranslation(STILL_ORIGIN.x, STILL_ORIGIN.y, STILL_ORIGIN.z).multiply(anchor);

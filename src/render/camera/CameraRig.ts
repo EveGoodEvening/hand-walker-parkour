@@ -194,7 +194,7 @@ export class CameraRig implements ViewSystem {
       this.standBlend = clamp(this.standBlend + bdt / 1.2, 0, 1);
       const sx = x + (N.stand?.x ?? 0);
       const fallen = N.stand?.phase === 'fallen' || this.standShot === 'trackSky';
-      const sh = fallen ? STAND_SHOTS.trackSky : STAND_SHOTS.standEye;
+      const sh = fallen ? (portrait ? STAND_SHOTS.trackSkyPortrait : STAND_SHOTS.trackSky) : STAND_SHOTS.standEye;
       o.pos.set(sx + sh.pos[0], fy + sh.pos[1], -s + sh.pos[2]);
       o.look.set(sx + sh.look[0], fy + sh.look[1], -s + sh.look[2]);
       const k = easeInOutSine(this.standBlend);

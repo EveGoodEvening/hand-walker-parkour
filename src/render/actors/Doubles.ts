@@ -34,6 +34,16 @@ import { planFor } from './planCache';
 
 type Kind = 'side' | 'end' | 'floor' | 'world' | 'still' | 'memory';
 
+/**
+ * 记忆闪回（1-2「一个倒着的人」，视觉修复 actors-7）：手腕在窗台上方 MEMORY_SILL 米；手腕到鞋尖约 MEMORY_FIGURE_H 米（handstand clip），
+ * 缩放到窗洞高度减去上下各 8 cm；沿 s 放在追尾镜头前方 MEMORY_AHEAD × 半个水平视角处（比侧墙替身的 0.75 远、更靠画面中间），
+ * 不在画面左缘、不被贴墙站着的人挡住。
+ */
+export const MEMORY_SILL = 0.08, MEMORY_FIGURE_H = 1.9, MEMORY_AHEAD = 0.4;
+/** handstand clip 里手掌离地的高度（根高 = clip 的 lift 时）。 */
+const MEMORY_WRIST_Y = 0.03;
+export function memoryScale(windowH: number): number { return clamp((windowH - 2 * MEMORY_SILL) / MEMORY_FIGURE_H, 0.45, 0.82); }
+
 /** 记忆闪回的淡入、淡出（秒）：短，但不是硬切（附录 A-1「不闪白」；减少闪烁时是 0.4 s）。 */
 export const MEMORY_FADE_IN = 0.12, MEMORY_FADE_OUT = 0.18;
 /**
@@ -581,7 +591,7 @@ export class DoubleSystem implements ViewSystem {
         // 洗手台（0.73–0.87 m）挡住它 0.6 m 高的头；深一些，视线就从台面上方过去
         const d = r.kind === 'memory' ? 0.5 : clamp(0.3 + 0.75 * Math.abs(xh - v.planeX), 0.4, 3.2);
         const xd = v.planeX + v.sign * d;                 // 替身在镜中房间里的世界 x
-        const target = this.aheadFor(xd, sNow, xNow);
+        const target = this.aheadFor(xd, sNow, xNow, r.kind === 'memory' ? MEMORY_AHEAD : 0.75);
         if (!r.sAheadInit) { r.sAhead = target; r.sAheadInit = true; }
         else r.sAhead += (target - r.sAhead) * (1 - Math.exp(-step / 0.5));
         if (scripted) r.offS = r.offBase + (r.speedFactor - 1) * (sNow - r.spdS0);
@@ -590,16 +600,18 @@ export class DoubleSystem implements ViewSystem {
         const sD = sNow + r.sAhead + r.offS, m = Math.min(0.35, (v.s1 - v.s0) / 2);
         root[2] = clamp(sD, v.s0 + m, v.s1 - m);
         if (scripted) {
-          // 脚本姿势的根高度（clip 的 lift）加在地面上；记忆里倒立的人以手腕为轴悬在窗台下沿附近
-          root[1] = (root[1] as number) + (r.kind === 'memory' ? v.floorY + v.y0 - 0.2 : v.floorY);
+          // 脚本姿势的根高度（clip 的 lift）加在地面上；记忆里倒立的人以手腕为轴悬在窗台上沿（视觉修复 actors-7：以前在窗台下 0.2 m，
+          // 手腕藏在墙后、双腿伸出窗顶，只剩一个倒着的头）
+          // （clip 的手腕在根下方 lift − 0.03 处：根抬到让手腕正好在窗台上方 MEMORY_SILL，再以手腕为中心缩放）
+          root[1] = (root[1] as number) + (r.kind === 'memory' ? v.floorY + v.y0 + MEMORY_SILL - MEMORY_WRIST_Y : v.floorY);
           root[3] = 0;
         }
         box.matrix.copy(v.reflect);
         if (r.kind === 'memory') {
-          // 记忆里的人按 0.82 缩放（以手腕所在处为中心），整个人落在窗框里
-          const k = 0.82;
-          _m.makeTranslation(root[0] as number, root[1] as number, -(root[2] as number)).multiply(_m2.makeScale(k, k, k))
-            .multiply(_m3.makeTranslation(-(root[0] as number), -(root[1] as number), root[2] as number));
+          // 记忆里的人以手腕所在处为中心缩放，从手腕到鞋尖（约 MEMORY_FIGURE_H）整个落在窗框里，窗高时大一些
+          const k = memoryScale(v.y1 - v.y0), py = v.floorY + v.y0 + MEMORY_SILL;
+          _m.makeTranslation(root[0] as number, py, -(root[2] as number)).multiply(_m2.makeScale(k, k, k))
+            .multiply(_m3.makeTranslation(-(root[0] as number), -py, root[2] as number));
           box.matrix.multiply(_m);
         }
         break;
@@ -742,14 +754,14 @@ export class DoubleSystem implements ViewSystem {
    * 侧墙替身沿 s 放在哪里：让它落在追尾镜头前方约半个水平视角处（三条车道都看得见）。
    * 用追尾机位的解析位置（§5.4），不读上一帧的相机（无头测试里上一帧可能是很久以前）。
    */
-  private aheadFor(xDouble: number, sNow: number, xNow: number): number {
+  private aheadFor(xDouble: number, sNow: number, xNow: number, fac = 0.75): number {
     const aspect = this.ctx.camera.aspect || 16 / 9;
     const portrait = aspect < 1;
     const F = portrait ? FOLLOW.portrait : FOLLOW.landscape;
     const vfov = portrait ? Math.min(F.vMax, vFromH(FOLLOW.landscape.hfov, aspect)) : clamp(vFromH(FOLLOW.landscape.hfov, aspect), FOLLOW.landscape.vMin, FOLLOW.landscape.vMax);
     const halfH = Math.atan(Math.tan((vfov * DEG) / 2) * aspect);
     // 修复轮 U5：0.62 → 0.75、上限 27° → 30°：替身离镜头近一些（1-3 的头在 1280×720 下 ≥ 25 px），仍在三条车道的画面里
-    const ang = clamp(halfH * 0.75, 10 * DEG, 30 * DEG);
+    const ang = clamp(halfH * fac, 10 * DEG, 30 * DEG);
     const dx = Math.abs(xDouble - F.k * xNow);
     return clamp(dx / Math.tan(ang) - F.back, 0.8, 12);
   }
