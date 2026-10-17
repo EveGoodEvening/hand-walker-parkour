@@ -25,7 +25,7 @@ export const HOME_LIGHTS: readonly BakeLight[] = [
   { p: [2.4, 1.2, -1.4], color: 0x7f98a8, intensity: 1.4, radius: 4.6 },
   { p: [-2.5, 1.6, -3.3], color: 0x3a4a55, intensity: 0.9, radius: 3.2 },
   { p: [HOME_DOOR_X, 0.05, -5.4], color: 0x2c3a44, intensity: 1.2, radius: 2.2 },
-  { p: [HOME_DOOR_X, 1.0, -5.0], color: 0x3a4a55, intensity: 0.8, radius: 2.0 },
+  { p: [HOME_DOOR_X, 1.1, -4.7], color: 0x3a4a55, intensity: 1.4, radius: 2.4 },
 ];
 const HOME_AMBIENT = 0x0d1216;
 
@@ -39,9 +39,11 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   for (let x = X0 + 0.18; x < X1; x += 0.18) g.flat(0.001, x - 0.004, x + 0.004, Z1, Z0, 0x161c20);
   // 卫生间的门（尽头，关着）：门框 + 门板 + 门把
   const dx = HOME_DOOR_X;
-  g.box([dx, 1.02, Z0 + 0.03], [0.96, 2.04, 0.04], 0x2d363c, { faces: '+z' });
-  g.box([dx, 2.08, Z0 + 0.04], [1.08, 0.08, 0.06], 0x39434a, { faces: '+z-y' });
-  for (const x of [-0.52, 0.52]) g.box([dx + x, 1.04, Z0 + 0.04], [0.06, 2.08, 0.06], 0x39434a, { faces: '+z+x-x' });
+  // 第二轮：门板以前比墙还暗（0x2d363c），暗墙上的一块更暗的矩形在贴地镜头里等于没有。改成浅色的门板（家里常见的白漆木门），
+  // 门框压暗：在门前那盏极弱的冷光里，浅门板、深门框从墙上分出来，读成「尽头一扇关着的门」
+  g.box([dx, 1.02, Z0 + 0.03], [0.96, 2.04, 0.04], 0x8a969c, { faces: '+z' });
+  g.box([dx, 2.08, Z0 + 0.04], [1.08, 0.08, 0.06], 0x262e33, { faces: '+z-y' });
+  for (const x of [-0.52, 0.52]) g.box([dx + x, 1.04, Z0 + 0.04], [0.06, 2.08, 0.06], 0x262e33, { faces: '+z+x-x' });
   g.box([dx - 0.36, 1.0, Z0 + 0.07], [0.12, 0.03, 0.04], 0x5b6468);
   // 沙发（左）：座、靠背、扶手
   g.box([-2.2, 0.22, -0.8], [0.9, 0.44, 2.2], C.sofa);
@@ -73,14 +75,14 @@ function build(ctx: ViewContext, variant: string): THREE.Object3D {
   // 发光：没关的电视（冷蓝白，没有画面）、窗
   const e = new OGeo();
   e.wallX(2.585, -0.84, -1.96, 0.88, 1.52, 0x5d7382, -1);
-  // 门缝下的一线光：2.5 cm 高，冷、暗，但在贴地的镜头里看得出来
-  e.wallZ(Z0 + 0.06, HOME_DOOR_X - 0.46, HOME_DOOR_X + 0.46, 0.0, 0.025, 0x4a5e6b, 1);
+  // 门缝下的一线光：3 cm 高，冷，在贴地的镜头里是画面上最清楚的一条横线（十二掌的终点）
+  e.wallZ(Z0 + 0.06, HOME_DOOR_X - 0.46, HOME_DOOR_X + 0.46, 0.0, 0.03, 0x6d8494, 1);
   e.wallX(X0 + 0.012, -2.62, -3.98, 1.0, 2.1, 0x2b3942, 1);
   b.emissive(e);
   // 光晕：电视照在地上、茶几上、沙发上；窗光在地上；窗上的雨痕
   const gl = new OGeo();
   glowDisc(gl, [2.55, 1.2, -1.4], 1.0, 0x1c262d, 16, [-1, 0, 0]);
-  glowDisc(gl, [HOME_DOOR_X, 0.002, Z0 + 0.4], 0.6, 0x16202a, 12, [0, 1, 0], 0.6);   // 门缝漏到地板上的一点光
+  glowDisc(gl, [HOME_DOOR_X, 0.002, Z0 + 0.45], 0.9, 0x22303a, 14, [0, 1, 0], 0.6);   // 门缝漏到地板上的一点光
   const rng = keyRng('home', 'rain');
   for (let i = 0; i < 22; i++) {
     const z = -2.65 - rng.next() * 1.3, y = 1.1 + rng.next() * 0.8, l = 0.06 + rng.next() * 0.2;

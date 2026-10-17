@@ -148,30 +148,31 @@ export function crawlerFigure(g: OGeo, x: number, z: number, yaw: number, body: 
 
 /**
  * 水里倒着用手走路的人（4-6，在 y 方向镜像之后用；没有五官）。镜像之后镜头从上往下看到的是原来朝下的面，
- * 所以每个面都用同一种颜色（不像 crawlerFigure 那样把底面压暗）；头大一些、整块发色，在前端读成一团深色的头；
- * 手臂短、没有浅色的手掌垫（以前那两根立柱顶着浅色的帽，看上去像倒扣的凳子腿）。yaw：头朝向（0 = −z）。
+ * 所以每个面都用同一种颜色（不像 crawlerFigure 那样把底面压暗）。和 4-5 广场上的人是同一批人：灰色的校服、
+ * 肤色的头（后脑勺一块发色）、深色的裤子。读出「人」靠的是肤色的头和两只手、比腰宽的肩、分开的两条腿；
+ * 不要深色的大方块头（第一版这样做，从上面看是一堆深色的箱子）。手臂短而斜撑在肩膀前面，手掌和头同色、贴着水面。
+ * yaw：头朝向（0 = −z）。
  */
-export function submergedWalker(g: OGeo, x: number, z: number, yaw: number, body: number, hair: number, s = 1, legs: number = C.pants): void {
+export function submergedWalker(g: OGeo, x: number, z: number, yaw: number, body: number, skin: number, hair: number, s = 1, legs: number = C.pants): void {
   const c = Math.cos(yaw), sn = Math.sin(yaw);
   const P = (lx: number, ly: number, lz: number): V3 => [x + (lx * c + lz * sn) * s, ly * s, z + (-lx * sn + lz * c) * s];
-  const box = (cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, col: number) => {
+  const box = (cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, col: number, back = col) => {
     const x0 = cx - sx / 2, x1 = cx + sx / 2, y0 = cy - sy / 2, y1 = cy + sy / 2, z0 = cz - sz / 2, z1 = cz + sz / 2;
-    g.face(P(x0, y1, z1), P(x1, y1, z1), P(x1, y1, z0), P(x0, y1, z0), col, [0, 1, 0]);
-    g.face(P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1), shade(col, 0.94), [sn, 0, c]);
+    g.face(P(x0, y1, z1), P(x1, y1, z1), P(x1, y1, z0), P(x0, y1, z0), back, [0, 1, 0]);
+    g.face(P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1), shade(back, 0.94), [sn, 0, c]);
     g.face(P(x1, y0, z0), P(x0, y0, z0), P(x0, y1, z0), P(x1, y1, z0), shade(col, 0.94), [-sn, 0, -c]);
     g.face(P(x1, y0, z1), P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), shade(col, 0.9), [c, 0, -sn]);
     g.face(P(x0, y0, z0), P(x0, y0, z1), P(x0, y1, z1), P(x0, y1, z0), shade(col, 0.9), [-c, 0, sn]);
     g.face(P(x0, y0, z0), P(x1, y0, z0), P(x1, y0, z1), P(x0, y0, z1), col, [0, -1, 0]);
   };
-  // 从上面看要读出人的轮廓：脖子收细、头单独一团，肩比腰宽，两条腿分开，手臂在肩膀两侧（不在身体底下立成两根柱子）
-  box(-0.27, 0.12, -0.3, 0.08, 0.24, 0.08, shade(body, 0.92));  // 两臂撑着（短）
-  box(0.27, 0.12, -0.3, 0.08, 0.24, 0.08, shade(body, 0.92));
-  box(-0.27, 0.25, -0.24, 0.09, 0.08, 0.2, shade(body, 0.92));  // 上臂
-  box(0.27, 0.25, -0.24, 0.09, 0.08, 0.2, shade(body, 0.92));
-  box(0, 0.27, -0.16, 0.46, 0.16, 0.34, body);                 // 肩、胸
-  box(0, 0.32, 0.17, 0.32, 0.16, 0.34, shade(body, 0.94));     // 腰
-  box(-0.085, 0.3, 0.68, 0.13, 0.11, 0.7, legs);               // 两条腿，中间留缝
-  box(0.085, 0.3, 0.68, 0.13, 0.11, 0.7, legs);
-  box(0, 0.25, -0.38, 0.09, 0.08, 0.1, body);                  // 脖子
-  box(0, 0.25, -0.52, 0.2, 0.2, 0.2, hair);                    // 头（整块发色）
+  // 低低地趴着往前走：手在肩膀前面撑着水面，躯干从肩膀斜到胯，腿拖在后面（整个人高不过 0.3 m，从上面看是平的一个人形）
+  box(-0.24, 0.015, -0.42, 0.1, 0.03, 0.13, skin);                // 两只手（贴着水面）
+  box(0.24, 0.015, -0.42, 0.1, 0.03, 0.13, skin);
+  box(-0.23, 0.13, -0.33, 0.08, 0.22, 0.2, body);                 // 前臂斜撑（两段错开，近似斜线）
+  box(0.23, 0.13, -0.33, 0.08, 0.22, 0.2, body);
+  box(0, 0.24, -0.14, 0.48, 0.14, 0.32, body);                    // 肩、胸（最宽）
+  box(0, 0.2, 0.18, 0.34, 0.13, 0.34, shade(body, 0.95));         // 腰
+  box(-0.09, 0.08, 0.62, 0.14, 0.1, 0.62, legs);                  // 两条腿，中间留缝
+  box(0.09, 0.08, 0.62, 0.14, 0.1, 0.62, legs);
+  box(0, 0.27, -0.42, 0.21, 0.2, 0.2, skin, hair);                // 头：脸那一面、下巴、两侧是肤色，头顶和后脑勺是发色
 }

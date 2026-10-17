@@ -419,7 +419,7 @@ describe('other still compositions (U5)', () => {
   });
 
   // 中、高画质的人群更密（26 个）：以前有一个爬着的人正好落在镜头和它的脸之间，挡住半张脸和一只眼睛（修复轮 U5 第三轮的截图）
-  for (const tier of ['low', 'medium'] as const) {
+  for (const tier of ['low', 'medium', 'high'] as const) {
     it(`4-6 at 3.0 s (${tier}): no one in the crawling crowd stands between the camera and its face`, async () => {
       const w = await scene(ch4 as ChapterDef);
       playStill(w, '4-6', 3.0);
