@@ -8,3 +8,5 @@
 - 每米人数保持与旧版（每 1.25 m 一人）相当，再按凳子分配概率（靠过道的凳子 0.4×密度，外侧 0.2×密度），不加重 npcMax 和低画质预算。
 - 低画质的合并腿（一根从髋指向脚踝）只适合站着、走路的人；坐着、蹲着的人要分成大腿、小腿两段（同一个 FEET.leg 变体按比例缩放），否则斜着的 0.59 m 直棍在追尾镜头里像伸进过道的脚。大腿多伸半个小腿厚度（0.07），无端面的断口藏进小腿里。
 - 测试做法：拦截 `KitGeo.prototype.box / prism`（按尺寸认出课桌、椅子、餐桌、圆凳、方柱），按 ChunkStreamer 的切法建整段，再和 `expandChapter` 的人逐个比位置（`tests/unit/npc/seats.test.ts`）。调试舞台传了 band 覆盖，没有 kit 家具，坐着的人照旧自带椅子。
+- 通用模板 chunk（`hw.generic`）建一次、到处复用，看不到段里的障碍：教室 kit 要按伸脚的人空出课桌椅，所以 ChunkStreamer 把有 footOut 的教室 chunk 按专建。Node 测试里全部按专建，测不出这一条，改 kit 里「看段数据」的逻辑时要同时看 ChunkStreamer 的 `special` 条件。
+- 手搓的 `CompiledSegment` 假数据（`parts.test.ts`）缺 `s1`、`obstacles` 时，按整段排布找座位会得到 NaN、一个人也没有：新读段字段时 grep 测试里的 `as unknown as CompiledSegment`。
